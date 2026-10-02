@@ -1,4 +1,6 @@
-# Prompt hoàn thành F01 theo thứ tự phụ thuộc
+# Prompt hoàn thành F01 theo thứ tự phụ thuộc — đã thay thế
+
+> Prompt này lưu lịch sử kế hoạch trước khi F01.2/F01.3 được nghiệm thu ngày 2026-10-02. Không dùng cho phiên mới. Dùng [`F01-next-steps.md`](./F01-next-steps.md).
 
 Copy toàn bộ prompt dưới đây vào phiên làm việc tiếp theo để tiếp tục hoàn tất F01.
 

@@ -1,5 +1,13 @@
 # Tiến độ ShuttleBook
 
+## Nghiệm thu F01.2 và F01.3 — 2026-10-02
+
+- Người dùng xác nhận đã chạy và đạt toàn bộ các trường hợp kiểm thử còn lại trên Postman/UI/DB local, bao gồm các nhánh âm và bảo mật đã được hướng dẫn. Không lưu password, OTP, access/refresh token, contact thật hoặc ảnh response chứa bí mật vào repository.
+- **F01.2 — Đăng nhập và phiên làm việc: DONE.** Đã nghiệm thu login theo trạng thái, JWT, refresh rotation/reuse, refresh đồng thời, family isolation, logout đúng/sai/lặp, suspend sau login, rate limit, audit/redaction, cấu hình và UI thực tế. F012-T13 kiểm tra quyền trên endpoint F02/F06 được chuyển sang feature phụ thuộc vì endpoint chưa thuộc phạm vi F01.2; quyết định này thay thế yêu cầu cũ coi T13 là blocker cho F01.2.
+- **F01.3 — Đăng ký chủ sân: DONE.** Đã nghiệm thu register email/phone, allowlist/validation, duplicate/cross-role, OTP happy/negative/resend/attempt/expiry/concurrency, rate limit/audit/redaction, login `PENDING_ONBOARDING`, logout và partner UI nối API/Mailpit local.
+- Bằng chứng tự động nền đã ghi trước đó vẫn giữ nguyên: `npm.cmd run test:api` 25/25 PASS, `npm.cmd run test:db` 2/2 PASS trên PostgreSQL/PostGIS thật, `npm.cmd run test:web` 14/14 PASS, build/typecheck PASS. Xác nhận nghiệm thu thủ công bổ sung do người dùng cung cấp; không dựng transcript hoặc số liệu chi tiết chưa được lưu.
+- Bước tiếp theo trong F01: hoàn tất/đối chiếu F01.1 nếu còn tiêu chí chưa đóng, sau đó lập đặc tả và triển khai **F01.4 — Admin bootstrap/hardening** theo prompt `docs/prompts/F01-next-steps.md`.
+
 ## Sửa lỗi đăng ký và OTP theo phản hồi người dùng — 2026-10-02
 
 - Đã thêm ô xác nhận mật khẩu cho customer; partner đã có sẵn ô này. Cả hai portal đều chặn submit khi mật khẩu nhập lại không khớp.
