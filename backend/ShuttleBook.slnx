@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ShuttleBook.Api/ShuttleBook.Api.csproj" />
+    <Project Path="src/ShuttleBook.Infrastructure/ShuttleBook.Infrastructure.csproj" />
+    <Project Path="src/ShuttleBook.Migrator/ShuttleBook.Migrator.csproj" />
+    <Project Path="src/ShuttleBook.Worker/ShuttleBook.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ShuttleBook.Api.Tests/ShuttleBook.Api.Tests.csproj" />
+    <Project Path="tests/ShuttleBook.Database.Tests/ShuttleBook.Database.Tests.csproj" />
+  </Folder>
+</Solution>

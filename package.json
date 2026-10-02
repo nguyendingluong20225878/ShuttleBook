@@ -1,0 +1,32 @@
+{
+  "name": "shuttlebook",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": ["apps/*", "packages/*"],
+  "engines": { "node": ">=22.12.0 <23 || >=24 <25" },
+  "packageManager": "npm@10.9.2",
+  "scripts": {
+    "dev:api": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Run-Api.ps1",
+    "dev:worker": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Run-Worker.ps1",
+    "dev:customer": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Run-Web.ps1 customer",
+    "dev:partner": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Run-Web.ps1 partner",
+    "dev:admin": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Run-Web.ps1 admin",
+    "db:up": "docker compose up -d --wait",
+    "db:migrate": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/dotnet.ps1 run --project backend/src/ShuttleBook.Migrator",
+    "test:api": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/dotnet.ps1 test backend/tests/ShuttleBook.Api.Tests --no-restore",
+    "test:db": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Test-Database.ps1",
+    "setup:browsers": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Install-Browsers.ps1",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Build-Web.ps1",
+    "test:web": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Test-Web.ps1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "22.20.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "typescript": "5.9.3",
+    "vite": "8.3.0"
+  }
+}

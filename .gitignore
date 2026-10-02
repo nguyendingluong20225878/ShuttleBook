@@ -1,0 +1,37 @@
+# Local secrets and machine-specific settings
+.env
+.env.*
+!.env.example
+**/appsettings.Local.json
+**/appsettings.*.Local.json
+*.pfx
+*.p12
+*.pem
+*.key
+
+# Dependencies and build outputs
+node_modules/
+dist/
+bin/
+obj/
+*.tsbuildinfo
+.tools/
+.local/
+.npm-cache/
+.nuget/
+
+# Generated test and runtime data
+TestResults/
+test-results/
+playwright-report/
+coverage/
+artifacts/
+*.log
+
+# Editors and OS
+.vs/
+.idea/
+*.user
+*.suo
+Thumbs.db
+.DS_Store

@@ -1,0 +1,13 @@
+{
+  "name": "@shuttlebook/partner-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host localhost --port 5174 --strictPort",
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && vite build",
+    "preview": "vite preview --host localhost --port 5174 --strictPort"
+  },
+  "dependencies": { "@shuttlebook/ui": "0.0.0", "react": "19.3.0", "react-dom": "19.3.0" }
+}

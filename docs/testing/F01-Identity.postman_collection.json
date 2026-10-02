@@ -1,0 +1,41 @@
+{
+  "info": {
+    "name": "ShuttleBook F01 Identity (Local)",
+    "description": "Manual UI/API verification for customer and partner identity. Use only with local Development API and synthetic contacts.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "apiBase", "value": "http://localhost:5080" },
+    { "key": "contactType", "value": "email" },
+    { "key": "contact", "value": "" },
+    { "key": "password", "value": "" },
+    { "key": "otp", "value": "" },
+    { "key": "accessToken", "value": "" },
+    { "key": "refreshToken", "value": "" },
+    { "key": "previousRefreshToken", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Customer",
+      "item": [
+        { "name": "Register", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"contactType\": \"{{contactType}}\",\n  \"contact\": \"{{contact}}\",\n  \"password\": \"{{password}}\"\n}" }, "url": "{{apiBase}}/api/v1/auth/register" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('Register is accepted', function () { pm.response.to.have.status(202); });"] } }] },
+        { "name": "Verify contact", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"contactType\": \"{{contactType}}\",\n  \"contact\": \"{{contact}}\",\n  \"code\": \"{{otp}}\"\n}" }, "url": "{{apiBase}}/api/v1/auth/verify-contact" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('Contact is verified', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().data.verified).to.eql(true); });"] } }] },
+        { "name": "Resend verification", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"contactType\": \"{{contactType}}\",\n  \"contact\": \"{{contact}}\"\n}" }, "url": "{{apiBase}}/api/v1/auth/verification-resend" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('Resend is accepted', function () { pm.response.to.have.status(202); });"] } }] },
+        { "name": "Login", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"contactType\": \"{{contactType}}\",\n  \"contact\": \"{{contact}}\",\n  \"password\": \"{{password}}\"\n}" }, "url": "{{apiBase}}/api/v1/auth/login" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('Login succeeded', function () { pm.response.to.have.status(200); });", "if (pm.response.code === 200) { const data = pm.response.json().data; pm.collectionVariables.set('accessToken', data.accessToken); pm.collectionVariables.set('refreshToken', data.refreshToken); }"] } }] },
+        { "name": "Refresh", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" }, "url": "{{apiBase}}/api/v1/auth/refresh" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('Refresh succeeded', function () { pm.response.to.have.status(200); });", "if (pm.response.code === 200) { const data = pm.response.json().data; pm.collectionVariables.set('previousRefreshToken', pm.collectionVariables.get('refreshToken')); pm.collectionVariables.set('accessToken', data.accessToken); pm.collectionVariables.set('refreshToken', data.refreshToken); }"] } }] },
+        { "name": "Logout", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{accessToken}}" }], "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" }, "url": "{{apiBase}}/api/v1/auth/logout" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('Logout succeeded', function () { pm.response.to.have.status(204); });", "if (pm.response.code === 204) { pm.collectionVariables.unset('accessToken'); pm.collectionVariables.unset('refreshToken'); pm.collectionVariables.unset('previousRefreshToken'); }"] } }] },
+        { "name": "Login with invalid password", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"contactType\": \"{{contactType}}\",\n  \"contact\": \"{{contact}}\",\n  \"password\": \"wrong-password-for-local-test\"\n}" }, "url": "{{apiBase}}/api/v1/auth/login" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('Invalid credentials are rejected generically', function () { pm.response.to.have.status(401); pm.expect(pm.response.json().code).to.eql('INVALID_CREDENTIALS'); });"] } }] },
+        { "name": "Reject unsupported registration field", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"contactType\": \"{{contactType}}\",\n  \"contact\": \"{{contact}}\",\n  \"password\": \"{{password}}\",\n  \"accountType\": \"ADMIN\"\n}" }, "url": "{{apiBase}}/api/v1/auth/register" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('Client cannot choose account type', function () { pm.response.to.have.status(400); pm.expect(pm.response.json().code).to.eql('UNSUPPORTED_FIELD'); });"] } }] }
+      ]
+    },
+    {
+      "name": "Partner",
+      "item": [
+        { "name": "Register", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"contactType\": \"{{contactType}}\",\n  \"contact\": \"{{contact}}\",\n  \"password\": \"{{password}}\"\n}" }, "url": "{{apiBase}}/api/v1/partner-auth/register" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('Register is accepted', function () { pm.response.to.have.status(202); });"] } }] },
+        { "name": "Verify contact", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"contactType\": \"{{contactType}}\",\n  \"contact\": \"{{contact}}\",\n  \"code\": \"{{otp}}\"\n}" }, "url": "{{apiBase}}/api/v1/partner-auth/verify" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('Partner contact is verified', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().data.verified).to.eql(true); });"] } }] },
+        { "name": "Resend verification", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"contactType\": \"{{contactType}}\",\n  \"contact\": \"{{contact}}\"\n}" }, "url": "{{apiBase}}/api/v1/partner-auth/verification-resend" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('Resend is accepted', function () { pm.response.to.have.status(202); });"] } }] },
+        { "name": "Login", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"contactType\": \"{{contactType}}\",\n  \"contact\": \"{{contact}}\",\n  \"password\": \"{{password}}\"\n}" }, "url": "{{apiBase}}/api/v1/auth/login" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('Partner login succeeded', function () { pm.response.to.have.status(200); const user = pm.response.json().data.user; pm.expect(user.accountType).to.eql('VENUE_OPERATOR'); pm.expect(user.status).to.eql('PENDING_ONBOARDING'); });", "if (pm.response.code === 200) { const data = pm.response.json().data; pm.collectionVariables.set('accessToken', data.accessToken); pm.collectionVariables.set('refreshToken', data.refreshToken); }"] } }] }
+      ]
+    }
+  ]
+}

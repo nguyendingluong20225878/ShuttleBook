@@ -1,0 +1,56 @@
+name: Verify foundation
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:web
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: web-test-results
+          path: test-results/
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:17-3.5
+        env:
+          POSTGRES_DB: shuttlebook
+          POSTGRES_USER: shuttlebook
+          POSTGRES_PASSWORD: ci-disposable-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U shuttlebook -d shuttlebook"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      ConnectionStrings__ShuttleBook: 'Host=localhost;Port=5432;Database=shuttlebook;Username=shuttlebook;Password=ci-disposable-only'
+      SHUTTLEBOOK_TEST_CONNECTION_STRING: 'Host=localhost;Port=5432;Database=postgres;Username=shuttlebook;Password=ci-disposable-only'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet restore backend/ShuttleBook.slnx --locked-mode
+      - run: dotnet build backend/ShuttleBook.slnx --no-restore --configuration Release
+      - run: dotnet run --project backend/src/ShuttleBook.Migrator --no-build --configuration Release
+      - run: dotnet run --project backend/src/ShuttleBook.Migrator --no-build --configuration Release
+      - run: dotnet test backend/tests/ShuttleBook.Api.Tests --no-build --configuration Release
+      - run: dotnet test backend/tests/ShuttleBook.Database.Tests --no-build --configuration Release
