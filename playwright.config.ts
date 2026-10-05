@@ -11,8 +11,8 @@ export default defineConfig({
     { name: 'desktop', use: { ...devices['Desktop Chrome'] } },
     { name: 'mobile', use: { ...devices['Pixel 7'] } },
   ],
-  webServer: ['customer', 'partner', 'admin'].map((portal, i) => ({
-    command: `npm run preview --workspace=@shuttlebook/${portal}-web`,
+  webServer: process.env.SHUTTLEBOOK_EXTERNAL_WEB === '1' ? undefined : ['customer', 'partner', 'admin'].map((portal, i) => ({
+    command: `node node_modules/vite/bin/vite.js preview apps/${portal}-web --host localhost --port ${5173 + i} --strictPort`,
     url: `http://localhost:${5173 + i}`,
     reuseExistingServer: false,
     timeout: 30_000,

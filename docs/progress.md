@@ -1,5 +1,13 @@
 # Tiến độ ShuttleBook
 
+## Mốc tích hợp F01.1/F01.4 — 2026-10-02 (mới nhất)
+
+- **F01.1: DONE** (18/18 testcase PASS) và **F01.4: DONE** (25/25 testcase PASS). **F01.2/F01.3 giữ DONE** theo nghiệm thu trước đó; do đó phạm vi identity F01 đã đạt nghiệm thu local. F01.4 gồm migration một Admin, CLI bootstrap/rotate/suspend/activate/revoke, API login/me và admin-web; review độc lập Auth/CLI không còn lỗi nghiêm trọng. Đây là trạng thái mới nhất; các đoạn dưới là mốc lịch sử.
+- Bằng chứng runtime cuối: `npm.cmd run test:api` **58/58 PASS**; `npm.cmd run test:db` **15/15 PASS** trên PostgreSQL/PostGIS thật, thêm hai test Admin sau assertion cuối **2/2 PASS** và migration F01.1 riêng **1/1 PASS**; `npm.cmd run test:web` **26 PASS, 6 SKIP có chủ đích** vì các ca live chạy riêng; `npm.cmd run test:identity-live` **6/6 PASS** desktop/mobile qua API/PostgreSQL/Mailpit thật trên database tạm, dọn đúng tên sau chạy. `npm.cmd run typecheck`, `npm.cmd run build`, build solution `--no-restore` (**0 warning, 0 error**) và `git diff --check`: **PASS**. Lệnh, testcase và giới hạn bằng chứng ghi ở `docs/testing/F01.1-test-cases.md` và `docs/testing/F01.4-test-cases.md`.
+- Review script E2E đã sửa theo hai phát hiện: kết nối database lấy riêng từ `.env` local, ép `127.0.0.1`, EF phải báo đúng tên DB tạm và data source trước khi migrate, dry-run xác nhận tên trước khi drop; Vite build ép API `http://localhost:5080`, Playwright chặn browser request ra origin khác. Test DB còn có guard Npgsql chặn override host từ xa và database điều khiển khác `postgres`.
+- **Sự cố dữ liệu local:** bản đầu của `scripts/Test-Identity-Live.ps1` dùng sai `DbConnectionStringBuilder` trong PowerShell; lệnh cleanup EF đã xóa database development `shuttlebook` thay vì database tạm. Người dùng xác nhận **không có bản sao lưu**. Đã chạy Migrator thành công để tạo lại **schema** local, nhưng các bản ghi cũ trong database đó không thể khôi phục từ migration. Không có bằng chứng ảnh hưởng môi trường production. Bản script lỗi đã được thay, các lần sau chỉ dọn đúng DB tạm; một DB tạm `shuttlebook_f014_live_*` còn sau lần ngắt đã được xác minh tên và dọn riêng. Không chạy lại lệnh EF drop trên tên mặc định.
+- Điểm còn mở: bản ghi cũ trong database development `shuttlebook` không có nguồn để khôi phục; schema đã tạo lại. CI và production **NOT RUN** vì chưa push/deploy; không commit/push/merge/deploy. F00 giữ trạng thái riêng, không đánh dấu DONE theo F01.
+
 ## Nghiệm thu F01.2 và F01.3 — 2026-10-02
 
 - Người dùng xác nhận đã chạy và đạt toàn bộ các trường hợp kiểm thử còn lại trên Postman/UI/DB local, bao gồm các nhánh âm và bảo mật đã được hướng dẫn. Không lưu password, OTP, access/refresh token, contact thật hoặc ảnh response chứa bí mật vào repository.

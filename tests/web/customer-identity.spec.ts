@@ -37,13 +37,14 @@ test('customer can register, verify, log in, refresh and log out without browser
 
   await page.goto(customerUrl);
   await page.getByLabel('Email', { exact: true }).fill('customer@example.test');
-  await page.getByLabel('Mật khẩu').fill('Example-password-2026!');
+  await page.getByLabel('Mật khẩu', { exact: true }).fill('Example-password-2026!');
+  await page.getByLabel('Nhập lại mật khẩu').fill('Example-password-2026!');
   await page.getByRole('button', { name: 'Đăng ký', exact: true }).last().click();
   await expect(page.getByRole('heading', { name: 'Xác minh tài khoản khách' })).toBeVisible();
   await page.getByLabel('Mã xác minh 6 chữ số').fill('123456');
   await page.getByRole('button', { name: 'Xác minh', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Đăng nhập khách hàng' })).toBeVisible();
-  await page.getByLabel('Mật khẩu').fill('Example-password-2026!');
+  await page.getByLabel('Mật khẩu', { exact: true }).fill('Example-password-2026!');
   await page.getByRole('button', { name: 'Đăng nhập', exact: true }).last().click();
   await expect(page.getByRole('heading', { name: 'Xin chào khách hàng' })).toBeVisible();
   await expect.poll(() => requests.filter(request => request.path.endsWith('/refresh')).length).toBe(1);
@@ -75,4 +76,19 @@ test('customer login shows a generic error and keeps the session empty on invali
   await page.getByRole('button', { name: 'Đăng nhập', exact: true }).last().click();
   await expect(page.getByRole('status')).toHaveText('Thông tin đăng nhập không hợp lệ.');
   await expect(page.getByRole('heading', { name: 'Xin chào khách hàng' })).toHaveCount(0);
+});
+
+test('customer portal rejects an unexpected Admin session response', async ({ page }) => {
+  await page.route('**/api/v1/auth/login', route => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify({ data: { ...tokenPayload('admin-refresh', 600).data,
+      user: { accountType: 'ADMIN', status: 'ACTIVE' } } }),
+  }));
+  await page.goto(`${customerUrl}/login`);
+  await page.getByLabel('Email', { exact: true }).fill('admin@example.test');
+  await page.getByLabel('Mật khẩu').fill('test-password');
+  await page.getByRole('button', { name: 'Đăng nhập', exact: true }).last().click();
+  await expect(page.getByRole('status')).toHaveText('Tài khoản này không phải tài khoản khách đang hoạt động.');
+  await expect(page.getByRole('heading', { name: 'Xin chào khách hàng' })).toHaveCount(0);
+  expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
 });

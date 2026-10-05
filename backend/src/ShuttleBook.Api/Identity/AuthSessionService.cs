@@ -17,6 +17,7 @@ public sealed record AuthTokens(string TokenType, string AccessToken, int Expire
 public interface IAuthSessionService
 {
     Task<AuthTokens?> LoginAsync(string contactType, string contact, string password, string traceId, CancellationToken cancellationToken);
+    Task<AuthTokens?> AdminLoginAsync(string contactType, string contact, string password, string traceId, CancellationToken cancellationToken);
     Task<AuthTokens?> RefreshAsync(string refreshToken, string traceId, CancellationToken cancellationToken);
     Task<bool> LogoutAsync(Guid userId, Guid familyId, string refreshToken, string traceId, CancellationToken cancellationToken);
 }
@@ -29,20 +30,38 @@ public sealed class AuthSessionService(
 {
     private static readonly TimeSpan AccessLifetime = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan RefreshLifetime = TimeSpan.FromDays(30);
+    private static readonly string DummyAdminHash = new PasswordHasher<User>().HashPassword(
+        new User(), Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)));
 
-    public async Task<AuthTokens?> LoginAsync(string contactType, string contact, string password, string traceId, CancellationToken cancellationToken)
+    public Task<AuthTokens?> LoginAsync(string contactType, string contact, string password, string traceId, CancellationToken cancellationToken) =>
+        LoginForPortalAsync(contactType, contact, password, traceId, adminPortal: false, cancellationToken);
+
+    public async Task<AuthTokens?> AdminLoginAsync(string contactType, string contact, string password, string traceId, CancellationToken cancellationToken)
+    {
+        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        await AdminOperations.AcquireLockAsync(database, cancellationToken);
+        var tokens = await LoginForPortalAsync(contactType, contact, password, traceId, adminPortal: true, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return tokens;
+    }
+
+    private async Task<AuthTokens?> LoginForPortalAsync(string contactType, string contact, string password,
+        string traceId, bool adminPortal, CancellationToken cancellationToken)
     {
         if (!ContactNormalizer.TryNormalize(contactType, contact, out var type, out var normalized) || password.Length is < 1 or > 128)
             return null;
         var user = type == ContactType.Email
             ? await database.Users.SingleOrDefaultAsync(item => item.NormalizedEmail == normalized, cancellationToken)
             : await database.Users.SingleOrDefaultAsync(item => item.NormalizedPhone == normalized, cancellationToken);
-        if (user is null || !CanLogin(user) ||
-            passwordHasher.VerifyHashedPassword(user, user.PasswordHash, password) == PasswordVerificationResult.Failed)
+        var eligible = user is not null && (adminPortal ? CanAdminLogin(user) : CanLogin(user));
+        var hash = adminPortal && !eligible ? DummyAdminHash : user?.PasswordHash;
+        var passwordMatches = hash is not null && passwordHasher.VerifyHashedPassword(user ?? new User(), hash, password)
+            != PasswordVerificationResult.Failed;
+        if (user is null || !eligible || !passwordMatches)
         {
             database.AuditEvents.Add(new AuditEvent
             {
-                Action = "auth.login_failed", EntityType = "user", EntityId = user?.Id ?? Guid.Empty,
+                Action = adminPortal ? "admin.login_failed" : "auth.login_failed", EntityType = "user", EntityId = user?.Id ?? Guid.Empty,
                 CorrelationId = traceId, CreatedAt = clock.GetUtcNow()
             });
             await database.SaveChangesAsync(cancellationToken);
@@ -56,7 +75,7 @@ public sealed class AuthSessionService(
             FamilyId = familyId, UserId = user.Id, TokenHash = HashToken(refresh),
             CreatedAt = now, ExpiresAt = now.Add(RefreshLifetime)
         });
-        database.AuditEvents.Add(Audit("auth.login_succeeded", user.Id, traceId, now));
+        database.AuditEvents.Add(Audit(adminPortal ? "admin.login_succeeded" : "auth.login_succeeded", user.Id, traceId, now));
         await database.SaveChangesAsync(cancellationToken);
         return Tokens(user, familyId, refresh, now);
     }
@@ -66,7 +85,11 @@ public sealed class AuthSessionService(
         if (refreshToken.Length is < 32 or > 256) return null;
         var hash = HashToken(refreshToken);
         var now = clock.GetUtcNow();
+        var accountType = await database.RefreshSessions.Where(item => item.TokenHash == hash)
+            .Select(item => (AccountType?)item.User.AccountType).SingleOrDefaultAsync(cancellationToken);
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        if (accountType == AccountType.Admin)
+            await AdminOperations.AcquireLockAsync(database, cancellationToken);
         var session = await database.RefreshSessions
             .FromSqlInterpolated($"SELECT * FROM refresh_sessions WHERE token_hash = {hash} FOR UPDATE")
             .SingleOrDefaultAsync(cancellationToken);
@@ -81,7 +104,7 @@ public sealed class AuthSessionService(
         }
         if (session.RevokedAt is not null || session.ExpiresAt <= now) return null;
         var user = await database.Users.SingleAsync(item => item.Id == session.UserId, cancellationToken);
-        if (!CanLogin(user))
+        if (!CanUseSession(user))
         {
             await RevokeFamilyAsync(session.FamilyId, now, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
@@ -106,6 +129,24 @@ public sealed class AuthSessionService(
     {
         if (refreshToken.Length is < 32 or > 256) return false;
         var tokenHash = HashToken(refreshToken);
+        var isAdmin = await database.Users.AnyAsync(user => user.Id == userId && user.AccountType == AccountType.Admin,
+            cancellationToken);
+        if (isAdmin)
+        {
+            await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+            await AdminOperations.AcquireLockAsync(database, cancellationToken);
+            // A refresh may have consumed the token just before logout. Its family is still the
+            // authenticated family and must be revoked rather than left active in the background.
+            var belongsToFamily = await database.RefreshSessions.AnyAsync(item => item.UserId == userId &&
+                item.FamilyId == familyId && item.TokenHash == tokenHash && item.RevokedAt == null, cancellationToken);
+            if (!belongsToFamily) return false;
+            var adminNow = clock.GetUtcNow();
+            await RevokeFamilyAsync(familyId, adminNow, cancellationToken);
+            database.AuditEvents.Add(Audit("auth.logout", userId, traceId, adminNow));
+            await database.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return true;
+        }
         var exists = await database.RefreshSessions.AnyAsync(item => item.UserId == userId &&
             item.FamilyId == familyId && item.TokenHash == tokenHash && item.ConsumedAt == null &&
             item.RevokedAt == null, cancellationToken);
@@ -144,6 +185,11 @@ public sealed class AuthSessionService(
     public static bool CanLogin(User user) =>
         user.AccountType == AccountType.Customer && user.Status == UserStatus.Active ||
         user.AccountType == AccountType.VenueOperator && user.Status is UserStatus.PendingOnboarding or UserStatus.Active;
+
+    public static bool CanAdminLogin(User user) =>
+        user.AccountType == AccountType.Admin && user.Status == UserStatus.Active;
+
+    public static bool CanUseSession(User user) => CanLogin(user) || CanAdminLogin(user);
 
     public static string AccountTypeName(AccountType type) => type switch
     {

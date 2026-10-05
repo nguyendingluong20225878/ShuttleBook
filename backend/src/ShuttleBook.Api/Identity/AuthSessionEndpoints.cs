@@ -29,7 +29,7 @@ public static class AuthSessionEndpoints
             context.TraceIdentifier, cancellationToken);
         return tokens is null
             ? CustomerRegistrationEndpoints.Problem(context, 401, "INVALID_CREDENTIALS")
-            : Results.Ok(new { data = tokens, traceId = context.TraceIdentifier });
+            : TokenResponse(context, tokens);
     }
 
     private static async Task<IResult> RefreshAsync(HttpContext context, IAuthSessionService service, CancellationToken cancellationToken)
@@ -40,7 +40,7 @@ public static class AuthSessionEndpoints
             context.TraceIdentifier, cancellationToken);
         return tokens is null
             ? CustomerRegistrationEndpoints.Problem(context, 401, "INVALID_REFRESH_TOKEN")
-            : Results.Ok(new { data = tokens, traceId = context.TraceIdentifier });
+            : TokenResponse(context, tokens);
     }
 
     private static async Task<IResult> LogoutAsync(HttpContext context, IAuthSessionService service, CancellationToken cancellationToken)
@@ -62,4 +62,10 @@ public static class AuthSessionEndpoints
             userId = context.User.FindFirstValue("sub"),
             accountType = context.User.FindFirstValue("accountType")
         }, traceId = context.TraceIdentifier });
+
+    private static IResult TokenResponse(HttpContext context, AuthTokens tokens)
+    {
+        context.Response.Headers.CacheControl = "no-store";
+        return Results.Ok(new { data = tokens, traceId = context.TraceIdentifier });
+    }
 }

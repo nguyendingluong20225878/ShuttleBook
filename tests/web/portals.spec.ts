@@ -15,7 +15,7 @@ for (const portal of portals) {
     await expect(page).toHaveTitle(portal.title);
     await expect(page.getByRole('heading', { level: 1, name: portal.heading })).toBeVisible();
     if (portal.port === 5175) {
-      await expect(page.getByText('Ứng dụng đang được phát triển.', { exact: false })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Đăng nhập' })).toBeVisible();
     } else {
       await expect(page.getByRole('button', { name: 'Đăng ký' }).first()).toBeVisible();
     }

@@ -76,9 +76,9 @@ function PartnerIdentity() {
     try {
       const response = await post('/partner-auth/verification-resend', { contactType, contact });
       const error = response.status === 202 ? undefined : await errorCode(response);
-      setMessage(response.status === 202 ? 'Nếu liên hệ đang chờ xác minh, mã mới đã được gửi. Hãy kiểm tra Mailpit và cả thư mục spam.'
+      setMessage(response.status === 202 ? 'Nếu liên hệ đang chờ xác minh, mã mới đã được gửi. Hãy kiểm tra hộp thư hoặc tin nhắn.'
         : error === 'RATE_LIMITED' ? retryMessage(response)
-          : error === 'IDENTITY_DELIVERY_UNAVAILABLE' ? 'Mailpit chưa nhận được yêu cầu gửi mã. Kiểm tra dịch vụ rồi thử lại.'
+          : error === 'IDENTITY_DELIVERY_UNAVAILABLE' ? 'Dịch vụ gửi mã đang bận. Vui lòng thử lại sau.'
             : 'Chưa thể gửi lại mã. Vui lòng thử lại sau.');
     } catch { setMessage('Không thể kết nối máy chủ. Vui lòng thử lại.'); }
     finally { setSubmitting(false); }

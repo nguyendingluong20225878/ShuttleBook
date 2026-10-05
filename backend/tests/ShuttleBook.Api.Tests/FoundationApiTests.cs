@@ -88,6 +88,18 @@ public sealed class FoundationApiTests
         Assert.False(response.Headers.Contains("Access-Control-Allow-Credentials"));
     }
 
+    [Fact]
+    public async Task Actual_cors_response_exposes_retry_after_to_browser()
+    {
+        await using var factory = new ApiFactory(new StubReadiness(true));
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/health/live");
+        request.Headers.Add("Origin", "http://localhost:5175");
+        using var response = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("Retry-After", response.Headers.GetValues("Access-Control-Expose-Headers"));
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]

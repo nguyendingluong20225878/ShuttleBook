@@ -5,7 +5,7 @@ using ShuttleBook.Infrastructure.Identity;
 
 namespace ShuttleBook.Api.Identity;
 
-public sealed class ContactAttemptLimiter(IConfiguration configuration) : IDisposable
+public sealed class ContactAttemptLimiter(IConfiguration configuration, TimeProvider clock) : IDisposable
 {
     private readonly MemoryCache cache = new(new MemoryCacheOptions { SizeLimit = 10_000 });
     private readonly object gate = new();
@@ -19,7 +19,7 @@ public sealed class ContactAttemptLimiter(IConfiguration configuration) : IDispo
             throw new InvalidOperationException("Identity OTP pepper is not configured.");
         using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(pepper));
         var key = purpose + ":" + Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes(normalized)));
-        var now = DateTimeOffset.UtcNow;
+        var now = clock.GetUtcNow();
         lock (gate)
         {
             if (!cache.TryGetValue(key, out AttemptWindow? current) || current is null || current.ExpiresAt <= now)

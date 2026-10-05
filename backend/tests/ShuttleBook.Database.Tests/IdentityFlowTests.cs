@@ -22,10 +22,10 @@ public sealed class IdentityFlowTests
     {
         var supplied = Environment.GetEnvironmentVariable("SHUTTLEBOOK_TEST_CONNECTION_STRING");
         Assert.False(string.IsNullOrWhiteSpace(supplied));
-        var settings = new NpgsqlConnectionStringBuilder(DatabaseConfiguration.RequireConnectionString(supplied))
-        {
-            Pooling = false, Timeout = 5, CommandTimeout = 30
-        };
+        var settings = LocalPostgresTestServer.Require(supplied);
+        settings.Pooling = false;
+        settings.Timeout = 5;
+        settings.CommandTimeout = 30;
         var name = $"shuttlebook_identity_test_{Guid.NewGuid():N}";
         var quoted = new NpgsqlCommandBuilder().QuoteIdentifier(name);
         await using var control = new NpgsqlConnection(settings.ConnectionString);

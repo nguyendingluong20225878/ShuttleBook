@@ -136,9 +136,9 @@ function CustomerIdentity() {
     try {
       const response = await post('/verification-resend', { contactType, contact });
       setMessage(response.status === 202
-        ? 'Nếu liên hệ đang chờ xác minh, mã mới đã được gửi. Hãy kiểm tra Mailpit và cả thư mục spam.'
+        ? 'Nếu liên hệ đang chờ xác minh, mã mới đã được gửi. Hãy kiểm tra hộp thư hoặc tin nhắn.'
         : response.status === 429 ? retryMessage(response)
-          : response.status === 503 ? 'Mailpit chưa nhận được yêu cầu gửi mã. Kiểm tra dịch vụ rồi thử lại.'
+          : response.status === 503 ? 'Dịch vụ gửi mã đang bận. Vui lòng thử lại sau.'
             : 'Chưa thể gửi lại mã. Vui lòng thử lại sau.');
     } catch { setMessage('Không thể kết nối máy chủ. Vui lòng thử lại.'); }
     finally { setSubmitting(false); }

@@ -8,7 +8,7 @@ Chạy các lệnh dưới đây tại **thư mục gốc repo**, ví dụ:
 Set-Location 'C:\Users\luong\Desktop\CLong'
 ```
 
-- Git đã cài; repo local đã khởi tạo ở `main`, chưa có commit/remote.
+- Git đã cài; repo có `origin/main`. Kiểm tra `git status --short --branch` trước khi thay đổi.
 - Node 22.12+ trong dòng 22 hoặc Node 24; dùng `npm.cmd` trên PowerShell. Lockfile npm được lưu trong repo.
 - .NET SDK 10.0.401 (`global.json`, cho phép bản vá trong cùng SDK band); script dùng SDK riêng `.tools/dotnet` nếu có.
 - React 19.3.0, Vite 8.3.0, TypeScript 5.9.3, Playwright 1.63.0 được pin trong manifest/lockfile.
@@ -91,7 +91,7 @@ npm.cmd run dev:partner
 npm.cmd run dev:admin
 ```
 
-Mở `http://localhost:5173`, `http://localhost:5174`, `http://localhost:5175`. Cổng khách/đối tác đã có luồng identity đang kiểm chứng; cổng admin vẫn là trang khởi tạo. Chưa có chức năng booking. CORS Development chỉ chấp nhận chính xác ba origin này; dùng 127.0.0.1 thay localhost là origin khác.
+Mở `http://localhost:5173`, `http://localhost:5174`, `http://localhost:5175`. Cổng khách/đối tác có luồng identity; cổng admin có đăng nhập và thông báo chưa có module quản trị. Chưa có chức năng booking. CORS Development chỉ chấp nhận chính xác ba origin này; dùng 127.0.0.1 thay localhost là origin khác.
 
 Trong môi trường local, OTP được gửi đến Mailpit tại `http://localhost:8025`, kể cả khi bạn nhập một địa chỉ email thật; Mailpit không chuyển tiếp thư ra ngoài. Hãy tìm thư theo địa chỉ vừa đăng ký. Phản hồi đăng ký `202` là thông báo chung để tránh lộ tài khoản tồn tại: nếu contact đã xác minh hoặc thuộc loại tài khoản khác, hệ thống không gửi mã mới. Dùng contact thử nghiệm mới khi kiểm tra luồng đăng ký.
 
@@ -102,6 +102,27 @@ Invoke-RestMethod http://localhost:5080/health/ready
 
 Live trả Healthy nếu API còn phục vụ; Ready chỉ Healthy khi DB và baseline sẵn sàng. DB lỗi/thiếu migration thì Ready trả HTTP 503, không làm giả kết nối thành công.
 
+### Khởi tạo và quản lý Admin local
+
+Sau `npm.cmd run db:migrate`, người vận hành có quyền truy cập DB chạy tại **repo root trong PowerShell**:
+
+```powershell
+npm.cmd run admin:bootstrap
+```
+
+CLI hỏi loại contact, contact và password trong terminal; contact/password được nhập ẩn, không đặt trong lệnh, `.env`, log hoặc tài liệu. Contact phải do người vận hành kiểm soát; bootstrap chỉ tạo một `ADMIN/ACTIVE` đã xác minh và chạy lại không đổi tài khoản. Không chạy bootstrap trên database ngoài môi trường đã được phép. Không có endpoint đăng ký Admin công khai.
+
+Khi cần thay mật khẩu, tạm khóa, mở lại hoặc thu hồi mọi phiên Admin hiện hành:
+
+```powershell
+npm.cmd run admin:rotate
+npm.cmd run admin:suspend
+npm.cmd run admin:activate
+npm.cmd run admin:revoke-sessions
+```
+
+`rotate` và `suspend` thu hồi mọi phiên; `activate` chỉ cho phép đăng nhập phiên mới. Các lệnh thao tác trên database từ `ConnectionStrings__ShuttleBook` mà script local nạp; hãy xác nhận đúng môi trường trước khi chạy. Đăng nhập Admin ở `http://localhost:5175` sau khi API local hoạt động.
+
 ## 7. Kiểm thử
 
 ```powershell
@@ -109,7 +130,7 @@ npm.cmd run test:api
 npm.cmd run test:db
 ```
 
-API tests xác minh HTTP/error/CORS contract bằng test host; chúng không thay thế DB tests. DB tests cần local PostgreSQL thật, tạo database test tên riêng rồi dọn đúng database đó; tài khoản cần quyền tạo database. Không trỏ `SHUTTLEBOOK_TEST_CONNECTION_STRING` tới server production.
+API tests xác minh HTTP/error/CORS contract bằng test host; chúng không thay thế DB tests. DB tests cần PostgreSQL/PostGIS thật, tạo database test tên riêng rồi dọn đúng database đó; tài khoản cần quyền tạo database. Test helper chỉ chấp nhận host loopback và database điều khiển `postgres`; không trỏ `SHUTTLEBOOK_TEST_CONNECTION_STRING` tới server production.
 
 ```powershell
 npm.cmd run setup:browsers
@@ -117,7 +138,16 @@ npm.cmd run build
 npm.cmd run test:web
 ```
 
-Playwright tự mở ba preview server và đóng khi xong, kiểm tra desktop/mobile. Dừng các dev server trên 5173–5175 trước khi chạy để tránh kiểm thử nhầm tiến trình. Browser đã tải trong lượt đầu thì không cần tải lại.
+Script mở ba preview server ẩn và dừng đúng tiến trình do nó tạo sau khi kiểm thử desktop/mobile. Dừng các dev server trên 5173–5175 trước khi chạy; nếu cổng bận script báo lỗi và không dừng tiến trình khác. Browser đã tải trong lượt đầu thì không cần tải lại. Các ca live cần API/Mailpit thật có điều kiện và được ghi riêng trong testcase, không coi các ca mock là bằng chứng end-to-end.
+
+Để chạy riêng browser E2E dùng API/PostgreSQL/Mailpit thật trên **database tạm local** (repo root, Docker đã healthy, các cổng 5080 và 5173–5175 trống):
+
+```powershell
+.\scripts\dotnet.ps1 build backend/ShuttleBook.slnx --no-restore
+npm.cmd run test:identity-live
+```
+
+Script đọc `.env` local, ép PostgreSQL về `127.0.0.1`, kiểm tra tên database tạm qua EF trước khi migrate/dọn, build web với API `http://localhost:5080`, tạo Admin test bằng CLI và chạy 6 ca desktop/mobile. Password test được sinh trong tiến trình, không in ra console. Script dừng API/preview do nó tạo và xóa đúng database tạm sau khi kết thúc. Nếu phiên terminal bị ngắt đột ngột, có thể còn database với tiền tố `shuttlebook_f014_live_`; kiểm tra tên cụ thể trước khi dọn, không chạy lệnh xóa database theo tên mặc định.
 
 CI `.github/workflows/ci.yml` có web/backend jobs; backend dùng service PostgreSQL/PostGIS thật. Workflow chưa được chạy trên GitHub vì chưa có remote/push; chỉ ghi CI pass sau khi có run thành công.
 

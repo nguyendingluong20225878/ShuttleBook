@@ -46,6 +46,8 @@ public sealed class ProblemDetailsMiddleware(RequestDelegate next, ILogger<Probl
                 {
                     StatusCodes.Status404NotFound => "NOT_FOUND",
                     StatusCodes.Status405MethodNotAllowed => "METHOD_NOT_ALLOWED",
+                    StatusCodes.Status401Unauthorized => "UNAUTHORIZED",
+                    StatusCodes.Status403Forbidden => "FORBIDDEN",
                     StatusCodes.Status500InternalServerError => "INTERNAL_ERROR",
                     _ => "HTTP_ERROR"
                 },

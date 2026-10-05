@@ -43,6 +43,8 @@ public sealed class PartnerRegistrationApiTests
     [InlineData("role")]
     [InlineData("status")]
     [InlineData("isAdmin")]
+    [InlineData("permissions")]
+    [InlineData("userId")]
     public async Task Register_rejects_role_or_status_injection_before_calling_service(string field)
     {
         var service = new FakePartnerRegistrationService();

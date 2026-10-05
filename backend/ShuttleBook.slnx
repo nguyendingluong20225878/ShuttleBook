@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/ShuttleBook.AdminCli/ShuttleBook.AdminCli.csproj" />
     <Project Path="src/ShuttleBook.Api/ShuttleBook.Api.csproj" />
     <Project Path="src/ShuttleBook.Infrastructure/ShuttleBook.Infrastructure.csproj" />
     <Project Path="src/ShuttleBook.Migrator/ShuttleBook.Migrator.csproj" />

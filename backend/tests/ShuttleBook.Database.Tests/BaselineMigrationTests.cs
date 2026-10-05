@@ -15,12 +15,10 @@ public sealed class BaselineMigrationTests
         Assert.False(string.IsNullOrWhiteSpace(supplied),
             "SHUTTLEBOOK_TEST_CONNECTION_STRING is required. Run this project against a local/CI PostgreSQL server with PostGIS available and CREATE DATABASE/extension privileges. Missing infrastructure is NOT a pass.");
 
-        var settings = new NpgsqlConnectionStringBuilder(DatabaseConfiguration.RequireConnectionString(supplied))
-        {
-            Pooling = false,
-            Timeout = 5,
-            CommandTimeout = 30
-        };
+        var settings = LocalPostgresTestServer.Require(supplied);
+        settings.Pooling = false;
+        settings.Timeout = 5;
+        settings.CommandTimeout = 30;
         var databaseName = $"shuttlebook_f00_test_{Guid.NewGuid():N}";
         // The identifier is generated here; only this temporary database is ever dropped.
         var quotedName = new NpgsqlCommandBuilder().QuoteIdentifier(databaseName);

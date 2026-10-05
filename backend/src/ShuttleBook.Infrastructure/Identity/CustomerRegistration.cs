@@ -278,8 +278,13 @@ public static class ContactNormalizer
         {
             type = ContactType.Email;
             normalized = contact.Trim().ToLowerInvariant();
-            return normalized.Length is > 3 and <= 320 && normalized.Count(character => character == '@') == 1
-                && !normalized.Any(char.IsWhiteSpace);
+            if (normalized.Length is < 5 or > 320 || normalized.Any(char.IsWhiteSpace)
+                || !MailAddress.TryCreate(normalized, out var address) || address.Address != normalized)
+                return false;
+            var domain = address.Host;
+            return domain.Length <= 253 && domain.Contains('.') && domain.Split('.').All(label =>
+                label.Length is > 0 and <= 63 && char.IsLetterOrDigit(label[0])
+                && char.IsLetterOrDigit(label[^1]) && label.All(character => char.IsLetterOrDigit(character) || character == '-'));
         }
         if (string.Equals(contactType, "phone", StringComparison.OrdinalIgnoreCase))
         {

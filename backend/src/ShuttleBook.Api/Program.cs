@@ -7,11 +7,18 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
+if (builder.Configuration["DataProtection:KeysPath"] is { Length: > 0 } keysPath)
+{
+    if (!OperatingSystem.IsWindows())
+        throw new InvalidOperationException("The configured local data protection key path requires Windows DPAPI.");
+    builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(keysPath)).ProtectKeysWithDpapi();
+}
 var authRegisterPerIp = Math.Max(1, builder.Configuration.GetValue("RateLimits:AuthRegisterPerIp", 5));
 var authVerifyPerIp = Math.Max(1, builder.Configuration.GetValue("RateLimits:AuthVerifyPerIp", 10));
 builder.Services.AddShuttleBookDatabase(builder.Configuration);
@@ -52,7 +59,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
             var familyActive = await database.RefreshSessions.AnyAsync(item =>
                 item.UserId == userId && item.FamilyId == familyId && item.RevokedAt == null &&
                 item.ExpiresAt > DateTimeOffset.UtcNow, context.HttpContext.RequestAborted);
-            if (user is null || !AuthSessionService.CanLogin(user) || !familyActive ||
+            if (user is null || !AuthSessionService.CanUseSession(user) || !familyActive ||
                 principal.FindFirst("accountType")?.Value != AuthSessionService.AccountTypeName(user.AccountType))
                 context.Fail("Inactive session.");
         }
@@ -95,7 +102,7 @@ builder.Services.AddCors(options => options.AddPolicy("WebPortals", policy =>
 {
     if (origins.Length > 0)
     {
-        policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod();
+        policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod().WithExposedHeaders("Retry-After");
     }
 }));
 
@@ -121,6 +128,7 @@ app.MapGet("/health/ready", async (IReadinessProbe readiness, HttpContext contex
 });
 app.MapCustomerRegistrationEndpoints();
 app.MapAuthSessionEndpoints();
+app.MapAdminAuthEndpoints();
 app.MapPartnerRegistrationEndpoints();
 
 app.Run();

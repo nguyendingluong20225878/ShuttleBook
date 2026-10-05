@@ -1,3 +1,4 @@
+param([Parameter(ValueFromRemainingArguments = $true)][string[]]$TestArguments)
 . (Join-Path $PSScriptRoot 'Use-LocalEnvironment.ps1')
 if (-not $env:SHUTTLEBOOK_TEST_CONNECTION_STRING) {
     if (-not $localConfig) { throw 'Initialize local .env or set SHUTTLEBOOK_TEST_CONNECTION_STRING for a disposable local test server.' }
@@ -6,7 +7,7 @@ if (-not $env:SHUTTLEBOOK_TEST_CONNECTION_STRING) {
 Write-Host 'Database integration tests require a disposable local PostgreSQL/PostGIS server with CREATE DATABASE permission.'
 Push-Location $projectRoot
 try {
-    & $dotnetExecutable test backend/tests/ShuttleBook.Database.Tests --no-restore
+    & $dotnetExecutable test backend/tests/ShuttleBook.Database.Tests --no-restore @TestArguments
     $commandExit = $LASTEXITCODE
 } finally { Pop-Location }
 exit $commandExit

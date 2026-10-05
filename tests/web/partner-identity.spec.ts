@@ -69,3 +69,25 @@ test('partner registration catches mismatched passwords before making an API req
   await expect(page.getByRole('status')).toHaveText('Mật khẩu nhập lại chưa khớp.');
   expect(requested).toBe(false);
 });
+
+test('partner portal rejects an unexpected Admin session response', async ({ page }) => {
+  await page.route('http://localhost:5080/api/v1/auth/login', async route => {
+    const headers = { 'Access-Control-Allow-Origin': 'http://localhost:5174',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' };
+    if (route.request().method() === 'OPTIONS') {
+      await route.fulfill({ status: 204, headers });
+    } else {
+      await route.fulfill({ status: 200, contentType: 'application/json', headers,
+        body: JSON.stringify({ data: { accessToken: 'admin-access', refreshToken: 'admin-refresh',
+          user: { accountType: 'ADMIN', status: 'ACTIVE' } } }) });
+    }
+  });
+  await page.goto('http://localhost:5174');
+  await page.getByRole('button', { name: 'Đăng nhập', exact: true }).first().click();
+  await page.getByRole('textbox', { name: 'Email' }).fill('admin@example.test');
+  await page.getByLabel('Mật khẩu', { exact: true }).fill('test-password');
+  await page.getByRole('button', { name: 'Đăng nhập', exact: true }).last().click();
+  await expect(page.getByRole('status')).toHaveText('Tài khoản này không thuộc cổng chủ sân.');
+  await expect(page.getByRole('heading', { name: 'Hồ sơ chủ sân' })).toHaveCount(0);
+  expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
+});
