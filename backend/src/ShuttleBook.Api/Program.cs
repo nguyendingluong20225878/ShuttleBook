@@ -15,6 +15,7 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Amazon;
 using Amazon.S3;
+using ShuttleBook.Api.Discovery;
 
 var builder = WebApplication.CreateBuilder(args);
 if (builder.Configuration["DataProtection:KeysPath"] is { Length: > 0 } keysPath)
@@ -166,6 +167,7 @@ app.MapOnboardingEndpoints();
 app.MapMediaEndpoints();
 app.MapNotificationEndpoints();
 app.MapCourtOperationsEndpoints();
+app.MapPublicVenuesEndpoints();
 
 app.Run();
 

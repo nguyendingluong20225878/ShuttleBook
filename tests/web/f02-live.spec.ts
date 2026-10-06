@@ -26,7 +26,7 @@ test('partner and Admin complete onboarding and court operations through real br
   expect((await fetch('http://localhost:5080/health/ready')).status).toBe(200);
   await context.route('**/*', route => {
     const origin = new URL(route.request().url()).origin;
-    return ['http://localhost:5174', 'http://localhost:5175', 'http://localhost:5080'].includes(origin)
+    return ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175', 'http://localhost:5080'].includes(origin)
       ? route.continue() : route.abort();
   });
   // This live flow exercises browser → API → PostGIS. MapTiler responses are stubbed
@@ -46,6 +46,7 @@ test('partner and Admin complete onboarding and court operations through real br
   const contact = `f02-live-${randomUUID()}@example.test`;
   const password = `F02-${randomUUID()}!Aa1`;
   const clubName = `F02 Club ${randomUUID().slice(0, 8)}`;
+  const venueName = `F02 Venue ${randomUUID().slice(0, 8)}`;
 
   await page.goto('http://localhost:5174');
   await page.getByLabel('Email', { exact: true }).fill(contact);
@@ -69,33 +70,33 @@ test('partner and Admin complete onboarding and court operations through real br
   await expect(page.getByRole('heading', { name: 'Thêm cơ sở' })).toBeVisible();
 
   const venue = page.getByRole('heading', { name: 'Thêm cơ sở' }).locator('..');
-  await venue.getByLabel('Tên', { exact: true }).fill('F02 Venue');
+  await venue.getByLabel('Tên', { exact: true }).fill(venueName);
   await venue.getByPlaceholder('Nhập địa chỉ, ví dụ: 31 ngõ 16 Hoàng Cầu - Hà Nội').fill('31 ngõ 16 Hoàng Cầu - Hà Nội');
   await page.getByRole('button', { name: '31 ngõ 16 Hoàng Cầu, Hà Nội' }).click();
   await venue.getByRole('button', { name: 'Xác nhận vị trí này' }).click();
   await venue.getByLabel('Liên hệ cơ sở').fill('Test venue contact');
   await venue.getByRole('button', { name: 'Lưu cơ sở' }).click();
-  await expect(page.getByRole('heading', { name: 'F02 Venue · DRAFT' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: `${venueName} · DRAFT` })).toBeVisible();
 
   const court = page.getByRole('heading', { name: 'Thêm sân' }).locator('..');
-  await court.getByLabel('Cơ sở').selectOption({ label: 'F02 Venue' });
+  await court.getByLabel('Cơ sở').selectOption({ label: venueName });
   await court.getByLabel('Tên sân').fill('F02 Court');
   await court.getByRole('button', { name: 'Lưu sân' }).click();
   await expect(page.getByText('Sân F02 Court:')).toBeVisible();
   const schedule = page.getByRole('heading', { name: 'Giờ và giá theo sân' }).locator('..');
-  await schedule.locator('select').first().selectOption({ label: 'F02 Venue / F02 Court' });
+  await schedule.locator('select').first().selectOption({ label: `${venueName} / F02 Court` });
   await schedule.getByRole('button', { name: 'Lưu giờ/giá' }).click();
   await expect(page.getByText('Sân F02 Court: 1 ngày mở cửa, 1 khung giá')).toBeVisible();
   await page.getByRole('button', { name: 'Gửi hồ sơ duyệt' }).click();
   await expect(page.getByText('Yêu cầu không thành công (INCOMPLETE_PROFILE).')).toBeVisible();
 
   const image = page.getByRole('heading', { name: 'Ảnh cơ sở' }).locator('..');
-  await image.locator('select').selectOption({ label: 'F02 Venue' });
+  await image.locator('select').selectOption({ label: venueName });
   await image.getByLabel('Ảnh cơ sở').setInputFiles({ name: 'venue.png', mimeType: 'image/png', buffer: png });
   await image.getByRole('button', { name: 'Tải ảnh' }).click();
   await expect(page.getByText('Ảnh: Đã tải')).toBeVisible();
   const payment = page.getByRole('heading', { name: 'Tài khoản nhận tiền' }).locator('..');
-  await payment.locator('select').selectOption({ label: 'F02 Venue' });
+  await payment.locator('select').selectOption({ label: venueName });
   await payment.getByLabel('Mã ngân hàng').fill('TEST');
   await payment.getByLabel('Tên tài khoản').fill('F02 CLUB');
   await payment.getByLabel('Số tài khoản').fill('1234567890');
@@ -158,15 +159,35 @@ test('partner and Admin complete onboarding and court operations through real br
   await preview.getByRole('button', { name: 'Xem giá' }).click();
   await expect(page.getByText('Tổng giá: 600.000 VND · 4 ca')).toBeVisible();
 
+  const customer = await context.newPage();
+  await customer.goto('http://localhost:5173/venues');
+  await customer.getByLabel('Tên sân hoặc địa chỉ').fill(venueName);
+  await customer.getByRole('button', { name: 'Tìm sân' }).click();
+  const resultCard = customer.locator('.venue-card').filter({ has: customer.getByRole('heading', { name: venueName }) });
+  await expect(resultCard).toBeVisible();
+  await resultCard.getByRole('link', { name: 'Xem lịch các sân' }).click();
+  await expect(customer.getByRole('heading', { name: venueName })).toBeVisible();
+  await customer.getByLabel('Ngày chơi').fill(nextMonday);
+  await expect(customer.getByRole('rowheader', { name: /F02 Court/ })).toBeVisible();
+  await expect(customer.getByRole('button', { name: /F02 Court, 08:00 đến 08:30, Còn trống, 200.000đ/ })).toBeVisible();
+  await expect(customer.getByRole('button', { name: /F02 Court, 09:00 đến 09:30, Còn trống, 100.000đ/ })).toBeVisible();
+  await expect(customer.getByRole('img', { name: `Ảnh ${venueName}` })).toBeVisible();
+
   const maintenance = page.getByRole('heading', { name: 'Bảo trì sân' }).locator('..');
+  await maintenance.getByLabel('Ngày').fill(nextMonday);
   await maintenance.getByLabel('Lý do').fill('F03 live maintenance');
   await maintenance.getByRole('button', { name: 'Khóa ca bảo trì' }).click();
   await expect(page.getByText('F03 live maintenance')).toBeVisible();
+  await customer.getByRole('button', { name: 'Làm mới lịch' }).click();
+  await expect(customer.locator('.slot-label').filter({ hasText: 'Đã kín' }).first()).toBeVisible();
+  await expect(customer.getByRole('button', { name: /F02 Court, 08:00 đến 08:30/ })).toHaveCount(0);
   await page.getByRole('button', { name: 'Hủy bảo trì' }).click();
   await expect(page.getByText('Chưa có ca bảo trì.')).toBeVisible();
+  await customer.getByRole('button', { name: 'Làm mới lịch' }).click();
+  await expect(customer.getByRole('button', { name: /F02 Court, 08:00 đến 08:30, Còn trống, 200.000đ/ })).toBeVisible();
 
   const revision = page.getByRole('heading', { name: 'Đề nghị thay đổi thông tin quan trọng' }).locator('..');
-  await revision.locator('select').selectOption({ label: 'F02 Venue' });
+  await revision.locator('select').selectOption({ label: venueName });
   await revision.getByLabel('Mã ngân hàng').fill('TEST');
   await revision.getByLabel('Tên tài khoản').fill('F02 CLUB UPDATED');
   await revision.getByLabel('Số tài khoản').fill('9876543210');

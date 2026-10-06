@@ -28,7 +28,7 @@ Set-Location 'C:\Users\luong\Desktop\CLong'
 
 `.env` ở gốc repo giữ thông tin PostgreSQL, khóa identity, `ASPNETCORE_ENVIRONMENT`, `DOTNET_ENVIRONMENT`, `ASPNETCORE_URLS` và `VITE_API_BASE_URL`. Docker Compose và các script npm bên dưới tự nạp cấu hình này; không cần gõ từng lệnh `$env:...` trong terminal. Chỉ `.env.example` có placeholder được đưa vào Git.
 
-Partner portal dùng MapTiler SDK cho bản đồ và MapTiler Geocoding API cho gợi ý địa chỉ. Tạo một API key MapTiler, đặt thành `VITE_MAPTILER_API_KEY` trong `.env` local và không commit. Vì key được dùng trong trình duyệt nên sẽ thấy được trong DevTools; giới hạn key theo website/domain và quota trong tài khoản MapTiler. Local partner origin là `http://localhost:5174`. Khởi động lại `npm.cmd run dev:partner` sau khi sửa `.env`. Khi thiếu key, form chặn chọn/lưu địa chỉ mới; venue đã lưu vẫn giữ địa chỉ/toạ độ hiện tại. MapTiler ghi rõ gói Cloud Free chỉ dành cho non-commercial và R&D; kiểm tra [pricing](https://www.maptiler.com/cloud/pricing/) và [điều khoản Cloud](https://www.maptiler.com/terms/cloud/) trước khi dùng ShuttleBook thương mại. Xem [MapTiler SDK JS](https://docs.maptiler.com/sdk-js/) và [Geocoding API](https://docs.maptiler.com/cloud/api/geocoding/).
+Partner portal dùng MapTiler SDK cho bản đồ và MapTiler Geocoding API cho gợi ý địa chỉ. Tạo một API key MapTiler, đặt thành `VITE_MAPTILER_API_KEY` trong `.env` local và không commit. Vì key được dùng trong trình duyệt nên sẽ thấy được trong DevTools; giới hạn key theo website/domain và quota trong tài khoản MapTiler. Local partner/customer origins là `http://localhost:5174` và `http://localhost:5173`. Khởi động lại Vite của hai portal sau khi sửa `.env`. Khi thiếu key, form partner chặn chọn/lưu địa chỉ mới; venue đã lưu vẫn giữ địa chỉ/toạ độ hiện tại. Customer vẫn tìm theo tên/địa chỉ khi thiếu key hoặc không cấp vị trí. MapTiler ghi rõ gói Cloud Free chỉ dành cho non-commercial và R&D; kiểm tra [pricing](https://www.maptiler.com/cloud/pricing/) và [điều khoản Cloud](https://www.maptiler.com/terms/cloud/) trước khi dùng ShuttleBook thương mại. Xem [MapTiler SDK JS](https://docs.maptiler.com/sdk-js/) và [Geocoding API](https://docs.maptiler.com/cloud/api/geocoding/).
 
 Doctor trả exit code 1 khi còn thiếu công cụ. Nếu PowerShell chặn script, có thể chạy từng lệnh bằng `powershell -ExecutionPolicy Bypass -File .\scripts\Doctor.ps1`; tùy chọn chỉ áp dụng tiến trình đó, không đổi execution policy toàn máy.
 
@@ -134,6 +134,26 @@ npm.cmd run admin:revoke-sessions
 3. Giữ `npm.cmd run dev:worker` chạy để thông báo gửi duyệt/quyết định đi từ outbox tới bảng thông báo. Nếu Worker tắt, quyết định vẫn lưu; khi Worker bật lại nó retry. Test tự động DB dùng database tạm và không tác động database phát triển mặc định.
 
 Development dùng adapter file private `.media-local/` để tải ảnh/QR, URL PUT ký HMAC hết hạn sau 5 phút. Không đưa thư mục này vào Git. Khi triển khai S3 private, đặt biến môi trường tiến trình `Media__Mode=S3`, `Media__S3Region`, `Media__S3Bucket` và IAM credentials bằng cơ chế chuẩn của AWS SDK; cấp quyền `s3:PutObject`, `s3:GetObject`, bật CORS chỉ cho origin portal và header `Content-Type`, `x-amz-checksum-sha256`, `If-None-Match`. Không đưa credentials vào `.env.example` hoặc repo. Upload S3 chưa được nghiệm thu trong môi trường local này.
+
+### Kiểm tra F04: khách tìm sân và xem lịch
+
+Sau khi business được Admin duyệt thành `ACTIVE`, venue thành `PUBLISHED` và có ít nhất một court `ACTIVE`, mở `http://localhost:5173/venues` ở browser. Tìm theo tên/địa chỉ, mở **Xem lịch các sân**, chọn ngày tương lai có giờ mở và giá. Mỗi hàng là một sân, mỗi cột là một ca 30 phút. Xanh nhạt là ca có giá và còn trống, đỏ là ca bị giữ, xám là ngoài giờ/chưa có giá, tím là ca đang chọn; mỗi ô cũng có chữ mô tả. Chọn các ca liên tiếp để xem tổng giá tham khảo và điều kiện thời lượng. F04 chưa gửi yêu cầu đặt sân; F05 sẽ kiểm tra lại lịch/giá khi tạo đơn.
+
+Trong portal partner `http://localhost:5174`, tạo bảo trì đúng sân/ngày/giờ đang xem. Quay lại trang khách, nhấn **Làm mới lịch**: ca đó chuyển thành **Đã kín**. Hủy bảo trì rồi làm mới: ca có giá trở thành **Còn trống**. Có thể chọn **Xem sân** để chỉ hiển thị một hàng. Thay ngày hoặc sân rồi dùng Back/Forward của trình duyệt để kiểm tra URL giữ `date`/`courtId`. Tắt quyền định vị để kiểm tra tìm bằng chữ vẫn hoạt động; khi cho quyền, nút **Dùng vị trí của tôi** gọi nearby bằng PostGIS với bán kính chọn. Kiểm tra màn desktop và mobile hoặc cửa sổ hẹp: bảng có thể cuộn ngang.
+
+Có thể đọc API không cần đăng nhập từ terminal VS Code PowerShell sau khi `/health/ready` trả Healthy:
+
+```powershell
+$venues = Invoke-RestMethod 'http://localhost:5080/api/v1/venues?q=F02'
+$venues.data.items | Select-Object id,name,address,imageUrl
+$venueId = $venues.data.items[0].id
+$date = (Get-Date).AddDays(7).ToString('yyyy-MM-dd')
+Invoke-RestMethod "http://localhost:5080/api/v1/venues/$venueId/availability?date=$date"
+```
+
+Đổi `q` thành tên venue vừa tạo và `$date` thành ngày venue có giờ hoạt động; nếu danh sách rỗng, kiểm tra trạng thái business/venue/court. Kết quả availability trả `courts[].slots[]` với giờ local, UTC, `status` và `pricePerSlot` VND/30 phút. Ảnh venue nằm ở endpoint `/api/v1/venues/{id}/image` khi upload đã `READY`; ảnh local được lưu private dưới `backend/src/ShuttleBook.Api/.media-local` và không mất vì F5. Mất file trên đĩa local hoặc xóa DB sẽ làm ảnh không đọc được; S3 mode lưu object trong bucket riêng.
+
+S3 private dùng lại upload F02: `.env` local có thể đặt `Media__Mode=S3`, `Media__S3Region=<region>`, `Media__S3Bucket=<bucket-test>` khi **đã có bucket thử nghiệm và AWS credentials trên máy**. Không đặt key/secret trong repo hoặc gửi qua chat. Bucket phải chặn public access; IAM cần `s3:PutObject` và `s3:GetObject` cho prefix media của bucket (`HEAD` object dùng quyền đọc object). CORS bucket giới hạn origin partner `http://localhost:5174` cho presigned PUT; nếu dùng fetch trực tiếp signed GET từ customer `http://localhost:5173`, cho GET từ origin đó. Cho các header `Content-Type`, `x-amz-checksum-sha256`, `If-None-Match` theo request upload, không dùng wildcard origin ở môi trường thật. Kiểm tra presigned PUT → complete → public venue image redirect → signed GET, đồng thời kiểm tra object không đọc trực tiếp bằng URL không ký và QR không mở được qua route ảnh venue. Hiện chưa có bucket/credentials thử nghiệm nên các bước provider S3 thật là **NOT RUN**; adapter local và S3 path code không chứng minh S3 runtime.
 
 ### Kiểm tra vận hành F03 bằng UI
 

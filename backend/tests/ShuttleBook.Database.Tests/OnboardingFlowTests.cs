@@ -321,7 +321,8 @@ public sealed partial class OnboardingFlowTests
             var courtId = court.GetProperty("id").GetGuid();
             await Problem(await ownerA.PostAsync($"{Root}/businesses/{businessId}/submit", null),
                 HttpStatusCode.Conflict, "INCOMPLETE_PROFILE");
-            await Problem(await anonymous.GetAsync("/api/v1/venues"), HttpStatusCode.NotFound, "NOT_FOUND");
+            var publicList = await Data(await anonymous.GetAsync("/api/v1/venues"));
+            Assert.Empty(publicList.GetProperty("items").EnumerateArray());
             await Problem(await ownerB.PutAsJsonAsync($"{Root}/courts/{courtId}/schedule", ScheduleBody()),
                 HttpStatusCode.NotFound, "NOT_FOUND");
             await Problem(await ownerA.PutAsJsonAsync($"{Root}/courts/{courtId}/schedule", new
@@ -382,7 +383,9 @@ public sealed partial class OnboardingFlowTests
             var resubmitted = await Data(await ownerA.PostAsync($"{Root}/businesses/{businessId}/submit", null));
             var nextApprovalId = resubmitted.GetProperty("id").GetGuid();
             await Data(await admin.PostAsync($"/api/v1/admin/approval-requests/{nextApprovalId}/approve", null));
-            await Problem(await anonymous.GetAsync("/api/v1/venues"), HttpStatusCode.NotFound, "NOT_FOUND");
+            var publishedList = await Data(await anonymous.GetAsync("/api/v1/venues"));
+            Assert.Equal(venueId, Assert.Single(publishedList.GetProperty("items").EnumerateArray())
+                .GetProperty("id").GetGuid());
             await Problem(await admin.PostAsync($"/api/v1/admin/approval-requests/{nextApprovalId}/approve", null),
                 HttpStatusCode.Conflict, "STATE_CONFLICT");
             await using (var db = context())

@@ -1,0 +1,125 @@
+:root { font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #18372f; background: #f5f8f5; font-synthesis: none; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+button, input, select { font: inherit; }
+button { cursor: pointer; }
+a { color: #176d5d; }
+a:hover { color: #0d4b40; }
+:focus-visible { outline: 3px solid #763dbd; outline-offset: 2px; }
+.customer-shell { max-width: 1500px; min-height: 100vh; margin: 0 auto; padding: 0 24px 56px; }
+.site-header { display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  min-height: 74px; border-bottom: 1px solid #dbe7df; }
+.site-header .brand { color: #164f43; font-size: 1.42rem; font-weight: 800; letter-spacing: -.035em; text-decoration: none; }
+.site-header nav { display: flex; gap: 18px; flex-wrap: wrap; }
+.site-header nav a { font-weight: 650; text-decoration: none; }
+.hero { padding: 52px 0 26px; }
+.hero h1, .venue-hero h1 { margin: 0 0 12px; font-size: clamp(2rem, 4vw, 3.5rem); line-height: 1.12; letter-spacing: -.045em; }
+.hero p, .venue-hero p { margin: 0 0 12px; color: #4c6259; }
+.eyebrow { color: #16826c !important; font-size: .78rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+.search-panel { padding: 24px; border: 1px solid #d8e5dc; border-radius: 20px; background: #fff; box-shadow: 0 14px 35px #15382d0b; }
+.search-panel label, .schedule-controls label { display: block; margin-bottom: 7px; font-weight: 700; }
+.input-row, .area-controls { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
+.input-row input { flex: 1; min-width: 240px; }
+.input-row input, .area-input input, .area-controls select, .schedule-controls input, .schedule-controls select {
+  min-height: 44px; padding: 9px 12px; border: 1px solid #a9c3b5; border-radius: 10px; background: #fff; color: #18372f; }
+.area-input { min-width: 270px; flex: 1; position: relative; }
+.area-input input { width: 100%; }
+.search-panel button, .schedule-controls button, .venue-list + button { min-height: 44px; padding: 10px 16px;
+  border: 0; border-radius: 10px; background: #176d5d; color: #fff; font-weight: 700; }
+.search-panel button:hover, .schedule-controls button:hover, .venue-list + button:hover { background: #125748; }
+.search-divider { margin: 18px 0; color: #668075; font-size: .85rem; }
+.suggestions { position: absolute; z-index: 5; left: 0; right: 0; top: 100%; margin: 4px 0 0;
+  padding: 6px; list-style: none; border: 1px solid #d8e5dc; border-radius: 10px; background: #fff;
+  box-shadow: 0 14px 28px #15382d24; }
+.suggestions button { width: 100%; background: #fff; color: #18372f; text-align: left; }
+.suggestions button:hover { background: #eef8f2; }
+.results-layout { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(300px, .95fr); gap: 28px; margin-top: 36px; }
+.section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.section-heading h2 { margin: 0 0 18px; font-size: 1.35rem; }
+.venue-list { display: grid; gap: 14px; margin-bottom: 18px; }
+.venue-card { display: grid; grid-template-columns: 170px minmax(0,1fr); gap: 18px; overflow: hidden;
+  border: 1px solid #d8e5dc; border-radius: 16px; background: #fff; }
+.venue-card img, .venue-card .image-placeholder { width: 170px; height: 150px; object-fit: cover; }
+.image-placeholder { display: grid; place-items: center; min-height: 150px; background: linear-gradient(135deg,#d3e7d9,#a5d2c4); color: #286457; font-weight: 800; }
+.venue-card > div:last-child { padding: 18px 18px 14px 0; }
+.venue-card h3 { margin: 0 0 6px; }
+.venue-card h3 a { text-decoration: none; }
+.venue-card p { margin: 0 0 8px; color: #516960; }
+.venue-card .distance { color: #176d5d; font-weight: 700; }
+.text-link { font-weight: 750; text-decoration: none; }
+.map-wrap { position: sticky; top: 20px; }
+.venue-map { min-height: 430px; border: 1px solid #d8e5dc; border-radius: 16px; overflow: hidden; background: #e6f2eb; }
+.map-marker { width: 36px; height: 36px; border: 3px solid #fff; border-radius: 50%; color: #fff; background: #176d5d;
+  font-size: 1.2rem; box-shadow: 0 2px 9px #0d3c3199; }
+.note { padding: 24px; border-radius: 12px; background: #eaf3ed; color: #536e61; }
+.breadcrumbs { margin: 22px 0; color: #60776d; }
+.venue-hero { display: grid; grid-template-columns: minmax(230px, 370px) 1fr; gap: 30px; align-items: center;
+  min-height: 250px; padding: 20px; border: 1px solid #d8e5dc; border-radius: 20px; background: #fff; }
+.venue-hero img, .venue-hero .image-placeholder { width: 100%; height: 230px; object-fit: cover; border-radius: 13px; }
+.schedule-controls { display: flex; align-items: end; gap: 14px; flex-wrap: wrap; padding: 25px 0 18px; }
+.schedule-controls label { margin: 0; align-self: center; }
+.schedule-controls select { min-width: 160px; }
+.schedule-section { border: 1px solid #d3e2da; border-radius: 18px; overflow: hidden; background: #fff; }
+.schedule-intro { display: flex; align-items: start; justify-content: space-between; gap: 20px; flex-wrap: wrap; padding: 20px 22px 15px; }
+.schedule-intro h2 { margin: 0 0 5px; }
+.schedule-intro p { margin: 0; color: #5b7066; }
+.schedule-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: .86rem; }
+.schedule-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend-dot { display: inline-block; width: 15px; height: 15px; border-radius: 4px; border: 1px solid #c5d0c9; }
+.legend-dot.available { background: #eefbf4; border-color: #90d4af; }
+.legend-dot.reserved { background: #ef7770; border-color: #c85d58; }
+.legend-dot.closed { background: #d8d9d7; border-color: #aaa; }
+.legend-dot.selected { background: #aa78d3; border-color: #7d4dab; }
+.schedule-scroll { max-height: 690px; overflow: auto; border-top: 1px solid #d3e2da; }
+.schedule-grid { border-collapse: separate; border-spacing: 0; table-layout: fixed; min-width: max-content; width: 100%; }
+.schedule-grid thead th { position: sticky; top: 0; z-index: 3; height: 68px; min-width: 112px; padding: 12px 7px;
+  border-right: 1px solid #a9d1cf; border-bottom: 2px solid #8db9b5; background: #c9ecf1; color: #163a35;
+  font-size: 1.04rem; text-align: center; }
+.schedule-grid thead .time-heading { padding: 0; font-size: .88rem; }
+.time-heading .time-start, .time-heading .time-end { position: absolute; top: 9px; white-space: nowrap; font-weight: 800; }
+.time-heading .time-start { left: 5px; }
+.time-heading .time-end { right: 5px; }
+.time-heading .time-duration { position: absolute; left: 0; right: 0; bottom: 9px;
+  color: #4b716c; font-size: .72rem; font-weight: 650; }
+.time-heading::before, .time-heading:last-child::after { position: absolute; bottom: 0; height: 16px;
+  border-left: 3px solid #d8ac45; content: ''; }
+.time-heading::before { left: 0; }
+.time-heading:last-child::after { right: 0; }
+.schedule-grid .court-heading { position: sticky; left: 0; z-index: 2; width: 190px; min-width: 190px;
+  padding: 12px; border-right: 2px solid #9fcbbb; border-bottom: 1px solid #b7d3c5;
+  background: #ddf3e7; color: #173c31; text-align: left; }
+.schedule-grid thead .court-heading { z-index: 4; background: #c9ecf1; }
+.court-heading strong, .court-heading small { display: block; }
+.court-heading small { margin-top: 5px; color: #506b5e; font-size: .74rem; font-weight: 500; }
+.slot-cell { width: 112px; min-width: 112px; height: 93px; padding: 0; border-right: 1px solid #d2ddd5;
+  border-bottom: 1px solid #d2ddd5; text-align: center; }
+.slot-cell.available { background: #f1fbf5; }
+.slot-cell.reserved { background: #ef7770; color: #42221f; }
+.slot-cell.no_price, .slot-cell.closed { background: #d8d9d7; color: #404945; }
+.slot-cell.past { background: #e6e9e7; color: #67736a; }
+.slot-cell.is-selected { background: #aa78d3; color: #2d163f; }
+.slot-cell button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+  width: 100%; height: 100%; padding: 7px 3px; border: 0; background: transparent; color: inherit; }
+.slot-cell button:hover { box-shadow: inset 0 0 0 3px #176d5d; }
+.slot-cell button span, .slot-label { font-size: .85rem; font-weight: 750; }
+.slot-cell button small { font-size: .76rem; font-weight: 700; }
+.slot-label { display: block; padding: 7px; }
+.selection-summary { display: flex; gap: 8px 18px; flex-wrap: wrap; align-items: baseline; padding: 16px 22px;
+  border-top: 1px solid #dec5ee; background: #f6eafb; }
+.selection-summary small { flex-basis: 100%; }
+.schedule-note { margin: 0; padding: 14px 22px; border-top: 1px solid #e1ebe5; color: #596d63; font-size: .86rem; }
+@media (max-width: 900px) { .results-layout { grid-template-columns: 1fr; }
+  .map-wrap { position: static; } .venue-map { min-height: 310px; } }
+@media (max-width: 630px) { .customer-shell { padding: 0 14px 34px; }
+  .site-header { min-height: 66px; } .site-header nav { gap: 10px; font-size: .87rem; }
+  .hero { padding-top: 33px; } .search-panel { padding: 17px; }
+  .input-row input, .input-row button, .area-controls > button, .area-input { width: 100%; }
+  .venue-card { grid-template-columns: 110px 1fr; gap: 12px; }
+  .venue-card img, .venue-card .image-placeholder { width: 110px; height: 135px; font-size: .78rem; text-align: center; }
+  .venue-card > div:last-child { padding: 12px 8px 8px 0; }
+  .venue-hero { grid-template-columns: 1fr; gap: 12px; }
+  .venue-hero img, .venue-hero .image-placeholder { height: 180px; }
+  .schedule-grid .court-heading { width: 145px; min-width: 145px; }
+  .schedule-grid thead th, .slot-cell { min-width: 104px; width: 104px; }
+}
