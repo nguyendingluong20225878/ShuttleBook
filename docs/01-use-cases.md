@@ -10,7 +10,7 @@
 | Admin | Duyệt doanh nghiệp/cơ sở, quản trị operator, xử lý khiếu nại và audit |
 | Scheduler/Worker | Hết hạn booking chưa báo chuyển khoản, gửi notification và retry |
 | Notification Provider | Email, SMS, Zalo hoặc push notification |
-| Google Maps | Hiển thị bản đồ, hỗ trợ nhập/geocode địa chỉ và marker |
+| MapTiler | Hiển thị bản đồ, hỗ trợ nhập/geocode địa chỉ và marker |
 | AWS S3 | Lưu ảnh sân, QR và bằng chứng chuyển khoản |
 
 Mỗi tài khoản có một `account_type`: `CUSTOMER`, `VENUE_OPERATOR` hoặc `ADMIN`. Chủ sân tự đăng ký tại cổng đối tác và chỉ có quyền trên doanh nghiệp nháp do mình tạo; nhân viên tham gia bằng lời mời. Membership cấp doanh nghiệp cho phép quản lý toàn bộ chi nhánh; quyền cấp cơ sở chỉ cho phép thao tác trên các cơ sở được chỉ định.
@@ -27,7 +27,7 @@ flowchart LR
     Admin[Admin]
     Worker[Scheduler / Worker]
     Notify[Notification Provider]
-    Map[Google Maps]
+    Map[MapTiler]
     S3[AWS S3]
 
     subgraph System[Nền tảng đặt sân cầu lông]
@@ -128,7 +128,7 @@ Luồng booking kết thúc ở **Đã xác nhận**. Khách đến sân chơi; 
 |---|---|
 | Mục tiêu | Tìm venue gần theo vị trí và bán kính |
 | Tiền điều kiện | Doanh nghiệp/cơ sở/sân đã publish và cơ sở có tọa độ hợp lệ |
-| Luồng chính | Trình duyệt lấy vị trí hoặc Google Maps geocode địa chỉ; PostGIS lọc cơ sở published theo bán kính; trả danh sách, marker và khoảng cách; khách chọn sân để mở trang chi tiết và tiếp tục UC-03, UC-04 hoặc UC-05 |
+| Luồng chính | Trình duyệt lấy vị trí hoặc MapTiler geocode địa chỉ; PostGIS lọc cơ sở published theo bán kính; trả danh sách, marker và khoảng cách; khách chọn sân để mở trang chi tiết và tiếp tục UC-03, UC-04 hoặc UC-05 |
 | Luồng thay thế | Nếu từ chối location, tìm theo tỉnh/thành hoặc quận/huyện |
 | Quy tắc | Kết quả search không giữ chỗ; backend phải kiểm tra lại khi tạo booking; không lưu vị trí customer lâu dài |
 | Acceptance | Cơ sở gần hơn được xếp trước; nearby không yêu cầu ngày/giờ/số ca hoặc trả quote; sau khi chọn sân, khách dùng chung luồng chọn Vãng lai/Cố định, ngày giờ và ca cần đặt |

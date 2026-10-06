@@ -1,5 +1,6 @@
 # Local secrets and machine-specific settings
 .env
+.media-local/
 .env.*
 !.env.example
 **/appsettings.Local.json

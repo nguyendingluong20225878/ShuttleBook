@@ -28,6 +28,8 @@ Set-Location 'C:\Users\luong\Desktop\CLong'
 
 `.env` ở gốc repo giữ thông tin PostgreSQL, khóa identity, `ASPNETCORE_ENVIRONMENT`, `DOTNET_ENVIRONMENT`, `ASPNETCORE_URLS` và `VITE_API_BASE_URL`. Docker Compose và các script npm bên dưới tự nạp cấu hình này; không cần gõ từng lệnh `$env:...` trong terminal. Chỉ `.env.example` có placeholder được đưa vào Git.
 
+Partner portal dùng MapTiler SDK cho bản đồ và MapTiler Geocoding API cho gợi ý địa chỉ. Tạo một API key MapTiler, đặt thành `VITE_MAPTILER_API_KEY` trong `.env` local và không commit. Vì key được dùng trong trình duyệt nên sẽ thấy được trong DevTools; giới hạn key theo website/domain và quota trong tài khoản MapTiler. Local partner origin là `http://localhost:5174`. Khởi động lại `npm.cmd run dev:partner` sau khi sửa `.env`. Khi thiếu key, form chặn chọn/lưu địa chỉ mới; venue đã lưu vẫn giữ địa chỉ/toạ độ hiện tại. MapTiler ghi rõ gói Cloud Free chỉ dành cho non-commercial và R&D; kiểm tra [pricing](https://www.maptiler.com/cloud/pricing/) và [điều khoản Cloud](https://www.maptiler.com/terms/cloud/) trước khi dùng ShuttleBook thương mại. Xem [MapTiler SDK JS](https://docs.maptiler.com/sdk-js/) và [Geocoding API](https://docs.maptiler.com/cloud/api/geocoding/).
+
 Doctor trả exit code 1 khi còn thiếu công cụ. Nếu PowerShell chặn script, có thể chạy từng lệnh bằng `powershell -ExecutionPolicy Bypass -File .\scripts\Doctor.ps1`; tùy chọn chỉ áp dụng tiến trình đó, không đổi execution policy toàn máy.
 
 ## 3. Docker Desktop
@@ -66,7 +68,7 @@ npm.cmd run db:migrate
 npm.cmd run db:migrate
 ```
 
-PostgreSQL bind `127.0.0.1:54329`; named volume giữ dữ liệu khi restart. Migrator tạo extensions, EF migration history và các bảng identity của F01; lần hai không áp dụng lại migration đã có. Không tự migrate trong API/Worker. Chưa có bảng booking/sân.
+PostgreSQL bind `127.0.0.1:54329`; named volume giữ dữ liệu khi restart. Migrator tạo extensions, EF migration history, bảng identity F01 và schema onboarding F02 gồm business/venue/court, PostGIS location, approval, media và outbox. Lần hai không áp dụng lại migration đã có. Không tự migrate trong API/Worker. Chưa có bảng booking.
 
 Không dùng `docker compose down -v` khi cần giữ dữ liệu. Thay mật khẩu trong `.env` không tự thay mật khẩu của volume đã khởi tạo; cần cập nhật database có chủ đích, không xóa dữ liệu để xử lý cho nhanh.
 
@@ -80,7 +82,7 @@ npm.cmd run dev:api
 ```
 
 ```powershell
-# Terminal Worker: khung BackgroundService, chưa xử lý notification/expiry
+# Terminal Worker: xử lý transactional outbox và thông báo in-app F02
 npm.cmd run dev:worker
 ```
 
@@ -91,9 +93,11 @@ npm.cmd run dev:partner
 npm.cmd run dev:admin
 ```
 
-Mở `http://localhost:5173`, `http://localhost:5174`, `http://localhost:5175`. Cổng khách/đối tác có luồng identity; cổng admin có đăng nhập và thông báo chưa có module quản trị. Chưa có chức năng booking. CORS Development chỉ chấp nhận chính xác ba origin này; dùng 127.0.0.1 thay localhost là origin khác.
+Mở `http://localhost:5173`, `http://localhost:5174`, `http://localhost:5175`. Cổng đối tác có hồ sơ chủ sân F02; cổng Admin có danh sách và quyết định duyệt. Chưa có chức năng booking. CORS Development chỉ chấp nhận chính xác ba origin này; dùng 127.0.0.1 thay localhost là origin khác.
 
 Trong môi trường local, OTP được gửi đến Mailpit tại `http://localhost:8025`, kể cả khi bạn nhập một địa chỉ email thật; Mailpit không chuyển tiếp thư ra ngoài. Hãy tìm thư theo địa chỉ vừa đăng ký. Phản hồi đăng ký `202` là thông báo chung để tránh lộ tài khoản tồn tại: nếu contact đã xác minh hoặc thuộc loại tài khoản khác, hệ thống không gửi mã mới. Dùng contact thử nghiệm mới khi kiểm tra luồng đăng ký.
+
+Chỉ kiểm tra health **sau khi terminal `npm.cmd run dev:api` báo đang lắng nghe ở cổng 5080**. Nếu `/health/live` khỏe nhưng `/health/ready` trả 503, xác nhận đúng database local rồi kiểm tra migration còn pending trước khi chạy Migrator.
 
 ```powershell
 Invoke-RestMethod http://localhost:5080/health/live
@@ -123,6 +127,20 @@ npm.cmd run admin:revoke-sessions
 
 `rotate` và `suspend` thu hồi mọi phiên; `activate` chỉ cho phép đăng nhập phiên mới. Các lệnh thao tác trên database từ `ConnectionStrings__ShuttleBook` mà script local nạp; hãy xác nhận đúng môi trường trước khi chạy. Đăng nhập Admin ở `http://localhost:5175` sau khi API local hoạt động.
 
+### Kiểm tra luồng F02 bằng UI
+
+1. Đăng ký/xác minh chủ sân tại `http://localhost:5174`, đăng nhập `VENUE_OPERATOR/PENDING_ONBOARDING`. Tạo business, cơ sở có địa chỉ/liên hệ riêng/tọa độ/múi giờ, sân, giờ và giá theo ca 30 phút; tải ảnh cơ sở và QR, khai tài khoản nhận tiền. Thiếu phần bắt buộc thì **Gửi hồ sơ duyệt** trả `INCOMPLETE_PROFILE`.
+2. Gửi hồ sơ, đăng nhập Admin tại `http://localhost:5175`, tải danh sách, xem snapshot/ảnh private và chọn **Yêu cầu chỉnh sửa** với lý do hoặc **Phê duyệt**. Owner thấy lý do sau khi tải lại hồ sơ và có thể sửa/gửi lại. Sau duyệt owner đăng nhập lại và thấy trạng thái `ACTIVE`; business `ACTIVE`, venue `PUBLISHED`, court `ACTIVE` trong DB.
+3. Giữ `npm.cmd run dev:worker` chạy để thông báo gửi duyệt/quyết định đi từ outbox tới bảng thông báo. Nếu Worker tắt, quyết định vẫn lưu; khi Worker bật lại nó retry. Test tự động DB dùng database tạm và không tác động database phát triển mặc định.
+
+Development dùng adapter file private `.media-local/` để tải ảnh/QR, URL PUT ký HMAC hết hạn sau 5 phút. Không đưa thư mục này vào Git. Khi triển khai S3 private, đặt biến môi trường tiến trình `Media__Mode=S3`, `Media__S3Region`, `Media__S3Bucket` và IAM credentials bằng cơ chế chuẩn của AWS SDK; cấp quyền `s3:PutObject`, `s3:GetObject`, bật CORS chỉ cho origin portal và header `Content-Type`, `x-amz-checksum-sha256`, `If-None-Match`. Không đưa credentials vào `.env.example` hoặc repo. Upload S3 chưa được nghiệm thu trong môi trường local này.
+
+### Kiểm tra vận hành F03 bằng UI
+
+Thực hiện sau bước duyệt F02: đăng xuất rồi đăng nhập lại cổng đối tác `http://localhost:5174` để nhận trạng thái owner `ACTIVE`. Trong phần **Vận hành sân**, chọn đúng court của venue đã publish. Cấu hình giờ mở theo thứ trong tuần và giá cơ bản cho **mọi ca 30 phút** trong giờ mở; nhấn lưu, kiểm tra phiên bản court tăng. Tạo quy tắc giá theo khoảng ngày và mức ưu tiên, chọn một ngày/khung giờ để xem preview từng ca và tổng VND. Tạo bảo trì cho một khung tương lai theo múi giờ venue, thử tạo trùng để thấy `SLOT_CONFLICT`, sau đó hủy và kiểm tra khung đó dùng lại được. QR/tài khoản sau publish sửa trong phần **Yêu cầu chỉnh sửa** của F02 và chỉ có hiệu lực khi Admin duyệt revision.
+
+Nếu `/health/ready` trả 503 sau khi kéo code F03, kiểm tra migration còn pending và xác nhận đúng database local cần nâng cấp trước khi chạy `npm.cmd run db:migrate`. F03 thêm `F03CourtOperations`; lệnh test tự động dùng database tạm và không thay đổi database development. Với PowerShell, chạy lệnh tại repo root; nếu chạy từ WSL hãy dùng toolchain và checkout Linux riêng như phần WSL bên dưới.
+
 ## 7. Kiểm thử
 
 ```powershell
@@ -147,7 +165,7 @@ Script mở ba preview server ẩn và dừng đúng tiến trình do nó tạo 
 npm.cmd run test:identity-live
 ```
 
-Script đọc `.env` local, ép PostgreSQL về `127.0.0.1`, kiểm tra tên database tạm qua EF trước khi migrate/dọn, build web với API `http://localhost:5080`, tạo Admin test bằng CLI và chạy 6 ca desktop/mobile. Password test được sinh trong tiến trình, không in ra console. Script dừng API/preview do nó tạo và xóa đúng database tạm sau khi kết thúc. Nếu phiên terminal bị ngắt đột ngột, có thể còn database với tiền tố `shuttlebook_f014_live_`; kiểm tra tên cụ thể trước khi dọn, không chạy lệnh xóa database theo tên mặc định.
+Script đọc `.env` local, ép PostgreSQL về `127.0.0.1`, kiểm tra tên database tạm qua EF trước khi migrate/dọn, build web với API `http://localhost:5080`, tạo Admin test bằng CLI và chạy ca identity/F02/F03 desktop/mobile. Password test được sinh trong tiến trình, không in ra console. Script dừng API/Worker/preview do nó tạo và xóa đúng database tạm sau khi kết thúc. Nếu phiên terminal bị ngắt đột ngột, có thể còn database với tiền tố `shuttlebook_f014_live_`; kiểm tra tên cụ thể trước khi dọn, không chạy lệnh xóa database theo tên mặc định.
 
 CI `.github/workflows/ci.yml` có web/backend jobs; backend dùng service PostgreSQL/PostGIS thật. Workflow chưa được chạy trên GitHub vì chưa có remote/push; chỉ ghi CI pass sau khi có run thành công.
 

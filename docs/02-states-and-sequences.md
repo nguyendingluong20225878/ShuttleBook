@@ -161,7 +161,7 @@ sequenceDiagram
     participant UI as Cổng khách React
     participant API as ASP.NET API
     participant DB as PostgreSQL PostGIS
-    participant MAP as Google Maps
+    participant MAP as MapTiler
 
     C->>UI: Chọn Tìm sân gần tôi
     UI->>GEO: Xin quyền lấy vị trí

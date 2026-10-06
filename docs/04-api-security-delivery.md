@@ -203,7 +203,7 @@ Response trả `AWAITING_OWNER_CONFIRMATION`, giao diện hiển thị **Chờ x
 | ADR-011 | Thanh toán QR 100%; operator xác nhận thủ công |
 | ADR-012 | Ba React app độc lập: customer, partner và admin; dùng chung một API |
 | ADR-013 | Domain: `tenmien.vn`, `partner.tenmien.vn`, `admin.tenmien.vn`, `api.tenmien.vn` |
-| ADR-014 | Google Maps cho giao diện/geocoding; PostGIS là nguồn truy vấn sân gần nhất |
+| ADR-014 | MapTiler cho giao diện/geocoding địa chỉ; PostGIS là nguồn truy vấn sân gần nhất |
 | ADR-015 | Frontend trên S3 private + CloudFront; API/Worker trên EC2; PostgreSQL trên RDS |
 | ADR-016 | Cả vãng lai và cố định dùng lưới ca 30 phút; allocation vẫn lưu khoảng thời gian liên tục |
 
@@ -212,7 +212,7 @@ Response trả `AWAITING_OWNER_CONFIRMATION`, giao diện hiển thị **Chờ x
 ### Giai đoạn 0 - Chốt nghiệp vụ
 
 - Chốt payment deadline, SLA operator, payment plan series và booking horizon.
-- Chốt Google Maps và kênh notification; cấu hình quota, budget alert và giới hạn API key theo domain.
+- Chốt MapTiler và kênh notification; cấu hình quota và giới hạn API key theo domain.
 - Hoàn thiện wireflow, threat model và acceptance criteria.
 
 ### Giai đoạn 1 - Nền tảng

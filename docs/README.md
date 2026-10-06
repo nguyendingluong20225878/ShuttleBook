@@ -43,7 +43,7 @@ Nếu sử dụng `datlich.tenmien.vn` cho chiến dịch hoặc tên miền cũ
 - PostgreSQL: nguồn dữ liệu chuẩn cho doanh nghiệp, cơ sở, sân, lịch, booking, thanh toán và audit.
 - PostGIS: tìm sân theo khoảng cách và bán kính.
 - MongoDB: chỉ lưu application log đã loại bỏ dữ liệu nhạy cảm nếu dự án bắt buộc dùng MongoDB.
-- Google Maps: hiển thị bản đồ và hỗ trợ nhập/geocode địa chỉ; danh sách sân gần nhất vẫn do PostGIS truy vấn.
+- MapTiler: hiển thị bản đồ và hỗ trợ nhập/geocode địa chỉ; danh sách sân gần nhất vẫn do PostGIS truy vấn.
 - AWS S3 + CloudFront + ACM: triển khai riêng ba frontend bằng HTTPS, không public trực tiếp S3 website endpoint.
 - AWS S3 media: ảnh sân, QR và bằng chứng chuyển khoản ở bucket private, chỉ truy cập qua presigned URL.
 - AWS EC2 + Docker Compose + Nginx: chạy API và Worker cho MVP; PostgreSQL chạy trên RDS.
@@ -68,7 +68,7 @@ Nếu sử dụng `datlich.tenmien.vn` cho chiến dịch hoặc tên miền cũ
 
 | Bắt buộc | Nên có | Có thể bổ sung | Chưa làm |
 |---|---|---|---|
-| Ba cổng web, Customer auth, chủ sân tự onboarding, Admin duyệt sân, mời nhân viên, quản lý doanh nghiệp/cơ sở/sân, Google Maps + PostGIS, ngày tương lai, đặt vãng lai, đặt cố định hàng tuần, QR chuyển khoản, operator xác nhận, chống trùng lịch, S3, audit, backup | Notification đa kênh, review, dịch vụ đi kèm, báo cáo doanh thu, dispute | Promotion, favorite, export báo cáo | Customer hủy/đổi lịch, native app, loyalty, tournament, AI pricing, multi-currency |
+| Ba cổng web, Customer auth, chủ sân tự onboarding, Admin duyệt sân, mời nhân viên, quản lý doanh nghiệp/cơ sở/sân, MapTiler + PostGIS, ngày tương lai, đặt vãng lai, đặt cố định hàng tuần, QR chuyển khoản, operator xác nhận, chống trùng lịch, S3, audit, backup | Notification đa kênh, review, dịch vụ đi kèm, báo cáo doanh thu, dispute | Promotion, favorite, export báo cáo | Customer hủy/đổi lịch, native app, loyalty, tournament, AI pricing, multi-currency |
 
 ## Tài liệu
 

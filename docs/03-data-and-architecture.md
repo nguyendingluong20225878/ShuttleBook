@@ -303,7 +303,7 @@ flowchart TB
     S3C[(S3 customer-web private)]
     S3P[(S3 partner-web private)]
     S3A[(S3 admin-web private)]
-    MAP[Google Maps]
+    MAP[MapTiler]
 
     subgraph EC2[EC2 chạy Docker Compose]
       N[Nginx - api.tenmien.vn]

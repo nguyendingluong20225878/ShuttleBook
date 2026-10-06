@@ -1,5 +1,6 @@
 import { FormEvent, StrictMode, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { PartnerOnboarding } from './PartnerOnboarding';
 
 type ContactType = 'email' | 'phone';
 type View = 'register' | 'verify' | 'login' | 'session';
@@ -95,14 +96,14 @@ function PartnerIdentity() {
         return;
       }
       const data = (await response.json() as LoginResponse).data;
-      if (data?.user?.accountType !== 'VENUE_OPERATOR' || data.user.status !== 'PENDING_ONBOARDING'
+      if (data?.user?.accountType !== 'VENUE_OPERATOR' || !['PENDING_ONBOARDING', 'ACTIVE'].includes(data.user.status ?? '')
         || !data.accessToken || !data.refreshToken) {
         setMessage('Tài khoản này không thuộc cổng chủ sân.');
         return;
       }
       setSession({ accessToken: data.accessToken, refreshToken: data.refreshToken });
       setPassword(''); setView('session');
-      setMessage('Đăng nhập thành công. Hồ sơ chủ sân đang chờ onboarding.');
+      setMessage('Đăng nhập thành công.');
     } catch { setMessage('Không thể kết nối máy chủ. Vui lòng thử lại.'); }
     finally { setSubmitting(false); }
   };
@@ -171,7 +172,9 @@ function PartnerIdentity() {
     </form>}
 
     {view === 'session' && session && <section>
-      <h2>Hồ sơ chủ sân</h2><p>Tài khoản đã xác minh. Phần khai báo sân sẽ có trong F02.</p>
+      <PartnerOnboarding session={session} onSession={setSession} onExpired={() => {
+        setSession(null); setView('login'); setMessage('Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.');
+      }} />
       <button disabled={submitting} type="button" onClick={logout}>Đăng xuất</button>
     </section>}
     {message && <p role="status">{message}</p>}

@@ -43,7 +43,7 @@ Admin có thể suspend business/venue hoặc revoke membership bất cứ lúc 
 ### Tìm và chọn sân
 
 1. Khách cho phép lấy vị trí hoặc nhập khu vực.
-2. Trình duyệt lấy vị trí hoặc Google Maps geocode địa chỉ; React gọi `/venues/nearby` chỉ với tọa độ và bán kính.
+2. Trình duyệt lấy vị trí hoặc MapTiler geocode địa chỉ; React gọi `/venues/nearby` chỉ với tọa độ và bán kính.
 3. PostGIS trả các venue đã publish theo khoảng cách cùng thông tin cơ bản và vị trí để hiển thị danh sách/bản đồ. Nearby không kiểm tra availability hoặc tính quote.
 4. Khách chọn sân để mở trang chi tiết và dùng chung luồng đặt sân: chọn sân cụ thể, **Vãng lai**/**Cố định**, ngày giờ và các ca 30 phút cần đặt. Trang chi tiết tải lịch trống và tính giá theo lựa chọn của khách.
 

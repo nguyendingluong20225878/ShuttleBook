@@ -68,7 +68,7 @@ Admin không cần nhập hộ thông tin sân. Admin vẫn có quyền từ ch�
 ## 4. Tìm sân gần nhất
 
 1. Khách cho phép trình duyệt lấy vị trí hoặc tự nhập khu vực.
-2. Google Maps hỗ trợ hiển thị bản đồ và nhập/geocode địa chỉ.
+2. MapTiler hỗ trợ hiển thị bản đồ và tìm/geocode địa chỉ.
 3. React gửi tọa độ tạm thời và bán kính đến API nearby.
 4. PostgreSQL/PostGIS dùng `ST_DWithin` để lọc và `ST_Distance` để sắp xếp cơ sở gần nhất.
 5. Hệ thống chỉ trả cơ sở đã publish và đủ điều kiện hiển thị công khai; bước nearby không lọc theo booking hoặc bảo trì của một khung giờ.
