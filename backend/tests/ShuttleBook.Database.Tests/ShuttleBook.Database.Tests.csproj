@@ -12,6 +12,7 @@
     </PackageReference>
     <ProjectReference Include="../../src/ShuttleBook.Infrastructure/ShuttleBook.Infrastructure.csproj" />
     <ProjectReference Include="../../src/ShuttleBook.Api/ShuttleBook.Api.csproj" />
+    <ProjectReference Include="../../src/ShuttleBook.Worker/ShuttleBook.Worker.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />

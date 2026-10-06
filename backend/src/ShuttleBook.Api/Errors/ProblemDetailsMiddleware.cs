@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace ShuttleBook.Api.Errors;
 
@@ -22,6 +24,13 @@ public sealed class ProblemDetailsMiddleware(RequestDelegate next, ILogger<Probl
             // The client disconnected; there is no response to send.
             context.Abort();
         }
+        catch (Exception exception) when (!context.Response.HasStarted && IsDatabaseConflict(exception))
+        {
+            logger.LogWarning("Database write conflict {ExceptionType}; trace {TraceId}.",
+                exception.GetType().Name, Activity.Current?.Id ?? context.TraceIdentifier);
+            context.Response.Clear();
+            await WriteProblemAsync(context, StatusCodes.Status409Conflict);
+        }
         catch (Exception exception) when (!context.Response.HasStarted)
         {
             logger.LogError("Unhandled request failure {ExceptionType}; trace {TraceId}.",
@@ -29,6 +38,12 @@ public sealed class ProblemDetailsMiddleware(RequestDelegate next, ILogger<Probl
             context.Response.Clear();
             await WriteProblemAsync(context, StatusCodes.Status500InternalServerError);
         }
+    }
+
+    private static bool IsDatabaseConflict(Exception exception)
+    {
+        var databaseError = exception as PostgresException ?? (exception as DbUpdateException)?.InnerException as PostgresException;
+        return databaseError?.SqlState is "23505" or "23P01" or "40001" or "40P01";
     }
 
     private static Task WriteProblemAsync(HttpContext context, int status)
@@ -48,6 +63,7 @@ public sealed class ProblemDetailsMiddleware(RequestDelegate next, ILogger<Probl
                     StatusCodes.Status405MethodNotAllowed => "METHOD_NOT_ALLOWED",
                     StatusCodes.Status401Unauthorized => "UNAUTHORIZED",
                     StatusCodes.Status403Forbidden => "FORBIDDEN",
+                    StatusCodes.Status409Conflict => "STATE_CONFLICT",
                     StatusCodes.Status500InternalServerError => "INTERNAL_ERROR",
                     _ => "HTTP_ERROR"
                 },

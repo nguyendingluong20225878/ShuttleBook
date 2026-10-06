@@ -58,9 +58,10 @@ public sealed class BaselineMigrationTests
             Assert.False(database.Database.HasPendingModelChanges());
             Assert.True(await IsReadyAsync());
 
-            await database.Database.ExecuteSqlRawAsync("DROP EXTENSION btree_gist");
-            Assert.False(await IsReadyAsync());
-            await database.Database.ExecuteSqlRawAsync("CREATE EXTENSION btree_gist");
+            // F03 exclusion constraints now depend on btree_gist, so PostgreSQL must reject its removal.
+            var dependency = await Assert.ThrowsAsync<PostgresException>(() =>
+                database.Database.ExecuteSqlRawAsync("DROP EXTENSION btree_gist"));
+            Assert.Equal("2BP01", dependency.SqlState);
             Assert.True(await IsReadyAsync());
 
             await database.Database.ExecuteSqlRawAsync("DELETE FROM \"__EFMigrationsHistory\"");
