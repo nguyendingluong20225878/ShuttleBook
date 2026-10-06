@@ -116,6 +116,34 @@ public sealed class AdminAuthApiTests
         }
     }
 
+    [Fact]
+    public async Task Admin_browser_restores_only_with_its_allowed_origin_and_httponly_cookie()
+    {
+        await using var factory = new AdminApiFactory(new SuccessfulAuthService());
+        using var client = factory.CreateClient();
+        using var login = new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin-auth/login")
+        {
+            Content = JsonContent.Create(new { contactType = "email", contact = "admin-test@example.test",
+                password = "Admin-Test-Password-2026!" })
+        };
+        login.Headers.Add("Origin", "http://localhost:5175");
+        using var signedIn = await client.SendAsync(login);
+        Assert.Equal(HttpStatusCode.OK, signedIn.StatusCode);
+        var cookie = Assert.Single(signedIn.Headers.GetValues("Set-Cookie"));
+        Assert.Contains("httponly", cookie, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("samesite=strict", cookie, StringComparison.OrdinalIgnoreCase);
+        using var restore = new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin-auth/restore");
+        restore.Headers.Add("Origin", "http://localhost:5175");
+        restore.Headers.Add("Cookie", cookie.Split(';')[0]);
+        using var restored = await client.SendAsync(restore);
+        Assert.Equal(HttpStatusCode.OK, restored.StatusCode);
+        using var wrongOrigin = new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin-auth/restore");
+        wrongOrigin.Headers.Add("Origin", "http://localhost:5174");
+        wrongOrigin.Headers.Add("Cookie", cookie.Split(';')[0]);
+        using var rejected = await client.SendAsync(wrongOrigin);
+        await AssertProblemAsync(rejected, HttpStatusCode.Forbidden, "FORBIDDEN");
+    }
+
     private static string Jwt(string key, string issuer, string audience, bool expired)
     {
         var now = DateTime.UtcNow;
@@ -138,7 +166,7 @@ public sealed class AdminAuthApiTests
         Assert.DoesNotContain("admin-test@example.test", body.RootElement.ToString());
     }
 
-    private sealed class AdminApiFactory(RejectedAuthService service) : WebApplicationFactory<Program>
+    private sealed class AdminApiFactory(IAuthSessionService service) : WebApplicationFactory<Program>
     {
         protected override IHost CreateHost(IHostBuilder builder)
         {
@@ -148,6 +176,7 @@ public sealed class AdminAuthApiTests
                     ["ConnectionStrings:ShuttleBook"] = "Host=127.0.0.1;Port=1;Database=unused;Username=unused;Timeout=1",
                     ["Identity:JwtSigningKey"] = "admin-api-test-signing-key-32-bytes-minimum",
                     ["RateLimits:AuthVerifyPerIp"] = "1000"
+                    , ["AdminSession:AllowedOrigin"] = "http://localhost:5175"
                 }));
             builder.ConfigureLogging(logging => logging.ClearProviders());
             return base.CreateHost(builder);
@@ -163,6 +192,22 @@ public sealed class AdminAuthApiTests
         }
     }
 
+    private sealed class SuccessfulAuthService : IAuthSessionService
+    {
+        private static AuthTokens Tokens => new("Bearer", "test-access", 600, new string('r', 48),
+            DateTimeOffset.UtcNow.AddDays(30), new AuthUser(Guid.CreateVersion7(), "ADMIN", "ACTIVE"));
+        public Task<AuthTokens?> AdminLoginAsync(string contactType, string contact, string password,
+            string traceId, CancellationToken cancellationToken) => Task.FromResult<AuthTokens?>(Tokens);
+        public Task<AuthTokens?> LoginAsync(string contactType, string contact, string password,
+            string traceId, CancellationToken cancellationToken) => Task.FromResult<AuthTokens?>(null);
+        public Task<AuthTokens?> RefreshAsync(string refreshToken, string traceId,
+            CancellationToken cancellationToken) => Task.FromResult<AuthTokens?>(refreshToken == new string('r', 48) ? Tokens : null);
+        public Task<AuthTokens?> RestoreAdminAsync(string refreshToken, string traceId,
+            CancellationToken cancellationToken) => RefreshAsync(refreshToken, traceId, cancellationToken);
+        public Task<bool> LogoutAsync(Guid userId, Guid familyId, string refreshToken,
+            string traceId, CancellationToken cancellationToken) => Task.FromResult(true);
+    }
+
     private sealed class RejectedAuthService : IAuthSessionService
     {
         public int LoginCalls { get; private set; }
@@ -175,6 +220,8 @@ public sealed class AdminAuthApiTests
         public Task<AuthTokens?> LoginAsync(string contactType, string contact, string password,
             string traceId, CancellationToken cancellationToken) => Task.FromResult<AuthTokens?>(null);
         public Task<AuthTokens?> RefreshAsync(string refreshToken, string traceId,
+            CancellationToken cancellationToken) => Task.FromResult<AuthTokens?>(null);
+        public Task<AuthTokens?> RestoreAdminAsync(string refreshToken, string traceId,
             CancellationToken cancellationToken) => Task.FromResult<AuthTokens?>(null);
         public Task<bool> LogoutAsync(Guid userId, Guid familyId, string refreshToken,
             string traceId, CancellationToken cancellationToken) => Task.FromResult(false);

@@ -1,6 +1,7 @@
 import { FormEvent, StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './admin.css';
+import { AdminApprovals } from './AdminApprovals';
 
 type ContactType = 'email' | 'phone';
 type Session = { accessToken: string; refreshToken: string; expiresAt: number };
@@ -8,10 +9,12 @@ type AuthPayload = { data?: { tokenType?: string; accessToken?: string; refreshT
   expiresInSeconds?: number; user?: { accountType?: string; status?: string } } };
 type MePayload = { data?: { accountType?: string; status?: string } };
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5080';
+let restoreRequest: Promise<Response> | null = null;
 
 async function post(path: string, body: object, bearer?: string): Promise<Response> {
   return fetch(`${apiBaseUrl}/api/v1/${path}`, {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}) },
     body: JSON.stringify(body),
   });
@@ -41,10 +44,68 @@ function AdminPortal() {
   const [contact, setContact] = useState('');
   const [password, setPassword] = useState('');
   const [session, setSession] = useState<Session | null>(null);
+  const [restoring, setRestoring] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const refreshing = useRef(false);
   const sessionGeneration = useRef(0);
+  const lastActivity = useRef(Date.now());
+  const lastServerActivity = useRef(Date.now());
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!restoreRequest) restoreRequest = post('admin-auth/restore', {});
+    void restoreRequest.then(readSession).then(next => {
+      if (cancelled) return;
+      if (next) { lastActivity.current = Date.now(); lastServerActivity.current = Date.now(); setSession(next); }
+    }).catch(() => {}).finally(() => { if (!cancelled) setRestoring(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!session) return;
+    const onActivity = () => {
+      const now = Date.now();
+      if (now - lastActivity.current >= 30 * 60_000) {
+        sessionGeneration.current++;
+        setSession(null);
+        setMessage('Phiên đăng nhập đã hết hạn sau 30 phút không hoạt động.');
+        return;
+      }
+      lastActivity.current = now;
+      if (now - lastServerActivity.current < 60_000) return;
+      lastServerActivity.current = now;
+      if (session.expiresAt <= now + 30_000) {
+        if (refreshing.current) return;
+        refreshing.current = true;
+        const generation = sessionGeneration.current;
+        void post('admin-auth/restore', {}).then(readSession).then(next => {
+          if (generation !== sessionGeneration.current) return;
+          if (!next) { sessionGeneration.current++; setSession(null); setMessage('Phiên đăng nhập đã kết thúc.'); }
+          else setSession(next);
+        }).catch(() => { if (generation === sessionGeneration.current) { sessionGeneration.current++; setSession(null); } })
+          .finally(() => { refreshing.current = false; });
+        return;
+      }
+      void sessionIsCurrent(session).then(ok => {
+        if (!ok) { sessionGeneration.current++; setSession(null); setMessage('Phiên đăng nhập đã kết thúc.'); }
+      }).catch(() => {});
+    };
+    const watchdog = window.setInterval(() => {
+      if (Date.now() - lastActivity.current >= 30 * 60_000) {
+        sessionGeneration.current++;
+        setSession(null);
+        setMessage('Phiên đăng nhập đã hết hạn sau 30 phút không hoạt động.');
+      }
+    }, 10_000);
+    window.addEventListener('pointerdown', onActivity);
+    window.addEventListener('keydown', onActivity);
+    return () => {
+      window.clearInterval(watchdog);
+      window.removeEventListener('pointerdown', onActivity);
+      window.removeEventListener('keydown', onActivity);
+    };
+  }, [session]);
 
   useEffect(() => {
     if (!session) return;
@@ -52,11 +113,12 @@ function AdminPortal() {
     let cancelled = false;
     const timer = window.setTimeout(async () => {
       if (refreshing.current || cancelled || generation !== sessionGeneration.current) return;
+      if (Date.now() - lastActivity.current >= 60_000) return;
       refreshing.current = true;
       try {
-        const response = await post('auth/refresh', { refreshToken: session.refreshToken });
+        const response = await post('admin-auth/restore', {});
         const next = await readSession(response);
-        if (!next || !await sessionIsCurrent(next)) {
+        if (!next) {
           if (cancelled || generation !== sessionGeneration.current) return;
           setSession(null);
           setMessage('Phiên đăng nhập đã kết thúc. Vui lòng đăng nhập lại.');
@@ -97,6 +159,8 @@ function AdminPortal() {
         return;
       }
       sessionGeneration.current++;
+      lastActivity.current = Date.now();
+      lastServerActivity.current = Date.now();
       setSession(next);
     } catch {
       setPassword('');
@@ -128,9 +192,9 @@ function AdminPortal() {
     <section className="admin-card">
       <p className="admin-eyebrow">CỔNG QUẢN TRỊ NỀN TẢNG</p>
       <h1>Quản trị ShuttleBook.</h1>
-      {session ? <>
+      {restoring ? <p>Đang kiểm tra phiên quản trị…</p> : session ? <>
         <p className="admin-description">Bạn đã đăng nhập với tài khoản quản trị.</p>
-        <div className="admin-notice"><strong>Chưa có module quản trị.</strong><br />Các chức năng duyệt cơ sở và vận hành sẽ được bổ sung ở các giai đoạn tiếp theo.</div>
+        <AdminApprovals accessToken={session.accessToken} />
         <button type="button" onClick={logout} disabled={busy}>{busy ? 'Đang đăng xuất…' : 'Đăng xuất'}</button>
       </> : <>
         <p className="admin-description">Đăng nhập bằng tài khoản Admin đã được khởi tạo qua quy trình vận hành nội bộ.</p>

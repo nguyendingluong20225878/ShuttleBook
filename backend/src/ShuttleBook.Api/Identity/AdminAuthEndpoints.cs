@@ -13,6 +13,7 @@ public static class AdminAuthEndpoints
     {
         var routes = app.MapGroup("/api/v1/admin-auth");
         routes.MapPost("/login", LoginAsync).RequireRateLimiting("auth-verify");
+        routes.MapPost("/restore", RestoreAsync).RequireRateLimiting("auth-verify");
         routes.MapGet("/me", MeAsync).RequireAuthorization();
     }
 
@@ -33,6 +34,26 @@ public static class AdminAuthEndpoints
             password, context.TraceIdentifier, cancellationToken);
         if (tokens is null) return CustomerRegistrationEndpoints.Problem(context, 401, "INVALID_CREDENTIALS");
         context.Response.Headers.CacheControl = "no-store";
+        AdminBrowserSession.Write(context, tokens);
+        return Results.Ok(new { data = tokens, traceId = context.TraceIdentifier });
+    }
+
+    private static async Task<IResult> RestoreAsync(HttpContext context, IAuthSessionService service,
+        CancellationToken cancellationToken)
+    {
+        if (!AdminBrowserSession.IsAllowedOrigin(context))
+            return CustomerRegistrationEndpoints.Problem(context, 403, "FORBIDDEN");
+        var refreshToken = AdminBrowserSession.Read(context);
+        if (refreshToken is null)
+            return CustomerRegistrationEndpoints.Problem(context, 401, "INVALID_REFRESH_TOKEN");
+        var tokens = await service.RestoreAdminAsync(refreshToken, context.TraceIdentifier, cancellationToken);
+        if (tokens?.User.AccountType != "ADMIN")
+        {
+            AdminBrowserSession.Clear(context);
+            return CustomerRegistrationEndpoints.Problem(context, 401, "INVALID_REFRESH_TOKEN");
+        }
+        context.Response.Headers.CacheControl = "no-store";
+        AdminBrowserSession.Write(context, tokens);
         return Results.Ok(new { data = tokens, traceId = context.TraceIdentifier });
     }
 

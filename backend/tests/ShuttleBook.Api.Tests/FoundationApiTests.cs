@@ -15,6 +15,45 @@ namespace ShuttleBook.Api.Tests;
 
 public sealed class FoundationApiTests
 {
+    [Theory]
+    [InlineData("GET", "/api/v1/operator/courts/0199fc70-0000-7000-8000-000000000001/operations")]
+    [InlineData("PUT", "/api/v1/operator/courts/0199fc70-0000-7000-8000-000000000001/schedule")]
+    [InlineData("PUT", "/api/v1/operator/courts/0199fc70-0000-7000-8000-000000000001/pricing-rules")]
+    [InlineData("GET", "/api/v1/operator/courts/0199fc70-0000-7000-8000-000000000001/price-preview")]
+    [InlineData("GET", "/api/v1/operator/courts/0199fc70-0000-7000-8000-000000000001/maintenance")]
+    [InlineData("POST", "/api/v1/operator/courts/0199fc70-0000-7000-8000-000000000001/maintenance")]
+    [InlineData("POST", "/api/v1/operator/courts/0199fc70-0000-7000-8000-000000000001/maintenance/0199fc70-0000-7000-8000-000000000002/cancel")]
+    public async Task F03_operator_routes_require_authentication(string method, string path)
+    {
+        await using var factory = new ApiFactory(new StubReadiness(true));
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(new HttpMethod(method), path);
+        using var response = await client.SendAsync(request);
+        await AssertProblemAsync(response, HttpStatusCode.Unauthorized, "UNAUTHORIZED");
+    }
+
+    [Theory]
+    [InlineData("POST", "/api/v1/partner-onboarding/businesses")]
+    [InlineData("GET", "/api/v1/partner-onboarding/businesses")]
+    [InlineData("POST", "/api/v1/partner-onboarding/businesses/0199fc70-0000-7000-8000-000000000001/submit")]
+    [InlineData("GET", "/api/v1/admin/approval-requests/")]
+    [InlineData("POST", "/api/v1/admin/approval-requests/0199fc70-0000-7000-8000-000000000001/approve")]
+    [InlineData("POST", "/api/v1/uploads/presign")]
+    [InlineData("POST", "/api/v1/uploads/0199fc70-0000-7000-8000-000000000001/complete")]
+    [InlineData("GET", "/api/v1/uploads/0199fc70-0000-7000-8000-000000000001/view")]
+    [InlineData("POST", "/api/v1/partner-onboarding/venues/0199fc70-0000-7000-8000-000000000001/revisions")]
+    [InlineData("POST", "/api/v1/admin/approval-requests/0199fc70-0000-7000-8000-000000000001/request-changes")]
+    [InlineData("GET", "/api/v1/me/notifications/")]
+    [InlineData("POST", "/api/v1/me/notifications/0199fc70-0000-7000-8000-000000000001/read")]
+    public async Task F02_commands_and_private_reads_require_authentication(string method, string path)
+    {
+        await using var factory = new ApiFactory(new StubReadiness(true));
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(new HttpMethod(method), path);
+        using var response = await client.SendAsync(request);
+        await AssertProblemAsync(response, HttpStatusCode.Unauthorized, "UNAUTHORIZED");
+    }
+
     [Fact]
     public async Task Liveness_does_not_probe_the_database()
     {
@@ -84,8 +123,9 @@ public sealed class FoundationApiTests
         if (allowed)
         {
             Assert.Equal(origin, Assert.Single(values!));
+            Assert.Equal("true", Assert.Single(response.Headers.GetValues("Access-Control-Allow-Credentials")));
         }
-        Assert.False(response.Headers.Contains("Access-Control-Allow-Credentials"));
+        else Assert.False(response.Headers.Contains("Access-Control-Allow-Credentials"));
     }
 
     [Fact]

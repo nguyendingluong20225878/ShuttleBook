@@ -1,5 +1,7 @@
 using ShuttleBook.Api.Errors;
 using ShuttleBook.Api.Identity;
+using ShuttleBook.Api.Onboarding;
+using ShuttleBook.Api.Operations;
 using ShuttleBook.Infrastructure.Data;
 using ShuttleBook.Infrastructure.Health;
 using ShuttleBook.Infrastructure.Identity;
@@ -11,6 +13,8 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Amazon;
+using Amazon.S3;
 
 var builder = WebApplication.CreateBuilder(args);
 if (builder.Configuration["DataProtection:KeysPath"] is { Length: > 0 } keysPath)
@@ -30,6 +34,14 @@ builder.Services.AddScoped<IContactVerificationDelivery, SmtpContactVerification
 builder.Services.AddScoped<IPartnerRegistrationService, PartnerRegistrationService>();
 builder.Services.AddScoped<IAuthSessionService, AuthSessionService>();
 builder.Services.AddSingleton<ContactAttemptLimiter>();
+if (string.Equals(builder.Configuration["Media:Mode"], "S3", StringComparison.OrdinalIgnoreCase))
+{
+    var region = builder.Configuration["Media:S3Region"];
+    var bucket = builder.Configuration["Media:S3Bucket"];
+    if (string.IsNullOrWhiteSpace(region) || string.IsNullOrWhiteSpace(bucket))
+        throw new InvalidOperationException("S3 media requires region and private bucket configuration.");
+    builder.Services.AddSingleton<IAmazonS3>(_ => new AmazonS3Client(RegionEndpoint.GetBySystemName(region)));
+}
 var jwtKey = builder.Configuration["Identity:JwtSigningKey"];
 if (string.IsNullOrWhiteSpace(jwtKey) || Encoding.UTF8.GetByteCount(jwtKey) < 32)
     throw new InvalidOperationException("Identity signing key must be configured with at least 32 UTF-8 bytes.");
@@ -55,13 +67,33 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
                 return;
             }
             var database = context.HttpContext.RequestServices.GetRequiredService<ShuttleBookDbContext>();
+            var now = context.HttpContext.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow();
             var user = await database.Users.SingleOrDefaultAsync(item => item.Id == userId, context.HttpContext.RequestAborted);
             var familyActive = await database.RefreshSessions.AnyAsync(item =>
                 item.UserId == userId && item.FamilyId == familyId && item.RevokedAt == null &&
-                item.ExpiresAt > DateTimeOffset.UtcNow, context.HttpContext.RequestAborted);
+                item.ExpiresAt > now, context.HttpContext.RequestAborted);
             if (user is null || !AuthSessionService.CanUseSession(user) || !familyActive ||
                 principal.FindFirst("accountType")?.Value != AuthSessionService.AccountTypeName(user.AccountType))
+            {
                 context.Fail("Inactive session.");
+                return;
+            }
+            if (user.AccountType == AccountType.Admin)
+            {
+                var activity = await database.RefreshSessions.Where(item => item.UserId == userId &&
+                    item.FamilyId == familyId && item.RevokedAt == null)
+                    .OrderByDescending(item => item.LastActivityAt).Select(item => item.LastActivityAt)
+                    .FirstOrDefaultAsync(context.HttpContext.RequestAborted);
+                if (activity is null || activity <= now.AddMinutes(-30))
+                {
+                    context.Fail("Inactive admin session.");
+                    return;
+                }
+                await database.RefreshSessions.Where(item => item.UserId == userId &&
+                    item.FamilyId == familyId && item.RevokedAt == null)
+                    .ExecuteUpdateAsync(updates => updates.SetProperty(item => item.LastActivityAt, now),
+                        context.HttpContext.RequestAborted);
+            }
         }
     };
 });
@@ -102,7 +134,7 @@ builder.Services.AddCors(options => options.AddPolicy("WebPortals", policy =>
 {
     if (origins.Length > 0)
     {
-        policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod().WithExposedHeaders("Retry-After");
+        policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod().AllowCredentials().WithExposedHeaders("Retry-After");
     }
 }));
 
@@ -130,6 +162,10 @@ app.MapCustomerRegistrationEndpoints();
 app.MapAuthSessionEndpoints();
 app.MapAdminAuthEndpoints();
 app.MapPartnerRegistrationEndpoints();
+app.MapOnboardingEndpoints();
+app.MapMediaEndpoints();
+app.MapNotificationEndpoints();
+app.MapCourtOperationsEndpoints();
 
 app.Run();
 

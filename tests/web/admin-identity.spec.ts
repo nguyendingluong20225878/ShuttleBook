@@ -6,7 +6,37 @@ const tokenPayload = (refreshToken: string, expiresInSeconds = 600, accountType 
     user: { accountType, status: 'ACTIVE' } }, traceId: 'admin-web-test',
 });
 
-test('admin login checks me, shows only the pending module, and clears memory on logout and reload', async ({ page }) => {
+test('admin F5 restores an active session and shows login after inactivity expiry', async ({ page }) => {
+  let active = false;
+  await page.route('**/api/v1/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/api/v1/admin-auth/login') {
+      active = true;
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(tokenPayload('first')) });
+    }
+    if (path === '/api/v1/admin-auth/restore') return route.fulfill({ status: active ? 200 : 401,
+      contentType: 'application/json', body: active ? JSON.stringify(tokenPayload('restored')) : '{}' });
+    if (path === '/api/v1/admin-auth/me') return route.fulfill({ status: 200, contentType: 'application/json',
+      body: JSON.stringify({ data: { accountType: 'ADMIN', status: 'ACTIVE' } }) });
+    if (path === '/api/v1/admin/approval-requests/') return route.fulfill({ status: 200,
+      contentType: 'application/json', body: JSON.stringify({ data: [] }) });
+    if (path === '/api/v1/me/notifications/') return route.fulfill({ status: 200,
+      contentType: 'application/json', body: JSON.stringify({ data: [] }) });
+    return route.fulfill({ status: 404, body: '{}' });
+  });
+  await page.goto(adminUrl);
+  await page.getByLabel('Email', { exact: true }).fill('admin@example.test');
+  await page.getByLabel('Mật khẩu').fill('test-password');
+  await page.getByRole('button', { name: 'Đăng nhập' }).click();
+  await expect(page.getByRole('heading', { name: 'Hồ sơ chờ duyệt' })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Hồ sơ chờ duyệt' })).toBeVisible();
+  active = false;
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Đăng nhập' })).toBeVisible();
+});
+
+test('admin login checks me, shows approval list, and clears memory on logout and reload', async ({ page }) => {
   const paths: string[] = [];
   await page.route('**/api/v1/**', async route => {
     const path = new URL(route.request().url()).pathname;
@@ -15,6 +45,8 @@ test('admin login checks me, shows only the pending module, and clears memory on
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(tokenPayload('first')) });
     else if (path === '/api/v1/admin-auth/me')
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { accountType: 'ADMIN', status: 'ACTIVE' } }) });
+    else if (path === '/api/v1/admin/approval-requests/')
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) });
     else if (path === '/api/v1/auth/logout') await route.fulfill({ status: 204 });
     else await route.abort();
   });
@@ -22,7 +54,7 @@ test('admin login checks me, shows only the pending module, and clears memory on
   await page.getByLabel('Email', { exact: true }).fill('admin@example.test');
   await page.getByLabel('Mật khẩu').fill('test-password');
   await page.getByRole('button', { name: 'Đăng nhập' }).click();
-  await expect(page.getByText('Chưa có module quản trị.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Hồ sơ chờ duyệt' })).toBeVisible();
   expect(paths).toContain('/api/v1/admin-auth/me');
   expect(await page.evaluate(() => ({ local: Object.keys(localStorage), session: Object.keys(sessionStorage) })))
     .toEqual({ local: [], session: [] });
@@ -54,7 +86,7 @@ test('admin login keeps non-admin response out and shows generic and rate limit 
   await page.getByLabel('Mật khẩu').fill('test-password');
   await page.getByRole('button', { name: 'Đăng nhập' }).click();
   await expect(page.getByRole('button', { name: 'Đăng nhập' })).toBeVisible();
-  await expect(page.getByText('Chưa có module quản trị.')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Hồ sơ chờ duyệt' })).toHaveCount(0);
 });
 
 test('admin login shows loading and a safe network error', async ({ page }) => {
@@ -71,10 +103,11 @@ test('admin login shows loading and a safe network error', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Đang đăng nhập…' })).toBeDisabled();
   release?.();
   await expect(page.getByRole('status')).toHaveText('Không thể kết nối. Vui lòng thử lại.');
-  await expect(page.getByText('Chưa có module quản trị.')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Hồ sơ chờ duyệt' })).toHaveCount(0);
 });
 
 test('late refresh response cannot restore an Admin session after logout', async ({ page }) => {
+  let loggedIn = false;
   let releaseRefresh: (() => void) | undefined;
   let refreshStarted: (() => void) | undefined;
   const started = new Promise<void>(resolve => { refreshStarted = resolve; });
@@ -82,27 +115,32 @@ test('late refresh response cannot restore an Admin session after logout', async
   const finished = new Promise<void>(resolve => { refreshFinished = resolve; });
   await page.route('**/api/v1/**', async route => {
     const path = new URL(route.request().url()).pathname;
-    if (path === '/api/v1/admin-auth/login')
+    if (path === '/api/v1/admin-auth/login') {
+      loggedIn = true;
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(tokenPayload('first', 1)) });
+    }
     else if (path === '/api/v1/admin-auth/me')
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { accountType: 'ADMIN', status: 'ACTIVE' } }) });
-    else if (path === '/api/v1/auth/refresh') {
+    else if (path === '/api/v1/admin/approval-requests/')
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) });
+    else if (path === '/api/v1/admin-auth/restore' && loggedIn) {
       refreshStarted?.();
       await new Promise<void>(resolve => { releaseRefresh = resolve; });
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(tokenPayload('second')) });
       refreshFinished?.();
-    } else if (path === '/api/v1/auth/logout') await route.fulfill({ status: 204 });
+    } else if (path === '/api/v1/admin-auth/restore') await route.fulfill({ status: 401, body: '{}' });
+    else if (path === '/api/v1/auth/logout') await route.fulfill({ status: 204 });
     else await route.abort();
   });
   await page.goto(adminUrl);
   await page.getByLabel('Email', { exact: true }).fill('admin@example.test');
   await page.getByLabel('Mật khẩu').fill('test-password');
   await page.getByRole('button', { name: 'Đăng nhập' }).click();
-  await expect(page.getByText('Chưa có module quản trị.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Hồ sơ chờ duyệt' })).toBeVisible();
   await started;
   await page.getByRole('button', { name: 'Đăng xuất' }).click();
   await expect(page.getByRole('button', { name: 'Đăng nhập' })).toBeVisible();
   releaseRefresh?.();
   await finished;
-  await expect(page.getByText('Chưa có module quản trị.')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Hồ sơ chờ duyệt' })).toHaveCount(0);
 });

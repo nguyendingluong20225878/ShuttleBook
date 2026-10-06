@@ -4,7 +4,7 @@ if (-not $env:ASPNETCORE_ENVIRONMENT -or -not $env:ASPNETCORE_URLS) {
 }
 Push-Location $projectRoot
 try {
-    & $dotnetExecutable run --project backend/src/ShuttleBook.Api --no-launch-profile
+    & $dotnetExecutable run --project backend/src/ShuttleBook.Api --no-launch-profile --no-restore
     $commandExit = $LASTEXITCODE
 } finally {
     Pop-Location

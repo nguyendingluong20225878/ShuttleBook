@@ -11,7 +11,7 @@ test('partner can register, verify, log in and log out without persisting tokens
       return;
     }
     const path = new URL(request.url()).pathname;
-    const body = request.postDataJSON();
+    const body = request.method() === 'GET' ? null : request.postDataJSON();
     requests.push({ path, body });
     if (path === '/api/v1/partner-auth/register' || path === '/api/v1/partner-auth/verification-resend') {
       await route.fulfill({ status: 202, contentType: 'application/json', headers: corsHeaders,
@@ -24,6 +24,9 @@ test('partner can register, verify, log in and log out without persisting tokens
         data: { accessToken: 'test-access-token', refreshToken: 'test-refresh-token',
           user: { accountType: 'VENUE_OPERATOR', status: 'PENDING_ONBOARDING' } }
       }) });
+    } else if (path === '/api/v1/partner-onboarding/businesses') {
+      await route.fulfill({ status: 200, contentType: 'application/json', headers: corsHeaders,
+        body: JSON.stringify({ data: [] }) });
     } else if (path === '/api/v1/auth/logout') {
       expect(request.headers().authorization).toBe('Bearer test-access-token');
       expect(body).toEqual({ refreshToken: 'test-refresh-token' });
@@ -45,13 +48,13 @@ test('partner can register, verify, log in and log out without persisting tokens
   await page.getByLabel('Mật khẩu', { exact: true }).fill('Example-password-2026!');
   await page.getByRole('button', { name: 'Đăng nhập', exact: true }).last().click();
   await expect(page.getByRole('heading', { name: 'Hồ sơ chủ sân' })).toBeVisible();
-  await expect(page.getByText('Phần khai báo sân sẽ có trong F02.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Tạo doanh nghiệp' })).toBeVisible();
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
   await page.getByRole('button', { name: 'Đăng xuất' }).click();
   await expect(page.getByRole('heading', { name: 'Đăng nhập chủ sân' })).toBeVisible();
   expect(requests.map(request => request.path)).toEqual([
     '/api/v1/partner-auth/register', '/api/v1/partner-auth/verify',
-    '/api/v1/auth/login', '/api/v1/auth/logout'
+    '/api/v1/auth/login', '/api/v1/partner-onboarding/businesses', '/api/v1/me/notifications/', '/api/v1/auth/logout'
   ]);
 });
 

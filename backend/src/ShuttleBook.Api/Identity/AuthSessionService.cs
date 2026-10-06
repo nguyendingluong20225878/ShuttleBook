@@ -18,6 +18,7 @@ public interface IAuthSessionService
 {
     Task<AuthTokens?> LoginAsync(string contactType, string contact, string password, string traceId, CancellationToken cancellationToken);
     Task<AuthTokens?> AdminLoginAsync(string contactType, string contact, string password, string traceId, CancellationToken cancellationToken);
+    Task<AuthTokens?> RestoreAdminAsync(string refreshToken, string traceId, CancellationToken cancellationToken);
     Task<AuthTokens?> RefreshAsync(string refreshToken, string traceId, CancellationToken cancellationToken);
     Task<bool> LogoutAsync(Guid userId, Guid familyId, string refreshToken, string traceId, CancellationToken cancellationToken);
 }
@@ -43,6 +44,33 @@ public sealed class AuthSessionService(
         var tokens = await LoginForPortalAsync(contactType, contact, password, traceId, adminPortal: true, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return tokens;
+    }
+
+    public async Task<AuthTokens?> RestoreAdminAsync(string refreshToken, string traceId,
+        CancellationToken cancellationToken)
+    {
+        if (refreshToken.Length is < 32 or > 256) return null;
+        var now = clock.GetUtcNow();
+        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        await AdminOperations.AcquireLockAsync(database, cancellationToken);
+        var hash = HashToken(refreshToken);
+        var session = await database.RefreshSessions.SingleOrDefaultAsync(item => item.TokenHash == hash,
+            cancellationToken);
+        if (session is null || session.ConsumedAt is not null || session.RevokedAt is not null ||
+            session.ExpiresAt <= now) return null;
+        var user = await database.Users.SingleAsync(item => item.Id == session.UserId, cancellationToken);
+        if (!CanAdminLogin(user)) return null;
+        if (session.LastActivityAt is null || session.LastActivityAt <= now.AddMinutes(-30))
+        {
+            await RevokeFamilyAsync(session.FamilyId, now, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return null;
+        }
+        session.LastActivityAt = now;
+        database.AuditEvents.Add(Audit("admin.session_restored", user.Id, traceId, now));
+        await database.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return Tokens(user, session.FamilyId, refreshToken, now, session.ExpiresAt);
     }
 
     private async Task<AuthTokens?> LoginForPortalAsync(string contactType, string contact, string password,
@@ -73,7 +101,8 @@ public sealed class AuthSessionService(
         database.RefreshSessions.Add(new RefreshSession
         {
             FamilyId = familyId, UserId = user.Id, TokenHash = HashToken(refresh),
-            CreatedAt = now, ExpiresAt = now.Add(RefreshLifetime)
+            CreatedAt = now, ExpiresAt = now.Add(RefreshLifetime),
+            LastActivityAt = adminPortal ? now : null
         });
         database.AuditEvents.Add(Audit(adminPortal ? "admin.login_succeeded" : "auth.login_succeeded", user.Id, traceId, now));
         await database.SaveChangesAsync(cancellationToken);
@@ -104,6 +133,13 @@ public sealed class AuthSessionService(
         }
         if (session.RevokedAt is not null || session.ExpiresAt <= now) return null;
         var user = await database.Users.SingleAsync(item => item.Id == session.UserId, cancellationToken);
+        if (user.AccountType == AccountType.Admin &&
+            (session.LastActivityAt is null || session.LastActivityAt <= now.AddMinutes(-30)))
+        {
+            await RevokeFamilyAsync(session.FamilyId, now, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return null;
+        }
         if (!CanUseSession(user))
         {
             await RevokeFamilyAsync(session.FamilyId, now, cancellationToken);
@@ -114,7 +150,7 @@ public sealed class AuthSessionService(
         var replacement = new RefreshSession
         {
             FamilyId = session.FamilyId, UserId = user.Id, TokenHash = HashToken(replacementToken),
-            CreatedAt = now, ExpiresAt = now.Add(RefreshLifetime)
+            CreatedAt = now, ExpiresAt = now.Add(RefreshLifetime), LastActivityAt = session.LastActivityAt
         };
         session.ConsumedAt = now;
         session.ReplacedById = replacement.Id;
@@ -162,7 +198,8 @@ public sealed class AuthSessionService(
         database.RefreshSessions.Where(item => item.FamilyId == familyId && item.RevokedAt == null)
             .ExecuteUpdateAsync(updates => updates.SetProperty(item => item.RevokedAt, now), cancellationToken);
 
-    private AuthTokens Tokens(User user, Guid familyId, string refresh, DateTimeOffset now)
+    private AuthTokens Tokens(User user, Guid familyId, string refresh, DateTimeOffset now,
+        DateTimeOffset? refreshExpiresAt = null)
     {
         var secret = configuration["Identity:JwtSigningKey"] ?? throw new InvalidOperationException("Identity signing key is not configured.");
         var issuer = configuration["Identity:JwtIssuer"] ?? "ShuttleBook";
@@ -178,7 +215,7 @@ public sealed class AuthSessionService(
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.CreateVersion7().ToString())
             ], now.UtcDateTime, now.Add(AccessLifetime).UtcDateTime, credentials);
         return new AuthTokens("Bearer", new JwtSecurityTokenHandler().WriteToken(jwt),
-            (int)AccessLifetime.TotalSeconds, refresh, now.Add(RefreshLifetime),
+            (int)AccessLifetime.TotalSeconds, refresh, refreshExpiresAt ?? now.Add(RefreshLifetime),
             new AuthUser(user.Id, AccountTypeName(user.AccountType), StatusName(user.Status)));
     }
 

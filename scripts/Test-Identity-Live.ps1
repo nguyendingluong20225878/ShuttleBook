@@ -20,6 +20,7 @@ $localDir = Join-Path $projectRoot '.local'
 $env:DataProtection__KeysPath = Join-Path $localDir 'identity-live-keys'
 [IO.Directory]::CreateDirectory($env:DataProtection__KeysPath) | Out-Null
 $apiProcess = $null
+$workerProcess = $null
 $databaseCreated = $false
 $testExit = 1
 
@@ -40,7 +41,8 @@ try {
     $migrator = Join-Path $projectRoot 'backend/src/ShuttleBook.Migrator/bin/Debug/net10.0/ShuttleBook.Migrator.dll'
     $cli = Join-Path $projectRoot 'backend/src/ShuttleBook.AdminCli/bin/Debug/net10.0/ShuttleBook.AdminCli.dll'
     $api = Join-Path $projectRoot 'backend/src/ShuttleBook.Api/bin/Debug/net10.0/ShuttleBook.Api.dll'
-    foreach ($file in @($migrator, $cli, $api)) {
+    $worker = Join-Path $projectRoot 'backend/src/ShuttleBook.Worker/bin/Debug/net10.0/ShuttleBook.Worker.dll'
+    foreach ($file in @($migrator, $cli, $api, $worker)) {
         if (-not (Test-Path -LiteralPath $file)) { throw 'Build backend/ShuttleBook.slnx before the live Admin test.' }
     }
     $contextInfo = & $dotnetExecutable ef dbcontext info --no-build `
@@ -74,11 +76,19 @@ try {
         } catch { Start-Sleep -Milliseconds 500 }
     }
     if (-not $ready) { throw 'Temporary API did not become ready.' }
-    & (Join-Path $PSScriptRoot 'Test-Web.ps1') 'tests/web/admin-live.spec.ts' 'tests/web/customer-registration-live.spec.ts' '--workers=2' '--trace=off'
+    $workerProcess = Start-Process -FilePath $dotnetExecutable -ArgumentList @($worker) `
+        -WorkingDirectory (Join-Path $projectRoot 'backend/src/ShuttleBook.Worker') `
+        -RedirectStandardOutput (Join-Path $localDir 'f02-live-worker.stdout.log') `
+        -RedirectStandardError (Join-Path $localDir 'f02-live-worker.stderr.log') `
+        -WindowStyle Hidden -PassThru
+    & (Join-Path $PSScriptRoot 'Test-Web.ps1') 'tests/web/admin-live.spec.ts' 'tests/web/customer-registration-live.spec.ts' 'tests/web/f02-live.spec.ts' '--workers=2' '--trace=off'
     $testExit = $LASTEXITCODE
 } catch {
     Write-Error "Live identity test could not complete: $($_.Exception.Message)"
 } finally {
+    if ($workerProcess -and -not $workerProcess.HasExited) {
+        Stop-Process -Id $workerProcess.Id -Force -ErrorAction SilentlyContinue
+    }
     if ($apiProcess -and -not $apiProcess.HasExited) {
         Stop-Process -Id $apiProcess.Id -Force -ErrorAction SilentlyContinue
     }

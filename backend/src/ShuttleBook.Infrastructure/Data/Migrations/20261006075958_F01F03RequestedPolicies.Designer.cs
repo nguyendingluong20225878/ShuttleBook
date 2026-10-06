@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using ShuttleBook.Infrastructure.Data;
@@ -11,9 +12,11 @@ using ShuttleBook.Infrastructure.Data;
 namespace ShuttleBook.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ShuttleBookDbContext))]
-    partial class ShuttleBookDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261006075958_F01F03RequestedPolicies")]
+    partial class F01F03RequestedPolicies
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

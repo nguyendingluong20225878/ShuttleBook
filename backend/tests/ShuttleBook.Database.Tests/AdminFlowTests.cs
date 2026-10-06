@@ -23,6 +23,46 @@ public sealed class AdminFlowTests
     private const string NewPassword = "Rotated-Test-Password-2026!";
 
     [Fact]
+    public async Task Admin_refresh_expires_after_thirty_minutes_without_activity()
+    {
+        await WithDatabaseAsync(async (_, context) =>
+        {
+            await using (var db = context()) await db.Database.MigrateAsync();
+            AuthTokens tokens;
+            await using (var db = context())
+            {
+                Assert.Equal(AdminOperationResult.Applied, await Operations(db).BootstrapAsync(
+                    "email", "idle-admin@example.test", Password, "bootstrap-idle", CancellationToken.None));
+                tokens = Assert.IsType<AuthTokens>(await Auth(db).AdminLoginAsync(
+                    "email", "idle-admin@example.test", Password, "login-idle", CancellationToken.None));
+            }
+            async Task<AuthTokens?> Restore()
+            {
+                await using var db = context();
+                return await Auth(db).RestoreAdminAsync(tokens.RefreshToken, "parallel-restore", CancellationToken.None);
+            }
+            var restored = await Task.WhenAll(Restore(), Restore());
+            Assert.All(restored, item => Assert.Equal(tokens.RefreshToken, item?.RefreshToken));
+            await using (var db = context())
+            {
+                tokens = Assert.IsType<AuthTokens>(await Auth(db).RefreshAsync(
+                    tokens.RefreshToken, "within-window", CancellationToken.None));
+            }
+            await using (var db = context())
+            {
+                await db.RefreshSessions.Where(s => s.UserId == tokens.User.Id)
+                    .ExecuteUpdateAsync(update => update.SetProperty(s => s.LastActivityAt,
+                        DateTimeOffset.UtcNow.AddMinutes(-31)));
+            }
+            await using (var db = context())
+            {
+                Assert.Null(await Auth(db).RefreshAsync(tokens.RefreshToken, "expired-idle", CancellationToken.None));
+                Assert.False(await db.RefreshSessions.AnyAsync(s => s.UserId == tokens.User.Id && s.RevokedAt == null));
+            }
+        });
+    }
+
+    [Fact]
     public async Task Bootstrap_login_rotation_and_revocation_use_postgres()
     {
         await WithDatabaseAsync(async (connection, context) =>
@@ -347,13 +387,16 @@ public sealed class AdminFlowTests
                 db.Users.Add(customer);
                 customerId = customer.Id;
                 familyId = Guid.CreateVersion7();
-                db.RefreshSessions.Add(new RefreshSession
-                {
-                    User = customer, FamilyId = familyId, TokenHash = System.Security.Cryptography.SHA256.HashData(
-                        System.Text.Encoding.UTF8.GetBytes("upgrade-token")),
-                    CreatedAt = DateTimeOffset.UtcNow, ExpiresAt = DateTimeOffset.UtcNow.AddDays(1)
-                });
                 await db.SaveChangesAsync();
+                var sessionId = Guid.CreateVersion7();
+                var tokenHash = System.Security.Cryptography.SHA256.HashData(
+                    System.Text.Encoding.UTF8.GetBytes("upgrade-token"));
+                var createdAt = DateTimeOffset.UtcNow;
+                var expiresAt = createdAt.AddDays(1);
+                await db.Database.ExecuteSqlInterpolatedAsync($"""
+                    INSERT INTO refresh_sessions (id, family_id, user_id, token_hash, created_at, expires_at)
+                    VALUES ({sessionId}, {familyId}, {customerId}, {tokenHash}, {createdAt}, {expiresAt})
+                    """);
                 await db.Database.MigrateAsync();
                 await db.Database.MigrateAsync();
             }

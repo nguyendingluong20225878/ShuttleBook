@@ -38,9 +38,13 @@ public static class AuthSessionEndpoints
         if (body.Error is not null) return body.Error;
         var tokens = await service.RefreshAsync(body.Value!.Value.GetProperty("refreshToken").GetString()!,
             context.TraceIdentifier, cancellationToken);
-        return tokens is null
-            ? CustomerRegistrationEndpoints.Problem(context, 401, "INVALID_REFRESH_TOKEN")
-            : TokenResponse(context, tokens);
+        if (tokens is null)
+        {
+            AdminBrowserSession.Clear(context);
+            return CustomerRegistrationEndpoints.Problem(context, 401, "INVALID_REFRESH_TOKEN");
+        }
+        AdminBrowserSession.Write(context, tokens);
+        return TokenResponse(context, tokens);
     }
 
     private static async Task<IResult> LogoutAsync(HttpContext context, IAuthSessionService service, CancellationToken cancellationToken)
@@ -53,6 +57,7 @@ public static class AuthSessionEndpoints
         if (!await service.LogoutAsync(userId, familyId,
             body.Value!.Value.GetProperty("refreshToken").GetString()!, context.TraceIdentifier, cancellationToken))
             return CustomerRegistrationEndpoints.Problem(context, 401, "INVALID_REFRESH_TOKEN");
+        AdminBrowserSession.Clear(context);
         return Results.NoContent();
     }
 

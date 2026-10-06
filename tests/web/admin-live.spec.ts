@@ -23,7 +23,7 @@ test('admin portal uses the real API and clears its session on logout and reload
   await page.getByLabel('Email', { exact: true }).fill(contact!);
   await page.getByLabel('Mật khẩu').fill(password!);
   await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
-  await expect(page.getByText('Chưa có module quản trị.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Hồ sơ chờ duyệt' })).toBeVisible();
   expect(meResponses).toContain(200);
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
 
@@ -36,6 +36,6 @@ test('admin portal uses the real API and clears its session on logout and reload
   await expect(page.getByRole('button', { name: 'Đăng nhập', exact: true })).toBeVisible();
   await page.goForward();
   await expect(page.getByRole('button', { name: 'Đăng nhập', exact: true })).toBeVisible();
-  await expect(page.getByText('Chưa có module quản trị.')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Hồ sơ chờ duyệt' })).toHaveCount(0);
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
 });
