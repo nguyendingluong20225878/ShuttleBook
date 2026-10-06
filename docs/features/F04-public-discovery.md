@@ -1,6 +1,6 @@
 # F04 — tìm sân công khai, lịch theo cơ sở và ảnh S3 private
 
-Trạng thái: **IN_PROGRESS**. Contract chốt trước triển khai ngày 2026-10-06; API/UI và PostGIS live flow đã triển khai. Phụ thuộc F02/F03; S3 runtime và một số nhánh nghiệm thu còn chờ kiểm thử theo `docs/testing/F04-test-cases.md`.
+Trạng thái: **DONE** (người dùng chấp nhận nghiệm thu ngày 2026-10-07). Phạm vi được chốt lại là tìm sân, lịch và ảnh private bằng adapter local; S3 provider thật được dời sang mốc tích hợp media riêng, vẫn **NOT RUN**. Không diễn giải DONE thành bằng chứng S3 live đã đạt.
 
 ## Phạm vi và quyết định
 
@@ -43,9 +43,9 @@ Prefix `/api/v1`, ẩn danh; thành công `{data,traceId}`; lỗi `application/p
 
 1. Public filtering, nearby geospatial và search text đúng; guest không cần đăng nhập.
 2. Lịch mọi sân một cơ sở đúng giờ local, giá và trạng thái từ PostgreSQL/PostGIS; thay đổi maintenance phản ánh ở lần đọc tiếp theo; chọn một court đúng policy.
-3. Public response và ảnh không lộ QR/payment/owner data; bucket S3 vẫn private; signed GET ngắn hạn hoạt động.
+3. Public response và ảnh local private không lộ QR/payment/owner data. S3 bucket private và signed GET thuộc mốc tích hợp media sau khi có bucket thử nghiệm.
 4. Customer UI desktop/mobile theo bảng tham chiếu, MapTiler/geolocation có fallback, auth F01 không hồi quy.
-5. Kiểm thử DB/API/browser và S3 bucket test thật đạt; nếu chưa có bucket thì giữ S3/F04 `IN_PROGRESS` với `NOT RUN`, không ghi PASS giả.
+5. Kiểm thử DB/API/browser trong phạm vi local đạt và người dùng chấp nhận nghiệm thu tay. S3 bucket test thật vẫn `NOT RUN` theo quyết định hoãn của người dùng; phải kiểm thử riêng trước khi dùng S3 thật.
 
 ## Điều chỉnh nghiệm thu UI 2026-10-07
 

@@ -1,5 +1,7 @@
 # Prompt triển khai F04 — tìm sân, xem chi tiết/lịch và tích hợp S3
 
+> Prompt lịch sử viết trước nghiệm thu. Quyết định mới ngày 2026-10-07 trong `docs/features/F04-public-discovery.md` và `docs/progress.md` chốt F04 local `DONE`, dời S3 live sang mốc media riêng. Các câu bên dưới yêu cầu F04 phải chờ S3 không còn áp dụng cho trạng thái F04 local; S3 vẫn `NOT RUN`.
+
 Tiếp tục từ repo ShuttleBook hiện tại. Đọc `AGENTS.md`, `docs/process.md`, `docs/progress.md`, `docs/README.md`, `docs/00-*.md` đến `docs/05-*.md`, đặc tả/testcase F02–F03, cấu hình setup và code liên quan trước khi sửa. Kiểm tra Git/status/diff và không ghi đè thay đổi đang có. Giữ nguyên các thay đổi người dùng đã push; không commit, push, merge hay deploy khi chưa được yêu cầu.
 
 ## Mục tiêu F04

@@ -1,13 +1,26 @@
 # Tiến độ ShuttleBook
 
-## F04 — public discovery, lịch sân và ảnh private — 2026-10-06 (IN_PROGRESS)
+## F04 — public discovery, lịch sân và ảnh private local — 2026-10-07 (DONE)
+
+- **Quyết định nghiệm thu 2026-10-07:** Người dùng xác nhận F04 đạt và yêu cầu chuyển `DONE`. Phạm vi DONE là tìm/list/nearby/detail/lịch, giá tham khảo và ảnh private local đã kiểm thử; S3 live được người dùng hoãn sang mốc tích hợp media riêng. T10/phần S3 T09 giữ **NOT RUN**, không coi F04 DONE là S3 PASS. Kết nối đăng nhập khách với bước đặt sân thuộc F05. Chưa commit/push theo yêu cầu lượt này.
+
+### Chuẩn bị F05 — prompt 2026-10-07
+
+- Đã đối chiếu roadmap và code F01–F04, ghi prompt triển khai tại `docs/prompts/F05-casual-booking.md`: quote có hạn, booking vãng lai theo policy F03, auth handoff, giá/QR snapshot, allocation + idempotency + expiry Worker, DB/API/UI/test trên PostGIS thật. Đây mới là prompt; **F05 chưa triển khai**.
+- Trước code F05 cần lập đặc tả/testcase và chốt quote TTL, booking horizon, chính sách giá đổi giữa quote/create; prompt ghi đề xuất cấu hình, không giả vờ các chính sách đã được người dùng duyệt. Báo chuyển/xác nhận thuộc F06, series thuộc F07, S3 live thuộc mốc media sau.
 
 - Đã chốt phạm vi/API/error/data/testcase trước code trong `docs/features/F04-public-discovery.md`, `docs/testing/F04-test-cases.md`; prompt thực thi ở `docs/prompts/F04-public-discovery-s3.md`. F04 chỉ đọc list/nearby/detail/lịch/giá tham khảo; F05 mới tạo quote/booking và kiểm tra lại trạng thái trong giao dịch.
 - API public `GET /api/v1/venues`, `/nearby`, `/{id}`, `/{id}/availability`, `/{id}/image` đã nối PostgreSQL/PostGIS và media F02. Nearby dùng `ST_DWithin`/`ST_Distance`; availability dựng ca 30 phút theo giờ địa phương, rule giá F03 và allocations RESERVED; ảnh chỉ từ upload READY/VENUE_IMAGE đúng venue published. Adapter local trả ảnh private, S3 path phát signed GET ngắn hạn. F04 không thêm migration/schema.
-- Customer web tách `App.tsx`, `features/auth`, `features/venues` và CSS dùng chung. Trang tìm sân có text/geolocation/MapTiler/map fallback; detail có bảng court × 30 phút theo hình tham chiếu, màu và nhãn trạng thái, tổng giá tham khảo, bộ lọc ngày/sân trong URL, reload/focus/poll. Có thể dùng desktop/mobile; auth F01 được giữ và regression đã chạy.
+- Customer web tách `App.tsx`, `features/auth`, `features/venues` và CSS dùng chung. Trang tìm sân có text/geolocation/MapTiler/map fallback; detail có bảng court × 30 phút theo hình tham chiếu, màu và nhãn trạng thái, tổng giá tham khảo, ngày trong URL, reload/focus/poll. Bảng luôn hiện mọi sân; mốc giờ ở biên ô giá; bấm lại ô chọn chỉ bỏ ô đó. Có thể dùng desktop/mobile; auth F01 được giữ và regression đã chạy.
 - **PASS:** backend build 0 warning/error, `npm.cmd run typecheck`, `npm.cmd run build`, `npm.cmd run test:api` 78/78, `npm.cmd run test:web` 40 PASS/8 SKIP live có chủ đích, `npm.cmd run test:identity-live` 8/8 trên PostGIS tạm (gồm F04 owner bảo trì → khách thấy kín → hủy → còn trống), full `npm.cmd run test:db -- --no-build` 26/26 trên PostGIS thật và hai test F04 mở rộng 2/2. Đã xem ảnh chụp UI desktop/mobile trong Playwright; bảng cuộn ngang ở mobile. Hai kỳ vọng F02 cũ về route `/api/v1/venues` đã đổi thành kiểm tra danh sách rỗng trước publish và có venue sau publish.
-- **NOT RUN:** S3 provider thật/IAM/CORS/private object/signed GET vì người dùng chưa có bucket thử nghiệm và credentials local. MapTiler provider thật chưa có bằng chứng F04 riêng. F04 giữ IN_PROGRESS, không gộp kết quả mock với S3/PostGIS live. Chưa commit/push/deploy.
+- **NOT RUN:** S3 provider thật/IAM/CORS/private object/signed GET vì người dùng chưa có bucket thử nghiệm và credentials local. MapTiler provider thật chưa có bằng chứng F04 riêng. Các mục này được theo dõi riêng, không gộp kết quả mock với S3/PostGIS live.
 - Đã viết checklist nghiệm thu tay đầy đủ trong `docs/testing/F04-manual-acceptance.md`: PowerShell VS Code, dữ liệu mẫu, T01–T14, lỗi 400/404, F5/ảnh local, màn desktop/mobile và cách ghi bằng chứng. Tiếp theo: người dùng chạy checklist; khi có bucket non-production và cấu hình local, chạy kịch bản S3 F02/F04, rồi cập nhật trạng thái từng testcase. Một lượt DB trước đó bị chặn do Docker chưa mở; sau khi người dùng mở lại, suite đầy đủ đã PASS.
+
+### Điều chỉnh bảng lịch theo nghiệm thu 2026-10-07
+
+- Đã bỏ dropdown lọc sân trên customer UI; số hàng luôn bằng số court trong availability. Trục giờ hiển thị mốc bắt đầu ở ranh giới trái mỗi ô 30 phút và mốc kết thúc tại mép phải ô cuối, kèm nhãn 30 phút. Chọn lại ô trong dải chỉ bỏ ô đó; nếu bấm ô giữa của dải dài hơn hai ca thì giữ phần liên tiếp dài hơn (hòa giữ phần trước). URL customer chỉ giữ `date`; API `courtId` tùy chọn không đổi.
+- **PASS:** `npm.cmd run typecheck`, `npm.cmd run build`, `npm.cmd run test:web -- tests/web/f04-discovery.spec.ts` 8/8 (desktop/mobile, 3 và 7 sân, vị trí giờ, toggle, giá, Back), toàn bộ `npm.cmd run test:web` 42 PASS/8 SKIP live có chủ đích. Đã xem ảnh UI desktop/mobile. Bản Playwright đầu dùng `dist` cũ và fail nhãn mới; build lại rồi suite pass.
+- **Nghiệm thu:** Người dùng xác nhận đã nghiệm thu F04 và yêu cầu chốt DONE ngày 2026-10-07; không có biên bản thao tác tay chi tiết từng testcase trên venue thật. S3 live vẫn NOT RUN; login kết nối đặt sân chuyển sang F05. Chưa commit/push ở mốc điều chỉnh này.
 
 ## F04 — phân tích phạm vi và prompt tích hợp S3 — 2026-10-06 (mốc trước triển khai)
 

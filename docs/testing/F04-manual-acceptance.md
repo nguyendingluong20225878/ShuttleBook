@@ -187,7 +187,7 @@ F03 yêu cầu giá cơ bản phủ toàn bộ giờ mở, nên `NO_PRICE` khôn
 
 ### T08 — policy và chọn ca
 
-Đặt policy sân 1 block/tối thiểu 60 phút. Chọn một ca 30 phút: tổng giá vẫn hiện nhưng thông báo chưa đủ thời lượng. Chọn thêm ca 30 phút **liền kề, cùng sân**: hiện hợp lệ. Bấm lại ô đã chọn để bỏ chọn. Chọn qua một ô **Đã kín** không tạo được một khoảng liên tục. Đổi sang sân 2: selection cũ phải mất; mỗi lần chỉ chọn một sân. Thử đổi policy sân 2 sang block/tối thiểu 90 phút, tải lại và xác nhận 60 phút chưa hợp lệ, 90 phút liên tiếp hợp lệ. F04 chỉ báo giá tham khảo, **không có nút đặt/giữ chỗ/thanh toán**.
+Đặt policy sân 1 block/tối thiểu 60 phút. Chọn một ca 30 phút: tổng giá vẫn hiện nhưng thông báo chưa đủ thời lượng. Chọn thêm ca 30 phút **liền kề, cùng sân**: hiện hợp lệ. Bấm lại ô thứ hai: chỉ ô đó bỏ chọn, ô thứ nhất và giá của nó vẫn còn. Chọn lại ô thứ hai, rồi bấm lại ô thứ nhất: ô thứ hai vẫn còn. Với ba ô liên tiếp, bấm ô giữa thì chỉ giữ một dải liên tiếp (nếu hai phía dài bằng nhau, giữ phía trước). Chọn qua một ô **Đã kín** không tạo được một khoảng liên tục. Đổi sang sân 2: selection cũ phải mất; mỗi lần chỉ chọn một sân. Thử đổi policy sân 2 sang block/tối thiểu 90 phút, tải lại và xác nhận 60 phút chưa hợp lệ, 90 phút liên tiếp hợp lệ. F04 chỉ báo giá tham khảo, **không có nút đặt/giữ chỗ/thanh toán**.
 
 ### T09 — ảnh local, QR và F5
 
@@ -201,7 +201,7 @@ curl.exe -sS -o NUL -w 'HTTP %{http_code}, type %{content_type}\n' "${base}/${ve
 
 ### T11 — UX desktop/mobile, lỗi và điều hướng
 
-Mở trang desktop rồi DevTools → Toggle device toolbar để thử chiều rộng điện thoại. Bảng lịch cuộn ngang; header giờ/tên sân và chữ trạng thái vẫn đọc được. Chọn **Xem sân** để chỉ còn một hàng. Đổi ngày và sân, kiểm tra URL có `date`/`courtId`; Back/Forward và F5 khôi phục bộ lọc. Trường hợp list rỗng, trang lỗi mạng và ảnh lỗi phải có thông báo/placeholder; dùng DevTools Network → Offline rồi tải lại, sau đó Online và **Thử lại/Làm mới lịch**. Nếu key MapTiler hoặc tile lỗi, list text vẫn xem được. Kiểm tra bàn phím Tab và nhãn trạng thái; màu không phải tín hiệu duy nhất.
+Mở trang desktop rồi DevTools → Toggle device toolbar để thử chiều rộng điện thoại. Bảng lịch cuộn ngang; header giờ/tên sân và chữ trạng thái vẫn đọc được. Đếm số hàng sân: cơ sở có 3 sân hiện 3 hàng, cơ sở có 7 sân hiện 7 hàng; không có dropdown **Xem sân**. Mỗi ô giá ứng với 30 phút: mốc 17:00 ở mép trái ô 17:00–17:30, mốc 17:30 ở ranh giới hai ô, mốc kết thúc cuối cùng ở mép phải ô cuối. Cuộn ngang trên mobile và kiểm tra mốc giờ vẫn khớp ô giá. Đổi ngày, kiểm tra URL có `date`; Back/Forward và F5 khôi phục ngày, mọi sân vẫn hiển thị. Trường hợp list rỗng, trang lỗi mạng và ảnh lỗi phải có thông báo/placeholder; dùng DevTools Network → Offline rồi tải lại, sau đó Online và **Thử lại/Làm mới lịch**. Nếu key MapTiler hoặc tile lỗi, list text vẫn xem được. Kiểm tra bàn phím Tab và nhãn trạng thái; màu không phải tín hiệu duy nhất.
 
 ### T13–T14 — schema và hồi quy
 
@@ -209,7 +209,7 @@ F04 không thêm migration nên T13 **không áp dụng**. Kiểm tra nhanh các
 
 ## 4. S3 live — chỉ làm khi có bucket test riêng
 
-Hiện chưa có bucket/credentials nên **T10 và phần S3 của T09 = NOT RUN**. Không đánh dấu F04 DONE chỉ dựa vào ảnh local. Khi đã có bucket non-production private và credentials trên máy (không gửi secret qua chat), cấu hình `Media__Mode=S3`, region/bucket theo `docs/setup.md`, restart API. Tải ảnh mới qua partner: kiểm tra presigned PUT, `complete` thành `READY`, ảnh venue public redirect sang signed GET hạn tối đa 5 phút và hiển thị được; URL object không ký bị từ chối, QR không đọc qua route venue image. Thử sai checksum/type/size, `complete` lặp, owner khác, hết hạn, CORS từ origin partner/customer; ghi status/code và không lưu signed URL/token vào báo cáo. Bucket public hoặc lỗi CORS là **FAIL**, không phải lý do bỏ qua.
+Hiện chưa có bucket/credentials nên **T10 và phần S3 của T09 = NOT RUN**. Người dùng đã chấp nhận F04 local và dời S3 live sang mốc tích hợp media riêng; trạng thái F04 `DONE` không chứng minh S3 đã hoạt động. Khi đã có bucket non-production private và credentials trên máy (không gửi secret qua chat), cấu hình `Media__Mode=S3`, region/bucket theo `docs/setup.md`, restart API. Tải ảnh mới qua partner: kiểm tra presigned PUT, `complete` thành `READY`, ảnh venue public redirect sang signed GET hạn tối đa 5 phút và hiển thị được; URL object không ký bị từ chối, QR không đọc qua route venue image. Thử sai checksum/type/size, `complete` lặp, owner khác, hết hạn, CORS từ origin partner/customer; ghi status/code và không lưu signed URL/token vào báo cáo. Bucket public hoặc lỗi CORS là **FAIL**, không phải lý do bỏ qua.
 
 ## 5. Chạy bộ bằng chứng tự động bổ trợ và chốt nghiệm thu
 
@@ -225,7 +225,7 @@ npm.cmd run test:web
 npm.cmd run test:identity-live
 ```
 
-`test:web` có các ca live được SKIP có chủ đích; `test:identity-live` chạy riêng qua API/PostGIS thật trên database tạm, cần Docker/Mailpit và cổng trống. Không dùng kết quả UI mock để thay kết quả DB hoặc S3. Ghi rõ **PASS/FAIL/NOT RUN/BLOCKED**, ngày, browser, lệnh hoặc URL/HTTP status, venue/court test ID (không ghi token/password/QR/signed URL). F04 chỉ được chốt DONE khi acceptance trong `docs/features/F04-public-discovery.md` đạt, bao gồm S3 live nếu vẫn là yêu cầu tích hợp.
+`test:web` có các ca live được SKIP có chủ đích; `test:identity-live` chạy riêng qua API/PostGIS thật trên database tạm, cần Docker/Mailpit và cổng trống. Không dùng kết quả UI mock để thay kết quả DB hoặc S3. Ghi rõ **PASS/FAIL/NOT RUN/BLOCKED**, ngày, browser, lệnh hoặc URL/HTTP status, venue/court test ID (không ghi token/password/QR/signed URL). F04 local đã được người dùng chốt DONE; S3 live là việc còn mở ở mốc media riêng và không được ghi PASS trước khi chạy thật.
 
 | Nhóm | Kết quả tay | Bằng chứng / lỗi / lý do NOT RUN |
 |---|---|---|

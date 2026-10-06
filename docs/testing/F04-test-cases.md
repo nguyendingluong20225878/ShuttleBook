@@ -1,6 +1,6 @@
 # F04 — testcase và bằng chứng
 
-Trạng thái: **IN_PROGRESS** (2026-10-06). Dùng PostgreSQL/PostGIS thật trên database tạm, không migrate/drop DB development. Chưa có bucket/credentials S3 thử nghiệm nên phần provider thật **NOT RUN**; không ghi key/token/URL ký vào log.
+Trạng thái F04 local: **DONE** theo xác nhận nghiệm thu của người dùng ngày 2026-10-07. Dùng PostgreSQL/PostGIS thật trên database tạm, không migrate/drop DB development. Chưa có bucket/credentials S3 thử nghiệm nên F04-T10/provider thật vẫn **NOT RUN**, được theo dõi ở mốc media riêng; không ghi key/token/URL ký vào log.
 
 | ID | Mục tiêu / dữ liệu / bước | Kết quả mong đợi | Loại | Kết quả |
 |---|---|---|---|---|
@@ -18,11 +18,16 @@ Trạng thái: **IN_PROGRESS** (2026-10-06). Dùng PostgreSQL/PostGIS thật tr�
 | F04-T12 | Xem lịch rồi owner tạo/cancel bảo trì; đọc lại sau focus/poll | Grid đổi theo DB, không hứa giữ chỗ; không có side effect ghi từ GET | Browser+PostGIS | PASS nút refresh + DB thật; NOT RUN chờ poll/focus có thay đổi |
 | F04-T13 | Migration/schema kiểm tra fresh/repeat/upgrade từ F03 có dữ liệu nếu có migration F04 | Không mất dữ liệu F02/F03, constraint còn nguyên | DB | Không áp dụng: F04 không thêm migration |
 | F04-T14 | Chạy lại identity customer và F02/F03 regression liên quan | Register/login/refresh và partner/admin flow không hồi quy | API+browser+DB | PASS API/web/live/full DB 26/26 sau cập nhật assertion F02 |
-| F04-T15 | Venue có 2–7 sân; mở lịch desktop/mobile | Mỗi court ACTIVE là một hàng, không có dropdown Xem sân; số hàng khớp response | Browser | NOT RUN — thay đổi 2026-10-07 |
-| F04-T16 | Nhìn trục giờ 17:00–18:00 và ô giá 30 phút, gồm mốc kết thúc cuối cùng | 17:00 và 17:30 ở hai biên ô đầu, 17:30 và 18:00 ở hai biên ô sau; giá nằm trong ô, cuộn mobile vẫn đọc được | Browser + visual review | NOT RUN — thay đổi 2026-10-07 |
-| F04-T17 | Chọn hai ô liên tiếp, bấm lại từng ô; chọn ba ô rồi bấm ô giữa | Chỉ ô vừa bấm bị bỏ ở biên, ô còn lại/tổng giá được giữ; giữa ba ô giữ một dải liên tiếp, không tạo hai dải rời | Browser | NOT RUN — thay đổi 2026-10-07 |
+| F04-T15 | Venue có 3 hoặc 7 sân; mở lịch desktop/mobile | Mỗi court ACTIVE là một hàng, không có dropdown Xem sân; số hàng khớp response | Browser | PASS 3 và 7 sân, desktop/mobile, route mock; NOT RUN tay trên venue thật |
+| F04-T16 | Nhìn trục giờ 17:00–18:00 và ô giá 30 phút, gồm mốc kết thúc cuối cùng | 17:00 và 17:30 ở hai biên ô đầu, 17:30 và 18:00 ở hai biên ô sau; giá nằm trong ô, cuộn mobile vẫn đọc được | Browser + visual review | PASS kiểm tra vị trí DOM và ảnh desktop/mobile; NOT RUN tay trên venue thật |
+| F04-T17 | Chọn hai ô liên tiếp, bấm lại từng ô; chọn ba ô rồi bấm ô giữa | Chỉ ô vừa bấm bị bỏ ở biên, ô còn lại/tổng giá được giữ; giữa ba ô giữ một dải liên tiếp, không tạo hai dải rời | Browser | PASS desktop/mobile route mock; NOT RUN tay trên venue thật |
 
 Sau mỗi lượt ghi ngày, môi trường, lệnh và PASS/FAIL/NOT RUN/BLOCKED cùng lý do. Mock UI không chứng minh PostGIS hoặc S3 provider; code review không chứng minh runtime.
+
+## Bằng chứng điều chỉnh UI 2026-10-07
+
+- **PASS:** `npm.cmd run typecheck`; `npm.cmd run build`; `npm.cmd run test:web -- tests/web/f04-discovery.spec.ts` 8/8 desktop/mobile; `npm.cmd run test:web` 42 PASS/8 SKIP live theo cấu hình. Test kiểm tra 3 và 7 hàng sân, không có dropdown, mốc giờ nằm tại biên ô qua DOM, giá trong ô, bỏ chọn từng ô/tổng giá còn lại, Back khôi phục ngày. Đã xem ảnh Playwright desktop/mobile sau build.
+- **Nghiệm thu:** Người dùng xác nhận các thay đổi F04 đạt ngày 2026-10-07. Không có log chi tiết từng bước tay trên venue thật cho T15–T17 nên bằng chứng tự động vẫn được ghi riêng. API, migration, PostGIS và S3 không chạy lại tại mốc UI này; F04 local được chốt `DONE`, S3 live tiếp tục `NOT RUN`.
 
 ## Bằng chứng 2026-10-06
 
