@@ -163,7 +163,7 @@ Bảng giá trong UC-12 do owner của doanh nghiệp sở hữu court cấu hì
 |---|---|
 | Mục tiêu | Ghi nhận khách đã chuyển tiền và thông báo cho operator |
 | Tiền điều kiện | Booking `AWAITING_TRANSFER`, chưa quá deadline, thuộc customer |
-| Luồng chính | Nhận mã giao dịch/ảnh biên lai; lock booking; chuyển payment `TRANSFER_REPORTED`, booking `AWAITING_OWNER_CONFIRMATION`; ghi outbox |
+| Luồng chính | Khách báo chuyển, có thể gửi ảnh chụp màn hình/ghi chú, không cần mã giao dịch; lock booking; chuyển payment `TRANSFER_REPORTED`, booking `AWAITING_OWNER_CONFIRMATION`; ghi outbox |
 | Quy tắc | Bấm **Đã chuyển khoản** chưa có nghĩa là `PAID`; retry cùng key không gửi notification lần hai |
 | Ngoại lệ | Booking hết hạn, file không hợp lệ, version conflict |
 | Audit | `payment.transfer_reported`, `booking.awaiting_owner_confirmation` |

@@ -17,6 +17,7 @@ function tokenPayload(refreshToken: string, expiresInSeconds: number) {
 
 test('customer can register, verify, log in, refresh and log out without browser storage', async ({ page }) => {
   const requests: { path: string; body: Record<string, string>; authorization: string | undefined }[] = [];
+  await page.route('**/api/v1/venues**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { items: [], nextCursor: null } }) }));
   await page.route('**/api/v1/auth/**', async route => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
@@ -46,7 +47,7 @@ test('customer can register, verify, log in, refresh and log out without browser
   await expect(page.getByRole('heading', { name: 'Đăng nhập khách hàng' })).toBeVisible();
   await page.getByLabel('Mật khẩu', { exact: true }).fill('Example-password-2026!');
   await page.getByRole('button', { name: 'Đăng nhập', exact: true }).last().click();
-  await expect(page.getByRole('heading', { name: 'Xin chào khách hàng' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Chọn cơ sở phù hợp với bạn' })).toBeVisible();
   await expect.poll(() => requests.filter(request => request.path.endsWith('/refresh')).length).toBe(1);
   expect(requests.find(request => request.path.endsWith('/refresh'))?.body.refreshToken).toBe('first-refresh');
 
@@ -57,7 +58,7 @@ test('customer can register, verify, log in, refresh and log out without browser
   expect(persisted).toEqual({ local: [], session: [] });
 
   await page.getByRole('button', { name: 'Đăng xuất' }).click();
-  await expect(page.getByRole('heading', { name: 'Xin chào khách hàng' })).toBeHidden();
+  await expect(page.getByRole('heading', { name: 'Đăng nhập khách hàng' })).toBeVisible();
   await expect.poll(() => requests.filter(request => request.path.endsWith('/logout')).length).toBe(1);
   const logout = requests.find(request => request.path.endsWith('/logout'));
   expect(logout?.authorization).toBe('Bearer access-rotated-refresh');

@@ -68,7 +68,7 @@ Chủ sân cấu hình `pricing_rules` riêng cho từng court của mình theo 
 ## 4. Chuyển khoản và xác nhận
 
 1. API trả QR do chủ sân cung cấp cho venue, tài khoản nhận tiền, số tiền, nội dung chuyển khoản và deadline từ snapshot của booking. Chặn tạo booking nếu cơ sở chưa có QR nhận tiền hợp lệ.
-2. Khách chuyển khoản rồi bấm **Đã chuyển khoản**, nhập mã giao dịch và có thể tải biên lai.
+2. Khách chuyển khoản rồi bấm **Đã chuyển khoản**, có thể tải ảnh chụp màn hình/ghi chú; không yêu cầu nhập mã giao dịch theo nghiệm thu 2026-10-07.
 3. Backend chuyển payment sang `TRANSFER_REPORTED`, booking sang `AWAITING_OWNER_CONFIRMATION` (hiển thị **Chờ xác nhận**) và ghi outbox trong cùng transaction.
 4. Worker gửi notification trong ứng dụng đến chủ sân của booking, kèm liên kết mở chi tiết để xác nhận; nhân viên nhận thêm theo phân quyền.
 5. Operator đối chiếu ngân hàng rồi chọn:

@@ -121,7 +121,7 @@ test('partner draft forms call the scoped onboarding API', async ({ page }) => {
   await suggestion.click();
   await venue.getByRole('button', { name: 'Xác nhận vị trí này' }).click();
   await venue.getByRole('button', { name: 'Lưu cơ sở' }).click();
-  await expect(page.getByRole('heading', { name: 'Cơ sở Quận 1 · DRAFT' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Cơ sở Quận 1 · Hồ sơ nháp' })).toBeVisible();
   expect(calls).toContain('POST /api/v1/partner-onboarding/businesses');
   expect(calls).toContain(`POST /api/v1/partner-onboarding/businesses/${businessId}/venues`);
   expect(searchedAddresses).toContain('31 ngõ 16 Hoàng Cầu - Hà Nội');

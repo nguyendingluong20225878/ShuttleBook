@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CourtSchedule, ScheduleSlot, VenueSchedule } from '../types';
+import { navigate } from '../../../routes/navigation';
 
 type Selection = { courtId: string; starts: string[] } | null;
 const money = new Intl.NumberFormat('vi-VN');
@@ -51,8 +52,7 @@ export function ScheduleGrid({ schedule }: { schedule: VenueSchedule }) {
   const selectedCourt = schedule.courts.find(court => court.courtId === selection?.courtId);
   const selectedSlots = selectedCourt?.slots.filter(slot => selection?.starts.includes(slot.startsAt)) ?? [];
   const duration = selectedSlots.length * 30;
-  const valid = Boolean(selectedCourt && duration >= selectedCourt.minimumBookingMinutes &&
-    duration % selectedCourt.bookingBlockMinutes === 0);
+  const valid = Boolean(selectedCourt && duration >= selectedCourt.minimumBookingMinutes);
   const total = selectedSlots.reduce((sum, slot) => sum + (slot.pricePerSlot ?? 0), 0);
 
   return <section className="schedule-section" aria-label="Lịch các sân">
@@ -66,16 +66,18 @@ export function ScheduleGrid({ schedule }: { schedule: VenueSchedule }) {
       </div></div>
     {axis.length === 0 ? <p>Ngày này chưa có giờ hoạt động cho các sân.</p> : <div className="schedule-scroll" tabIndex={0}
       aria-label="Bảng lịch sân, cuộn ngang để xem các giờ khác">
-      <table className="schedule-grid"><thead><tr><th className="court-heading" scope="col">Sân / giờ</th>
+      <table className="schedule-grid" style={{ width: `calc(var(--court-column-width) + ${axis.length} * var(--slot-column-width))` }}>
+        <colgroup><col className="court-column" /><col className="slot-column" span={axis.length} /></colgroup>
+        <thead><tr><th className="court-heading" scope="col">Sân / giờ</th>
         {axis.map((time, index) => <th key={time} scope="col" className="time-heading"
           aria-label={`${time} đến ${index + 1 < axis.length ? axis[index + 1] : axisEnd}, 30 phút`}>
-          <span className="time-start">{time}</span><span className="time-duration">30 phút</span>
+          <span className="time-start">{time}</span>
           {index === axis.length - 1 && <span className="time-end">{axisEnd}</span>}
         </th>)}</tr></thead>
         <tbody>{courts.map(court => {
           const slots = new Map(court.slots.map(slot => [slot.startsAt, slot]));
           return <tr key={court.courtId}><th scope="row" className="court-heading">
-            <strong>{court.name}</strong><small>Tối thiểu {court.minimumBookingMinutes} phút · block {court.bookingBlockMinutes} phút</small>
+            <strong>{court.name}</strong><small>Tối thiểu {court.minimumBookingMinutes} phút · mỗi ô 30 phút</small>
           </th>{axis.map(time => {
             const slot = slots.get(time);
             const selected = selection?.courtId === court.courtId && selection.starts.includes(time);
@@ -87,7 +89,8 @@ export function ScheduleGrid({ schedule }: { schedule: VenueSchedule }) {
             return <td key={time} className={`slot-cell ${selected ? 'is-selected' : status.toLowerCase()}`}>
               {slot?.status === 'AVAILABLE' ? <button type="button" aria-pressed={selected}
                 aria-label={`${court.name}, ${time} đến ${slot.endsAt}, ${text}, ${price}`}
-                onClick={() => select(court, slot)}><span>{selected ? 'Đang chọn' : 'Còn trống'}</span><small>{price}</small></button>
+                title={`${court.name}: ${time}–${slot.endsAt} · ${price}/30 phút`}
+                onClick={() => select(court, slot)}>{selected && <span>Đang chọn</span>}<small>{price}</small></button>
                 : <span className="slot-label" aria-label={`${court.name}, ${time}, ${text}`}>
                   {status === 'CLOSED' ? '—' : text}</span>}</td>;
           })}</tr>;
@@ -96,7 +99,11 @@ export function ScheduleGrid({ schedule }: { schedule: VenueSchedule }) {
       <strong>{selectedCourt.name}: {selectedSlots[0].startsAt}–{selectedSlots[selectedSlots.length - 1].endsAt}</strong>
       <span>{duration} phút · Giá tham khảo {money.format(total)}đ</span>
       <small>{valid ? 'Khung giờ hợp lệ theo thời lượng của sân.' :
-        `Hãy chọn ca liên tiếp, tối thiểu ${selectedCourt.minimumBookingMinutes} phút và theo block ${selectedCourt.bookingBlockMinutes} phút.`}</small>
+        `Hãy chọn ca liên tiếp, tối thiểu ${selectedCourt.minimumBookingMinutes} phút.`}</small>
+      <button type="button" disabled={!valid} onClick={() => navigate(`/booking-review?${new URLSearchParams({
+        venueId: schedule.venueId, courtId: selectedCourt.courtId, date: schedule.date,
+        startsAt: selectedSlots[0].startsAt, endsAt: selectedSlots[selectedSlots.length - 1].endsAt,
+      })}`)}>Tiếp tục đặt vãng lai</button>
     </div>}
     <p className="schedule-note">Lịch và giá có thể thay đổi. Hệ thống sẽ kiểm tra lại khi tạo đơn đặt sân.</p>
   </section>;

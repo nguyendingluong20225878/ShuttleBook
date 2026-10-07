@@ -1,6 +1,12 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { PartnerOperations } from './PartnerOperations';
 import { MapTilerPlacePicker } from './MapTilerPlacePicker';
+import { PartnerShell } from './layouts/PartnerShell';
+import { PartnerOverview } from './features/workspace/PartnerOverview';
+import { statusLabel, usePartnerNavigation } from './features/workspace/navigation';
+import { PartnerApiError, type RequestOptions } from './features/bookings/types';
+import { PartnerBookings } from './features/bookings/PartnerBookings';
+import { PartnerNotifications, usePartnerNotifications } from './features/notifications/PartnerNotifications';
 
 type Session = { accessToken: string; refreshToken: string };
 type Row = { id: string; name: string; status: string };
@@ -12,21 +18,28 @@ type Venue = { id: string; name: string; status: string; version: number; addres
 type Detail = Row & { version: number; legalName: string; contact: string;
   approval?: { status: string; reason?: string }; venues: Venue[] };
 type Envelope<T> = { data: T };
-type Notice = { id: string; title: string; body: string; readAt?: string };
 type ScheduleDraft = { dayOfWeek: number; startsAt: string; endsAt: string; pricePerSlot: number };
 const base = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5080';
 const days = ['Chủ nhật', 'Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy'];
 
-export function PartnerOnboarding({ session, onSession, onExpired }: {
-  session: Session; onSession: (next: Session) => void; onExpired: () => void }) {
+export function PartnerOnboarding({ session, onSession, onExpired, onLogout, logoutBusy }: {
+  session: Session; onSession: (next: Session) => void; onExpired: () => void;
+  onLogout: () => void; logoutBusy: boolean }) {
+  const { page, bookingId, visited, navigate, openBooking } = usePartnerNavigation();
   const tokens = useRef(session);
   const refreshing = useRef<Promise<Session> | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [businesses, setBusinesses] = useState<Row[]>([]);
   const [selected, setSelected] = useState('');
   const [detail, setDetail] = useState<Detail | null>(null);
   const [message, setMessage] = useState('');
-  const [notices, setNotices] = useState<Notice[]>([]);
   const [busy, setBusy] = useState(false);
+  const [bookingBusy, setBookingBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const loadedBusiness = useRef('');
+  const initialLoadStarted = useRef(false);
   const [businessName, setBusinessName] = useState('');
   const [legalName, setLegalName] = useState('');
   const [contact, setContact] = useState('');
@@ -56,11 +69,13 @@ export function PartnerOnboarding({ session, onSession, onExpired }: {
   const [revisionLongitude, setRevisionLongitude] = useState('');
   const [revisionTimezone, setRevisionTimezone] = useState('Asia/Ho_Chi_Minh');
 
-  async function request<T>(path: string, method = 'GET', body?: object, version?: number): Promise<T> {
+  async function request<T>(path: string, method = 'GET', body?: object, version?: number, options?: RequestOptions): Promise<T> {
     const send = (bearer: string) => fetch(`${base}/api/v1${path}`, { method,
-      headers: { Authorization: `Bearer ${bearer}`, ...(body ? { 'Content-Type': 'application/json' } : {}),
-        ...(version !== undefined ? { 'If-Match': `"${version}"` } : {}) },
-      ...(body ? { body: JSON.stringify(body) } : {}) });
+      signal: options?.signal,
+      headers: { Authorization: `Bearer ${bearer}`, ...(body || options?.bodyText ? { 'Content-Type': 'application/json' } : {}),
+        ...(version !== undefined ? { 'If-Match': `"${version}"` } : {}),
+        ...(options?.idempotencyKey ? { 'Idempotency-Key': options.idempotencyKey } : {}) },
+      ...(body || options?.bodyText ? { body: options?.bodyText ?? JSON.stringify(body) } : {}) });
     const accessToken = tokens.current.accessToken;
     let response = await send(accessToken);
     if (response.status === 401) {
@@ -73,28 +88,48 @@ export function PartnerOnboarding({ session, onSession, onExpired }: {
           if (!refreshed.ok) throw new Error('Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.');
           const next = (await refreshed.json() as Envelope<Session>).data;
           if (!next?.accessToken || !next.refreshToken) throw new Error('Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.');
+          if (!mounted.current) throw new DOMException('Phiên trên trang đã đóng.', 'AbortError');
           tokens.current = next; onSession(next);
           return next;
-        })().catch(error => { onExpired(); throw error; }).finally(() => { refreshing.current = null; });
+        })().catch(error => { if (mounted.current) onExpired(); throw error; }).finally(() => { refreshing.current = null; });
         response = await send((await refreshing.current).accessToken);
       }
     }
     if (!response.ok) {
       const error = await response.json().catch(() => ({})) as { code?: string };
-      throw new Error(error.code ? `Yêu cầu không thành công (${error.code}).` : 'Không thể kết nối API.');
+      const failure = new PartnerApiError(error.code ?? 'REQUEST_FAILED', response.status);
+      failure.message = error.code ? `Yêu cầu không thành công (${error.code}).` : 'Không thể kết nối API.';
+      throw failure;
     }
-    return (await response.json() as Envelope<T>).data;
+    if (options?.blob) return await response.blob() as T;
+    const result = await response.json() as Envelope<T>;
+    return options?.envelope ? result as T : result.data;
   }
+  const notifications = usePartnerNotifications(request);
   async function load(id?: string) {
-    const list = await request<Row[]>('/partner-onboarding/businesses');
-    setBusinesses(list);
-    const target = id || selected || list[0]?.id;
-    if (target) { setSelected(target); setDetail(await request<Detail>(`/partner-onboarding/businesses/${target}`)); }
-    else setDetail(null);
+    setLoading(true); setLoadError('');
+    try {
+      const list = await request<Row[]>('/partner-onboarding/businesses');
+      const target = id || selected || list[0]?.id;
+      const next = target ? await request<Detail>(`/partner-onboarding/businesses/${target}`) : null;
+      if (target !== loadedBusiness.current) {
+        setCourtVenue(''); setCourtName(''); setScheduleCourt(''); setPaymentVenue(''); setImageVenue('');
+        setImageFile(null); setQrFile(null); setBankCode(''); setAccountName(''); setAccountNumber('');
+        setVenueName(''); setVenueContact(''); setAddress(''); setLatitude(''); setLongitude('');
+        setTimezone('Asia/Ho_Chi_Minh'); setCreatePickerKey(value => value + 1);
+        setScheduleRows([{ dayOfWeek: 1, startsAt: '07:00', endsAt: '22:00', pricePerSlot: 100000 }]);
+        setRevisionVenue(''); setRevisionAddress(''); setRevisionContact('');
+        setRevisionLatitude(''); setRevisionLongitude(''); setRevisionTimezone('Asia/Ho_Chi_Minh');
+        loadedBusiness.current = target ?? '';
+      }
+      setBusinesses(list); setSelected(target ?? ''); setDetail(next);
+    } catch (error) { setLoadError(error instanceof Error ? error.message : 'Không tải được hồ sơ.'); throw error; }
+    finally { setLoading(false); }
   }
   useEffect(() => {
-    void load().catch(error => setMessage(String(error)));
-    void request<Notice[]>('/me/notifications/').then(setNotices).catch(() => {});
+    if (initialLoadStarted.current) return;
+    initialLoadStarted.current = true;
+    void load().catch(() => {});
   }, []);
   async function run(work: () => Promise<void>) {
     setBusy(true); setMessage('');
@@ -116,22 +151,31 @@ export function PartnerOnboarding({ session, onSession, onExpired }: {
     return presigned.id;
   }
 
-  return <section>
-    <h2>Hồ sơ chủ sân</h2>
-    {message && <p role="status">{message}</p>}
-    {notices.length > 0 && <aside><h3>Thông báo</h3><ul>{notices.map(notice => <li key={notice.id}>
-      <strong>{notice.title}</strong>: {notice.body}
-      {!notice.readAt && <button type="button" onClick={() => void run(async () => {
-        await request(`/me/notifications/${notice.id}/read`, 'POST');
-        setNotices(await request<Notice[]>('/me/notifications/'));
-      })}>Đã đọc</button>}
-    </li>)}</ul></aside>}
-    <label>Doanh nghiệp <select value={selected} onChange={event => void run(() => load(event.target.value))}>
-      <option value="">Chọn hồ sơ</option>{businesses.map(b => <option key={b.id} value={b.id}>{b.name} · {b.status}</option>)}
-    </select></label>
-    {!detail && <form onSubmit={event => submit(event, async () => {
+  return <PartnerShell page={page} navigate={navigate} unread={notifications.unread}
+    onLogout={onLogout} logoutBusy={logoutBusy} businessControl={
+      <label className="business-switcher">Doanh nghiệp <select value={selected} disabled={busy || loading || bookingBusy}
+        onChange={event => { if (page === 'bookings') openBooking(null); void run(() => load(event.target.value)); }}>
+        {businesses.length === 0 && <option value="">Chưa có hồ sơ</option>}
+        {businesses.map(b => <option key={b.id} value={b.id}>{b.name} · {statusLabel(b.status)}</option>)}
+      </select></label>}>
+    <h2 className="sr-only">Hồ sơ chủ sân</h2>
+    {message && <p className={`feedback ${message === 'Đã lưu.' ? 'success' : 'error'}`} role="status">{message}</p>}
+    {busy && <p className="feedback" role="status">Đang xử lý…</p>}
+    {loading && <p className="feedback" role="status">Đang tải hồ sơ…</p>}
+    {loadError && <div className="feedback error" role="alert">{loadError}<button type="button" disabled={loading}
+      onClick={() => void load().catch(() => {})}>Thử tải lại hồ sơ</button></div>}
+    {page === 'notifications' && <PartnerNotifications model={notifications} openBooking={openBooking} />}
+    {page === 'bookings' && !loading && detail && (detail.status === 'ACTIVE'
+      ? <PartnerBookings key={`bookings-${detail.id}`} businessId={detail.id} venues={detail.venues} request={request} bookingId={bookingId}
+          openBooking={openBooking} onActionBusy={setBookingBusy} selectBusiness={id => {
+            if (!businesses.some(item => item.id === id)) return false;
+            void load(id).catch(() => {}); return true;
+          }} />
+      : <section className="panel empty-state"><h3>Chưa thể xử lý đơn đặt sân</h3><p>Doanh nghiệp cần được duyệt và đang hoạt động để đối chiếu thanh toán.</p></section>)}
+    <fieldset disabled={busy || loading} key={detail?.id ?? 'new'}>
+    {!detail && !loading && !loadError && !['notifications', 'bookings'].includes(page) && <form onSubmit={event => submit(event, async () => {
       const result = await request<{ id: string }>('/partner-onboarding/businesses', 'POST',
-        { name: businessName, legalName, contact }); await load(result.id);
+        { name: businessName, legalName, contact }); await load(result.id); navigate('venues');
     })}>
       <h3>Tạo doanh nghiệp</h3>
       <label>Tên hiển thị <input required value={businessName} onChange={e => setBusinessName(e.target.value)} /></label>
@@ -140,9 +184,18 @@ export function PartnerOnboarding({ session, onSession, onExpired }: {
       <button disabled={busy}>Tạo hồ sơ nháp</button>
     </form>}
     {detail && <>
-      <p><strong>{detail.name}</strong> · {detail.status}</p>
-      {detail.approval?.status === 'CHANGES_REQUESTED' && <p>Admin yêu cầu bổ sung: {detail.approval.reason}</p>}
-      {detail.status === 'DRAFT' && <form key={detail.id} onSubmit={event => submit(event, async () => {
+      <div className="status-banner"><p><strong>{detail.name}</strong> · <span className={`status-badge status-${detail.status.toLowerCase()}`}>{statusLabel(detail.status)}</span></p>
+        {detail.status === 'DRAFT' && <button type="button" className="primary-action" disabled={busy} onClick={() => void run(async () => {
+          await request(`/partner-onboarding/businesses/${detail.id}/submit`, 'POST'); await load(detail.id);
+        })}>Gửi hồ sơ duyệt</button>}
+        <button type="button" disabled={busy || loading} onClick={() => void load(detail.id).catch(() => {})}>Tải lại hồ sơ</button>
+      </div>
+      {detail.approval?.status === 'CHANGES_REQUESTED' && <p className="feedback error">Admin yêu cầu bổ sung: {detail.approval.reason}</p>}
+      {detail.status === 'PENDING_APPROVAL' && <p className="feedback">Hồ sơ đang chờ Admin duyệt. Bạn có thể xem thông tin và theo dõi phản hồi trong mục Thông báo.</p>}
+      {detail.status === 'ACTIVE' && detail.approval?.status === 'PENDING' && <p className="feedback">Đề nghị thay đổi đang chờ Admin duyệt. Thông tin đang hoạt động tiếp tục được sử dụng cho đến khi thay đổi được duyệt.</p>}
+      {page === 'overview' && <PartnerOverview name={detail.name} status={detail.status} venues={detail.venues} navigate={navigate} />}
+      {page === 'profile' && detail.status !== 'DRAFT' && <section className="panel"><h3>Thông tin doanh nghiệp</h3><p>Tên pháp lý: {detail.legalName}</p><p>Liên hệ: {detail.contact}</p></section>}
+      {detail.status === 'DRAFT' && <form hidden={page !== 'profile'} key={detail.id} onSubmit={event => submit(event, async () => {
         const fields = new FormData(event.currentTarget);
         await request(`/partner-onboarding/businesses/${detail.id}`, 'PUT', {
           name: String(fields.get('name') ?? ''), legalName: String(fields.get('legalName') ?? ''),
@@ -155,7 +208,7 @@ export function PartnerOnboarding({ session, onSession, onExpired }: {
         <label>Liên hệ <input name="contact" required defaultValue={detail.contact} /></label>
         <button disabled={busy}>Lưu thay đổi</button>
       </form>}
-      {detail.status === 'DRAFT' && <form onSubmit={event => submit(event, async () => {
+      {visited.has('venues') && detail.status === 'DRAFT' && <form hidden={page !== 'venues'} onSubmit={event => submit(event, async () => {
         if (!address || !latitude || !longitude) throw new Error('Chọn và xác nhận địa chỉ trên MapTiler.');
         await request(`/partner-onboarding/businesses/${detail.id}/venues`, 'POST',
           { name: venueName, address, contact: venueContact, timezone,
@@ -173,10 +226,11 @@ export function PartnerOnboarding({ session, onSession, onExpired }: {
         <label>Múi giờ IANA <input required value={timezone} onChange={e => setTimezone(e.target.value)} /></label>
         <button disabled={busy}>Lưu cơ sở</button>
       </form>}
-      {detail.venues.map(v => <article key={v.id}>
-        <h3>{v.name} · {v.status}</h3><p>{v.address} · {v.contact}</p>
+      {detail.venues.map(v => <article className="venue-detail-card" hidden={!['venues', 'courts', 'media', 'payments'].includes(page)} key={v.id}>
+        <h3>{v.name} · {statusLabel(v.status)}</h3><p>{v.address} · {v.contact}</p>
         <p>Ảnh: {v.imageUploadId ? 'Đã tải' : 'Chưa có'} · QR: {v.paymentAccount ? 'Đã khai báo' : 'Chưa có'}</p>
-        {detail.status === 'DRAFT' && <form key={v.version} onSubmit={event => submit(event, async () => {
+        {page === 'payments' && v.paymentAccount && <p>Số tài khoản: {v.paymentAccount.maskedAccountNumber}</p>}
+        {visited.has('venues') && detail.status === 'DRAFT' && <form hidden={page !== 'venues'} key={v.version} onSubmit={event => submit(event, async () => {
           const fields = new FormData(event.currentTarget);
           if (!fields.get('address') || !fields.get('latitude') || !fields.get('longitude'))
             throw new Error('Chọn và xác nhận địa chỉ trên MapTiler.');
@@ -193,7 +247,7 @@ export function PartnerOnboarding({ session, onSession, onExpired }: {
           <label>Múi giờ <input name="timezone" required defaultValue={v.timezone} /></label>
           <button disabled={busy}>Sửa cơ sở</button>
         </form>}
-        {v.courts.map(c => <div key={c.id}>
+        {v.courts.map(c => <div className="court-item" hidden={page !== 'courts'} key={c.id}>
           <p>Sân {c.name}: {c.hours.length} ngày mở cửa, {c.prices.length} khung giá</p>
           {detail.status === 'DRAFT' && <form onSubmit={event => submit(event, async () => {
             const fields = new FormData(event.currentTarget);
@@ -206,7 +260,7 @@ export function PartnerOnboarding({ session, onSession, onExpired }: {
         </div>)}
       </article>)}
       {detail.status === 'DRAFT' && detail.venues.length > 0 && <>
-        <form onSubmit={event => submit(event, async () => {
+        <form hidden={page !== 'courts'} onSubmit={event => submit(event, async () => {
           await request(`/partner-onboarding/venues/${courtVenue}/courts`, 'POST', { name: courtName });
           setCourtName(''); await load(detail.id);
         })}>
@@ -216,7 +270,7 @@ export function PartnerOnboarding({ session, onSession, onExpired }: {
           <label>Tên sân <input required value={courtName} onChange={e => setCourtName(e.target.value)} /></label>
           <button disabled={busy}>Lưu sân</button>
         </form>
-        <form onSubmit={event => submit(event, async () => {
+        <form hidden={page !== 'schedule'} onSubmit={event => submit(event, async () => {
           const grouped = new Map<number, ScheduleDraft[]>();
           for (const row of scheduleRows) grouped.set(row.dayOfWeek, [...(grouped.get(row.dayOfWeek) ?? []), row]);
           const hours = [...grouped.entries()].map(([dayOfWeek, ranges]) => {
@@ -246,19 +300,20 @@ export function PartnerOnboarding({ session, onSession, onExpired }: {
             { dayOfWeek: 2, startsAt: '07:00', endsAt: '22:00', pricePerSlot: 100000 }])}>Thêm khung giá</button>
           <button disabled={busy}>Lưu giờ/giá</button>
         </form>
-        <form onSubmit={event => submit(event, async () => {
+        <form hidden={page !== 'media'} onSubmit={event => submit(event, async () => {
           if (!imageFile) throw new Error('Chọn ảnh cơ sở.');
           const uploadId = await upload(imageFile, imageVenue, 'VENUE_IMAGE');
           await request(`/partner-onboarding/venues/${imageVenue}/image`, 'PUT', { uploadId });
           setImageFile(null); await load(detail.id);
         })}>
           <h3>Ảnh cơ sở</h3>
+          <p>PNG, JPEG hoặc WebP, tối đa 5 MB. Ảnh được lưu khi tải lên thành công.</p>
           <label>Cơ sở <select required value={imageVenue} onChange={e => setImageVenue(e.target.value)}><option value="">Chọn</option>
             {detail.venues.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
           <input aria-label="Ảnh cơ sở" required type="file" accept="image/png,image/jpeg,image/webp" onChange={e => setImageFile(e.target.files?.[0] ?? null)} />
           <button disabled={busy}>Tải ảnh</button>
         </form>
-        <form onSubmit={event => submit(event, async () => {
+        <form hidden={page !== 'payments'} onSubmit={event => submit(event, async () => {
           if (!qrFile) throw new Error('Chọn ảnh QR.');
           const qrUploadId = await upload(qrFile, paymentVenue, 'QR');
           await request(`/partner-onboarding/venues/${paymentVenue}/payment-account`, 'PUT',
@@ -266,6 +321,7 @@ export function PartnerOnboarding({ session, onSession, onExpired }: {
           setAccountNumber(''); setQrFile(null); await load(detail.id);
         })}>
           <h3>Tài khoản nhận tiền</h3>
+          <p>Chọn đúng cơ sở và tải QR nhận tiền. PNG, JPEG hoặc WebP, tối đa 5 MB.</p>
           <label>Cơ sở <select required value={paymentVenue} onChange={e => setPaymentVenue(e.target.value)}><option value="">Chọn</option>
             {detail.venues.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
           <label>Mã ngân hàng <input required value={bankCode} onChange={e => setBankCode(e.target.value)} /></label>
@@ -274,11 +330,12 @@ export function PartnerOnboarding({ session, onSession, onExpired }: {
           <input aria-label="Ảnh QR" required type="file" accept="image/png,image/jpeg,image/webp" onChange={e => setQrFile(e.target.files?.[0] ?? null)} />
           <button disabled={busy}>Lưu QR và tài khoản</button>
         </form>
-        <button type="button" disabled={busy} onClick={() => void run(async () => {
-          await request(`/partner-onboarding/businesses/${detail.id}/submit`, 'POST'); await load(detail.id);
-        })}>Gửi hồ sơ duyệt</button>
       </>}
-      {detail.status === 'ACTIVE' && detail.approval?.status !== 'PENDING' && <form onSubmit={event => submit(event, async () => {
+      {detail.venues.length === 0 && ['courts', 'schedule', 'media', 'payments'].includes(page) && <section className="panel empty-state">
+        <h3>Thêm cơ sở trước khi cấu hình</h3><p>Sân, ảnh và tài khoản nhận tiền đều thuộc một cơ sở.</p>
+        <a className="button secondary" href="#/venues" onClick={() => navigate('venues')}>Đến mục Cơ sở</a>
+      </section>}
+      {visited.has('payments') && detail.status === 'ACTIVE' && detail.approval?.status !== 'PENDING' && <form hidden={page !== 'payments'} onSubmit={event => submit(event, async () => {
         if (!revisionVenue || !revisionAddress || !revisionLatitude || !revisionLongitude)
           throw new Error('Chọn cơ sở và xác nhận địa chỉ trên MapTiler.');
         if (!qrFile) throw new Error('Chọn QR mới.');
@@ -311,7 +368,10 @@ export function PartnerOnboarding({ session, onSession, onExpired }: {
         <input aria-label="QR mới" required type="file" accept="image/png,image/jpeg,image/webp" onChange={e => setQrFile(e.target.files?.[0] ?? null)} />
         <button disabled={busy}>Gửi thay đổi để duyệt</button>
       </form>}
-      {detail.status === 'ACTIVE' && <PartnerOperations key={detail.id} venues={detail.venues} request={request} />}
+      {visited.has('schedule') && detail.status === 'ACTIVE' && <div hidden={page !== 'schedule'}>
+        <PartnerOperations key={detail.id} venues={detail.venues} request={request} />
+      </div>}
     </>}
-  </section>;
+    </fieldset>
+  </PartnerShell>;
 }

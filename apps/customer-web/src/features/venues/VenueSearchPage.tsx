@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
+import { CustomerNav } from '../auth/CustomerSession';
 import { getPublic } from './api';
 import { VenueMap } from './components/VenueMap';
 import { VenuePhoto } from './components/VenuePhoto';
@@ -96,7 +97,7 @@ export function VenueSearchPage() {
 
   return <main className="customer-shell">
     <header className="site-header"><a className="brand" href="/venues">ShuttleBook</a>
-      <nav><a href="/">Đăng ký</a><a href="/login">Đăng nhập</a></nav></header>
+      <CustomerNav /></header>
     <section className="hero"><p className="eyebrow">Tìm sân cầu lông</p><h1>Chọn cơ sở phù hợp với bạn</h1>
       <p>Xem vị trí, các sân trong cơ sở và lịch trống theo từng ca 30 phút.</p></section>
     <section className="search-panel" aria-label="Tìm cơ sở">

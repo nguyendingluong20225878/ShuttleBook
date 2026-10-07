@@ -7,6 +7,7 @@ using Amazon.S3.Model;
 using Amazon.Runtime;
 using Microsoft.EntityFrameworkCore;
 using ShuttleBook.Api.Identity;
+using ShuttleBook.Api.Bookings;
 using ShuttleBook.Infrastructure.Data;
 using ShuttleBook.Infrastructure.Identity;
 using ShuttleBook.Infrastructure.Onboarding;
@@ -26,10 +27,17 @@ public static class MediaEndpoints
         uploads.MapPut("/{uploadId:guid}/content", PutContent);
         uploads.MapPost("/{uploadId:guid}/complete", Complete).RequireAuthorization();
         uploads.MapGet("/{uploadId:guid}/view", View).RequireAuthorization();
+        app.MapPost("/api/v1/bookings/{id:guid}/proof-uploads/presign", ProofPresign).RequireAuthorization().RequireRateLimiting("booking-create");
     }
 
-    private static async Task<IResult> Presign(HttpContext http, ShuttleBookDbContext db,
-        IWebHostEnvironment environment, IConfiguration config, CancellationToken ct)
+    private static Task<IResult> Presign(HttpContext http, ShuttleBookDbContext db,
+        IWebHostEnvironment environment, IConfiguration config, CancellationToken ct) => PresignCore(http, db, environment, config, null, ct);
+
+    private static Task<IResult> ProofPresign(HttpContext http, ShuttleBookDbContext db,
+        IWebHostEnvironment environment, IConfiguration config, Guid id, CancellationToken ct) => PresignCore(http, db, environment, config, id, ct);
+
+    private static async Task<IResult> PresignCore(HttpContext http, ShuttleBookDbContext db,
+        IWebHostEnvironment environment, IConfiguration config, Guid? bookingId, CancellationToken ct)
     {
         if (!Local(environment, config) && !S3(config))
             return Error(http, 503, "MEDIA_UNAVAILABLE");
@@ -48,7 +56,8 @@ public static class MediaEndpoints
             buffer.Position = 0;
             using var document = await JsonDocument.ParseAsync(buffer, cancellationToken: ct);
             if (document.RootElement.ValueKind != JsonValueKind.Object) return Error(http, 400, "VALIDATION_FAILED");
-            var allowed = new HashSet<string> { "venueId", "purpose", "contentType", "sizeBytes", "sha256Base64" };
+            var allowed = bookingId is null ? new HashSet<string> { "venueId", "purpose", "contentType", "sizeBytes", "sha256Base64" } :
+                new HashSet<string> { "contentType", "sizeBytes", "sha256Base64" };
             var seen = new HashSet<string>();
             foreach (var field in document.RootElement.EnumerateObject())
             {
@@ -60,22 +69,36 @@ public static class MediaEndpoints
                 { PropertyNameCaseInsensitive = false });
         }
         catch (JsonException) { return Error(http, 400, "VALIDATION_FAILED"); }
-        if (input is null || input.VenueId == Guid.Empty || input.Purpose is not ("QR" or "VENUE_IMAGE") ||
+        if (http.Request.Query.Count != 0) return Error(http, 400, "VALIDATION_FAILED");
+        if (input is null ||
             input.ContentType is not ("image/png" or "image/jpeg" or "image/webp") ||
             input.SizeBytes is < 1 or > 5_242_880 || !ValidSha(input.Sha256Base64))
             return Error(http, 400, "VALIDATION_FAILED");
         var user = await CurrentUser(http, db, ct);
-        if (user?.AccountType != AccountType.VenueOperator ||
-            user.Status is not (UserStatus.PendingOnboarding or UserStatus.Active)) return Error(http, 403, "FORBIDDEN");
-        var venue = await db.Venues.SingleOrDefaultAsync(v => v.Id == input.VenueId, ct);
-        if (venue is null || !await db.BusinessMemberships.AnyAsync(m => m.BusinessId == venue.BusinessId &&
-            m.UserId == user.Id && m.Role == "OWNER" && (m.Status == "PENDING" || m.Status == "ACTIVE"), ct))
-            return Error(http, 404, "NOT_FOUND");
-        if (venue.Status != "DRAFT" && !(venue.Status == "PUBLISHED" && user.Status == UserStatus.Active &&
-            input.Purpose == "QR")) return Error(http, 409, "STATE_CONFLICT");
-        var upload = new MediaUpload { OwnerUserId = user.Id, VenueId = venue.Id, Purpose = input.Purpose,
+        Guid venueId;
+        if (bookingId is Guid proofBookingId)
+        {
+            if (user?.AccountType != AccountType.Customer || user.Status != UserStatus.Active) return Error(http, 403, "FORBIDDEN");
+            var booking = await db.Bookings.AsNoTracking().SingleOrDefaultAsync(x => x.Id == proofBookingId && x.CustomerId == user.Id, ct);
+            if (booking is null) return Error(http, 404, "NOT_FOUND");
+            if (booking.Status is not ("AWAITING_TRANSFER" or "NEEDS_REVIEW")) return Error(http, 409, "STATE_CONFLICT");
+            if (booking.Status == "AWAITING_TRANSFER" && booking.PaymentDeadline <= http.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow()) return Error(http, 409, "PAYMENT_DEADLINE_EXPIRED");
+            venueId = booking.VenueId;
+            input = input with { VenueId = venueId, Purpose = "PAYMENT_PROOF" };
+        }
+        else
+        {
+            if (input.VenueId == Guid.Empty || input.Purpose is not ("QR" or "VENUE_IMAGE")) return Error(http, 400, "VALIDATION_FAILED");
+            if (user?.AccountType != AccountType.VenueOperator || user.Status is not (UserStatus.PendingOnboarding or UserStatus.Active)) return Error(http, 403, "FORBIDDEN");
+            var venue = await db.Venues.SingleOrDefaultAsync(v => v.Id == input.VenueId, ct);
+            if (venue is null || !await db.BusinessMemberships.AnyAsync(m => m.BusinessId == venue.BusinessId &&
+                m.UserId == user.Id && m.Role == "OWNER" && (m.Status == "PENDING" || m.Status == "ACTIVE"), ct)) return Error(http, 404, "NOT_FOUND");
+            if (venue.Status != "DRAFT" && !(venue.Status == "PUBLISHED" && user.Status == UserStatus.Active && input.Purpose == "QR")) return Error(http, 409, "STATE_CONFLICT");
+            venueId = venue.Id;
+        }
+        var upload = new MediaUpload { OwnerUserId = user!.Id, VenueId = venueId, BookingId = bookingId, Purpose = input.Purpose!,
             ContentType = input.ContentType, SizeBytes = input.SizeBytes, Sha256Base64 = input.Sha256Base64!,
-            ObjectKey = $"venues/{venue.Id:N}/{Guid.CreateVersion7():N}", CreatedAt = DateTimeOffset.UtcNow };
+            ObjectKey = bookingId is Guid proofId ? $"payment-proofs/{proofId:N}/{Guid.CreateVersion7():N}" : $"venues/{venueId:N}/{Guid.CreateVersion7():N}", CreatedAt = DateTimeOffset.UtcNow };
         var expiration = DateTimeOffset.UtcNow.AddMinutes(5);
         string url;
         object uploadHeaders;
@@ -101,6 +124,12 @@ public static class MediaEndpoints
         }
         db.MediaUploads.Add(upload);
         await db.SaveChangesAsync(ct);
+        if (bookingId is not null)
+        {
+            http.Response.Headers.CacheControl = "no-store";
+            return Results.Ok(new { data = new { upload.Id, upload.ContentType, upload.SizeBytes,
+                uploadUrl = url, uploadHeaders, expiresAt = expiration }, traceId = http.TraceIdentifier });
+        }
         return Results.Ok(new { data = new { upload.Id, upload.ObjectKey, upload.ContentType, upload.SizeBytes,
             uploadUrl = url, uploadHeaders, expiresAt = expiration }, traceId = http.TraceIdentifier });
     }
@@ -149,10 +178,15 @@ public static class MediaEndpoints
         if (!Local(environment, config) && !S3(config))
             return Error(http, 503, "MEDIA_UNAVAILABLE");
         var user = await CurrentUser(http, db, ct);
-        if (user?.AccountType != AccountType.VenueOperator ||
-            user.Status is not (UserStatus.PendingOnboarding or UserStatus.Active)) return Error(http, 403, "FORBIDDEN");
-        var upload = await db.MediaUploads.SingleOrDefaultAsync(u => u.Id == uploadId && u.OwnerUserId == user.Id, ct);
+        if (user is null || user.Status is not (UserStatus.PendingOnboarding or UserStatus.Active)) return Error(http, 403, "FORBIDDEN");
+        var upload = await db.MediaUploads.AsNoTracking().SingleOrDefaultAsync(u => u.Id == uploadId && u.OwnerUserId == user.Id, ct);
         if (upload is null) return Error(http, 404, "NOT_FOUND");
+        if (upload.Purpose == "PAYMENT_PROOF")
+        {
+            if (user.AccountType != AccountType.Customer || user.Status != UserStatus.Active) return Error(http, 403, "FORBIDDEN");
+            if (!await db.Bookings.AnyAsync(x => x.Id == upload.BookingId && x.CustomerId == user.Id && x.VenueId == upload.VenueId, ct)) return Error(http, 404, "NOT_FOUND");
+        }
+        else if (user.AccountType != AccountType.VenueOperator) return Error(http, 403, "FORBIDDEN");
         if (upload.Status == "READY") return Results.Ok(new { data = new { upload.Id, upload.Status }, traceId = http.TraceIdentifier });
         if (S3(config))
         {
@@ -186,11 +220,18 @@ public static class MediaEndpoints
                 Convert.ToBase64String(SHA256.HashData(bytes)) != upload.Sha256Base64)
                 return Error(http, 409, "UPLOAD_MISMATCH");
         }
+        // Verify bytes first, then serialize only the READY transition and its audit.
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        upload = await db.MediaUploads.FromSqlInterpolated($"SELECT * FROM media_uploads WHERE id={uploadId} AND owner_user_id={user.Id} FOR UPDATE").SingleOrDefaultAsync(ct);
+        if (upload is null) return Error(http, 404, "NOT_FOUND");
+        if (upload.Status == "READY") return Results.Ok(new { data = new { upload.Id, upload.Status }, traceId = http.TraceIdentifier });
+        if (upload.Status != "PENDING") return Error(http, 409, "STATE_CONFLICT");
         upload.Status = "READY";
         db.AuditEvents.Add(new AuditEvent { ActorUserId = user.Id, Action = "media.upload_ready",
             EntityType = "media_upload", EntityId = upload.Id, CorrelationId = http.TraceIdentifier,
             CreatedAt = DateTimeOffset.UtcNow });
         await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
         return Results.Ok(new { data = new { upload.Id, upload.Status }, traceId = http.TraceIdentifier });
     }
 
@@ -207,6 +248,16 @@ public static class MediaEndpoints
             await (from venue in db.Venues join member in db.BusinessMemberships on venue.BusinessId equals member.BusinessId
                 where venue.Id == upload.VenueId && member.UserId == user.Id && member.Role == "OWNER" &&
                     (member.Status == "PENDING" || member.Status == "ACTIVE") select member.Id).AnyAsync(ct);
+        if (upload.Purpose == "PAYMENT_PROOF")
+        {
+            // Approval media access never grants access to a customer's private payment evidence.
+            allowed = user.Status == UserStatus.Active &&
+                (user.AccountType == AccountType.Customer && upload.OwnerUserId == user.Id &&
+                    await db.Bookings.AnyAsync(x => x.Id == upload.BookingId && x.CustomerId == user.Id && x.VenueId == upload.VenueId, ct) ||
+                 user.AccountType == AccountType.VenueOperator &&
+                    await db.PaymentEvidence.AnyAsync(x => x.ProofUploadId == upload.Id && x.BookingId == upload.BookingId, ct) &&
+                    await PaymentEndpoints.HasVenueScope(db, user.Id, upload.VenueId, ct));
+        }
         if (!allowed) return Error(http, 404, "NOT_FOUND");
         byte[] bytes;
         if (S3(config))
@@ -232,6 +283,7 @@ public static class MediaEndpoints
             return Error(http, 409, "UPLOAD_MISMATCH");
         http.Response.Headers.CacheControl = "no-store";
         http.Response.Headers.XContentTypeOptions = "nosniff";
+        http.Response.Headers["Referrer-Policy"] = "no-referrer";
         return Results.File(bytes, upload.ContentType);
     }
 

@@ -24,6 +24,494 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "postgis");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("ShuttleBook.Infrastructure.Bookings.Booking", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AllocationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("allocation_id");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("numeric(18,0)")
+                        .HasColumnName("amount");
+
+                    b.Property<int>("BookingBlockMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("booking_block_minutes");
+
+                    b.Property<string>("BookingNo")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("booking_no");
+
+                    b.Property<string>("BookingType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("booking_type");
+
+                    b.Property<Guid>("CourtId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("court_id");
+
+                    b.Property<string>("CourtName")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("court_name");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CustomerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("customer_id");
+
+                    b.Property<DateTimeOffset>("EndsAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ends_at");
+
+                    b.Property<DateTimeOffset?>("ExpiredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expired_at");
+
+                    b.Property<int>("HoldMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("hold_minutes");
+
+                    b.Property<DateOnly>("LocalDate")
+                        .HasColumnType("date")
+                        .HasColumnName("local_date");
+
+                    b.Property<TimeOnly>("LocalEnd")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("local_end");
+
+                    b.Property<TimeOnly>("LocalStart")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("local_start");
+
+                    b.Property<int>("MinimumBookingMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("minimum_booking_minutes");
+
+                    b.Property<DateTimeOffset>("PaymentDeadline")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("payment_deadline");
+
+                    b.Property<string>("Slots")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("slots");
+
+                    b.Property<DateTimeOffset>("StartsAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("starts_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Timezone")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("timezone");
+
+                    b.Property<Guid>("VenueId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("venue_id");
+
+                    b.Property<string>("VenueName")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("venue_name");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AllocationId")
+                        .IsUnique();
+
+                    b.HasIndex("BookingNo")
+                        .IsUnique();
+
+                    b.HasIndex("AllocationId", "CourtId");
+
+                    b.HasIndex("CourtId", "VenueId");
+
+                    b.HasIndex("CustomerId", "Id");
+
+                    b.HasIndex("Status", "PaymentDeadline");
+
+                    b.HasIndex("VenueId", "Status", "LocalDate", "Id");
+
+                    b.ToTable("bookings", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_booking_grid", "MOD(EXTRACT(EPOCH FROM (ends_at-starts_at))::bigint,1800)=0 AND EXTRACT(SECOND FROM starts_at)=0 AND EXTRACT(SECOND FROM ends_at)=0");
+
+                            t.HasCheckConstraint("ck_booking_valid", "ends_at > starts_at AND amount >= 0 AND version > 0 AND hold_minutes BETWEEN 5 AND 60 AND booking_type = 'CASUAL' AND status IN ('AWAITING_TRANSFER','AWAITING_OWNER_CONFIRMATION','NEEDS_REVIEW','CONFIRMED','EXPIRED','PAYMENT_REJECTED')");
+                        });
+                });
+
+            modelBuilder.Entity("ShuttleBook.Infrastructure.Bookings.BookingIdempotency", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ActorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_user_id");
+
+                    b.Property<Guid>("BookingId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("booking_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("key");
+
+                    b.Property<string>("Operation")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("operation");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("request_hash");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BookingId");
+
+                    b.HasIndex("ActorUserId", "Operation", "Key")
+                        .IsUnique();
+
+                    b.ToTable("idempotency_records", (string)null);
+                });
+
+            modelBuilder.Entity("ShuttleBook.Infrastructure.Bookings.BookingPayment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("BookingId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("booking_id");
+
+                    b.Property<DateTimeOffset?>("ConfirmationAlertedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("confirmation_alerted_at");
+
+                    b.Property<decimal?>("ConfirmedAmount")
+                        .HasColumnType("numeric(18,0)")
+                        .HasColumnName("confirmed_amount");
+
+                    b.Property<DateTimeOffset?>("ConfirmedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("confirmed_at");
+
+                    b.Property<Guid?>("ConfirmedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("confirmed_by");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<decimal>("ExpectedAmount")
+                        .HasColumnType("numeric(18,0)")
+                        .HasColumnName("expected_amount");
+
+                    b.Property<DateTimeOffset?>("FirstReportedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("first_reported_at");
+
+                    b.Property<DateTimeOffset?>("LastReportedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_reported_at");
+
+                    b.Property<Guid>("QrUploadId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("qr_upload_id");
+
+                    b.Property<string>("RecipientSnapshot")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("recipient_snapshot");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BookingId")
+                        .IsUnique();
+
+                    b.HasIndex("ConfirmedBy");
+
+                    b.HasIndex("QrUploadId");
+
+                    b.HasIndex("FirstReportedAt", "ConfirmationAlertedAt");
+
+                    b.ToTable("payments", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_payment_confirmation", "status <> 'PAID' OR (confirmed_by IS NOT NULL AND confirmed_at IS NOT NULL AND confirmed_amount IS NOT NULL AND confirmed_amount >= 0)");
+
+                            t.HasCheckConstraint("ck_payment_exact_amount", "status <> 'PAID' OR confirmed_amount = expected_amount");
+
+                            t.HasCheckConstraint("ck_payment_valid", "expected_amount >= 0 AND status IN ('AWAITING_TRANSFER','TRANSFER_REPORTED','NEEDS_REVIEW','PAID','EXPIRED','REJECTED')");
+                        });
+                });
+
+            modelBuilder.Entity("ShuttleBook.Infrastructure.Bookings.BookingQuote", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("numeric(18,0)")
+                        .HasColumnName("amount");
+
+                    b.Property<int>("BookingBlockMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("booking_block_minutes");
+
+                    b.Property<Guid>("CourtId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("court_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("EndsAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ends_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("fingerprint");
+
+                    b.Property<int>("HoldMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("hold_minutes");
+
+                    b.Property<DateOnly>("LocalDate")
+                        .HasColumnType("date")
+                        .HasColumnName("local_date");
+
+                    b.Property<TimeOnly>("LocalEnd")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("local_end");
+
+                    b.Property<TimeOnly>("LocalStart")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("local_start");
+
+                    b.Property<int>("MinimumBookingMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("minimum_booking_minutes");
+
+                    b.Property<string>("Slots")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("slots");
+
+                    b.Property<DateTimeOffset>("StartsAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("starts_at");
+
+                    b.Property<string>("Timezone")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("timezone");
+
+                    b.Property<Guid>("VenueId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("venue_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CourtId");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("VenueId");
+
+                    b.ToTable("booking_quotes", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_booking_quote_interval", "ends_at > starts_at AND amount >= 0 AND expires_at > created_at");
+                        });
+                });
+
+            modelBuilder.Entity("ShuttleBook.Infrastructure.Bookings.PaymentDecision", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ActorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_user_id");
+
+                    b.Property<string>("BankReference")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("bank_reference");
+
+                    b.Property<Guid>("BookingId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("booking_id");
+
+                    b.Property<decimal?>("ConfirmedAmount")
+                        .HasColumnType("numeric(18,0)")
+                        .HasColumnName("confirmed_amount");
+
+                    b.Property<DateTimeOffset>("DecidedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("decided_at");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("note");
+
+                    b.Property<Guid>("PaymentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("payment_id");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("ReasonCode")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("reason_code");
+
+                    b.Property<string>("Resolution")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("resolution");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorUserId");
+
+                    b.HasIndex("PaymentId", "BookingId");
+
+                    b.HasIndex("PaymentId", "DecidedAt", "Id");
+
+                    b.ToTable("payment_decisions", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_decision_valid", "(resolution='CONFIRMED' AND confirmed_amount IS NOT NULL AND confirmed_amount >= 0) OR (resolution IN ('NEEDS_REVIEW','FINAL_REJECTION') AND reason_code IS NOT NULL AND reason IS NOT NULL AND length(btrim(reason))>0)");
+                        });
+                });
+
+            modelBuilder.Entity("ShuttleBook.Infrastructure.Bookings.PaymentEvidence", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("BankReference")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("bank_reference");
+
+                    b.Property<Guid>("BookingId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("booking_id");
+
+                    b.Property<Guid>("CustomerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("customer_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("note");
+
+                    b.Property<Guid>("PaymentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("payment_id");
+
+                    b.Property<Guid?>("ProofUploadId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("proof_upload_id");
+
+                    b.Property<DateTimeOffset>("ReportedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reported_at");
+
+                    b.Property<Guid>("VenueId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("venue_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProofUploadId")
+                        .IsUnique()
+                        .HasFilter("proof_upload_id IS NOT NULL");
+
+                    b.HasIndex("PaymentId", "BookingId");
+
+                    b.HasIndex("BookingId", "CustomerId", "VenueId");
+
+                    b.HasIndex("PaymentId", "ReportedAt", "Id");
+
+                    b.ToTable("payment_evidence", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_evidence_kind", "kind IN ('INITIAL','SUPPLEMENT')");
+                        });
+                });
+
             modelBuilder.Entity("ShuttleBook.Infrastructure.Identity.AuditEvent", b =>
                 {
                     b.Property<Guid>("Id")
@@ -609,6 +1097,10 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<Guid?>("BookingId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("booking_id");
+
                     b.Property<string>("ContentType")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -664,7 +1156,15 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
 
                     b.HasIndex("VenueId");
 
-                    b.ToTable("media_uploads", (string)null);
+                    b.HasIndex("BookingId", "OwnerUserId", "VenueId");
+
+                    b.HasIndex("Id", "BookingId", "OwnerUserId", "VenueId")
+                        .IsUnique();
+
+                    b.ToTable("media_uploads", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_media_booking_purpose", "(purpose='PAYMENT_PROOF' AND booking_id IS NOT NULL) OR (purpose IN ('QR','VENUE_IMAGE') AND booking_id IS NULL)");
+                        });
                 });
 
             modelBuilder.Entity("ShuttleBook.Infrastructure.Onboarding.Notification", b =>
@@ -719,6 +1219,10 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<DateTimeOffset?>("AlertedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("alerted_at");
+
                     b.Property<int>("Attempts")
                         .HasColumnType("integer")
                         .HasColumnName("attempts");
@@ -736,6 +1240,11 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
                         .HasMaxLength(80)
                         .HasColumnType("character varying(80)")
                         .HasColumnName("event_type");
+
+                    b.Property<string>("LastFailureType")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("last_failure_type");
 
                     b.Property<DateTimeOffset>("NextAttemptAt")
                         .HasColumnType("timestamp with time zone")
@@ -923,6 +1432,117 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
                     b.ToTable("venue_payment_accounts", (string)null);
                 });
 
+            modelBuilder.Entity("ShuttleBook.Infrastructure.Bookings.Booking", b =>
+                {
+                    b.HasOne("ShuttleBook.Infrastructure.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ShuttleBook.Infrastructure.Onboarding.CourtAllocation", null)
+                        .WithMany()
+                        .HasForeignKey("AllocationId", "CourtId")
+                        .HasPrincipalKey("Id", "CourtId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ShuttleBook.Infrastructure.Onboarding.Court", null)
+                        .WithMany()
+                        .HasForeignKey("CourtId", "VenueId")
+                        .HasPrincipalKey("Id", "VenueId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ShuttleBook.Infrastructure.Bookings.BookingIdempotency", b =>
+                {
+                    b.HasOne("ShuttleBook.Infrastructure.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ShuttleBook.Infrastructure.Bookings.Booking", null)
+                        .WithMany()
+                        .HasForeignKey("BookingId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ShuttleBook.Infrastructure.Bookings.BookingPayment", b =>
+                {
+                    b.HasOne("ShuttleBook.Infrastructure.Bookings.Booking", null)
+                        .WithMany()
+                        .HasForeignKey("BookingId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ShuttleBook.Infrastructure.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("ConfirmedBy")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ShuttleBook.Infrastructure.Onboarding.MediaUpload", null)
+                        .WithMany()
+                        .HasForeignKey("QrUploadId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ShuttleBook.Infrastructure.Bookings.BookingQuote", b =>
+                {
+                    b.HasOne("ShuttleBook.Infrastructure.Onboarding.Court", null)
+                        .WithMany()
+                        .HasForeignKey("CourtId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ShuttleBook.Infrastructure.Onboarding.Venue", null)
+                        .WithMany()
+                        .HasForeignKey("VenueId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ShuttleBook.Infrastructure.Bookings.PaymentDecision", b =>
+                {
+                    b.HasOne("ShuttleBook.Infrastructure.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ShuttleBook.Infrastructure.Bookings.BookingPayment", null)
+                        .WithMany()
+                        .HasForeignKey("PaymentId", "BookingId")
+                        .HasPrincipalKey("Id", "BookingId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ShuttleBook.Infrastructure.Bookings.PaymentEvidence", b =>
+                {
+                    b.HasOne("ShuttleBook.Infrastructure.Onboarding.MediaUpload", null)
+                        .WithMany()
+                        .HasForeignKey("ProofUploadId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ShuttleBook.Infrastructure.Bookings.BookingPayment", null)
+                        .WithMany()
+                        .HasForeignKey("PaymentId", "BookingId")
+                        .HasPrincipalKey("Id", "BookingId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ShuttleBook.Infrastructure.Bookings.Booking", null)
+                        .WithMany()
+                        .HasForeignKey("BookingId", "CustomerId", "VenueId")
+                        .HasPrincipalKey("Id", "CustomerId", "VenueId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("ShuttleBook.Infrastructure.Identity.ContactVerificationChallenge", b =>
                 {
                     b.HasOne("ShuttleBook.Infrastructure.Identity.User", "User")
@@ -1051,6 +1671,12 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
                         .HasForeignKey("VenueId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("ShuttleBook.Infrastructure.Bookings.Booking", null)
+                        .WithMany()
+                        .HasForeignKey("BookingId", "OwnerUserId", "VenueId")
+                        .HasPrincipalKey("Id", "CustomerId", "VenueId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("ShuttleBook.Infrastructure.Onboarding.Notification", b =>

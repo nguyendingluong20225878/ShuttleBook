@@ -52,7 +52,7 @@ public sealed partial class OnboardingFlowTests
                 await db.Database.ExecuteSqlInterpolatedAsync($"""
                     INSERT INTO media_uploads (id,owner_user_id,venue_id,purpose,object_key,content_type,
                         size_bytes,sha256_base64,status,created_at)
-                    VALUES ({qrUploadId},{owner.Id},{venueId},'PAYMENT_QR','f03-upgrade-qr','image/png',
+                    VALUES ({qrUploadId},{owner.Id},{venueId},'QR','f03-upgrade-qr','image/png',
                         100,'test-checksum','READY',{now})
                     """);
                 await db.Database.ExecuteSqlInterpolatedAsync($"""

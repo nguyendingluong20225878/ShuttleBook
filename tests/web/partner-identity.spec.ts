@@ -50,12 +50,15 @@ test('partner can register, verify, log in and log out without persisting tokens
   await expect(page.getByRole('heading', { name: 'Hồ sơ chủ sân' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Tạo doanh nghiệp' })).toBeVisible();
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
+  const menu = page.getByRole('button', { name: 'Menu', exact: true });
+  if (await menu.isVisible()) await menu.click();
   await page.getByRole('button', { name: 'Đăng xuất' }).click();
   await expect(page.getByRole('heading', { name: 'Đăng nhập chủ sân' })).toBeVisible();
-  expect(requests.map(request => request.path)).toEqual([
-    '/api/v1/partner-auth/register', '/api/v1/partner-auth/verify',
-    '/api/v1/auth/login', '/api/v1/partner-onboarding/businesses', '/api/v1/me/notifications/', '/api/v1/auth/logout'
-  ]);
+  const paths = requests.map(request => request.path);
+  expect(paths.slice(0, 3)).toEqual(['/api/v1/partner-auth/register', '/api/v1/partner-auth/verify', '/api/v1/auth/login']);
+  // Startup business and notification reads are independent; assert each exactly once without ordering them.
+  expect(paths.slice(3, -1).sort()).toEqual(['/api/v1/me/notifications/', '/api/v1/partner-onboarding/businesses'].sort());
+  expect(paths.at(-1)).toBe('/api/v1/auth/logout');
 });
 
 test('partner registration catches mismatched passwords before making an API request', async ({ page }) => {

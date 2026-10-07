@@ -1,3 +1,4 @@
+param([ValidateRange(1024, 65535)][int]$ApiPort = 5080)
 . (Join-Path $PSScriptRoot 'Use-LocalEnvironment.ps1')
 $ErrorActionPreference = 'Stop'
 $adminContact = "admin-live-$([guid]::NewGuid().ToString('N'))@example.test"
@@ -13,7 +14,11 @@ $env:SHUTTLEBOOK_ADMIN_TEST_CONTACT = $adminContact
 $env:SHUTTLEBOOK_ADMIN_TEST_PASSWORD = $adminPassword
 $env:SHUTTLEBOOK_ADMIN_E2E_REAL = '1'
 $env:SHUTTLEBOOK_E2E_REAL = '1'
-$env:VITE_API_BASE_URL = 'http://localhost:5080'
+$originalWebApiBase = $env:VITE_API_BASE_URL
+$testApiBase = "http://localhost:$ApiPort"
+$env:VITE_API_BASE_URL = $testApiBase
+$env:ASPNETCORE_URLS = $testApiBase
+$env:SHUTTLEBOOK_TEST_API_URL = $testApiBase
 $env:Logging__EventLog__LogLevel__Default = 'None'
 $localDir = Join-Path $projectRoot '.local'
 [IO.Directory]::CreateDirectory($localDir) | Out-Null
@@ -37,7 +42,7 @@ function Assert-PortFree([int]$port) {
 
 Push-Location $projectRoot
 try {
-    Assert-PortFree 5080
+    Assert-PortFree $ApiPort
     $migrator = Join-Path $projectRoot 'backend/src/ShuttleBook.Migrator/bin/Debug/net10.0/ShuttleBook.Migrator.dll'
     $cli = Join-Path $projectRoot 'backend/src/ShuttleBook.AdminCli/bin/Debug/net10.0/ShuttleBook.AdminCli.dll'
     $api = Join-Path $projectRoot 'backend/src/ShuttleBook.Api/bin/Debug/net10.0/ShuttleBook.Api.dll'
@@ -71,7 +76,7 @@ try {
     for ($attempt = 0; $attempt -lt 24; $attempt++) {
         if ($apiProcess.HasExited) { break }
         try {
-            $response = Invoke-WebRequest -Uri 'http://127.0.0.1:5080/health/ready' -UseBasicParsing -TimeoutSec 15
+            $response = Invoke-WebRequest -Uri "$testApiBase/health/ready" -UseBasicParsing -TimeoutSec 15
             if ($response.StatusCode -eq 200) { $ready = $true; break }
         } catch { Start-Sleep -Milliseconds 500 }
     }
@@ -104,6 +109,12 @@ try {
                 --startup-project backend/src/ShuttleBook.Migrator
             if ($LASTEXITCODE -ne 0) { Write-Error 'Temporary identity test database cleanup failed.' }
         }
+    }
+    # Restore the normal browser build after testing on a separate API port.
+    if ($env:VITE_API_BASE_URL -ne $originalWebApiBase) {
+        $env:VITE_API_BASE_URL = $originalWebApiBase
+        & npm.cmd run build | Out-Null
+        if ($LASTEXITCODE -ne 0) { Write-Error 'Could not restore the normal web build after live tests.' }
     }
     Pop-Location
 }

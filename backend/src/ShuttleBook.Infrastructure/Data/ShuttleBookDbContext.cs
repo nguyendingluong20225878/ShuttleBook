@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using ShuttleBook.Infrastructure.Identity;
 using ShuttleBook.Infrastructure.Onboarding;
+using ShuttleBook.Infrastructure.Bookings;
 
 namespace ShuttleBook.Infrastructure.Data;
 
@@ -23,11 +24,18 @@ public sealed class ShuttleBookDbContext(DbContextOptions<ShuttleBookDbContext> 
     public DbSet<ApprovalRequest> ApprovalRequests => Set<ApprovalRequest>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<BookingQuote> BookingQuotes => Set<BookingQuote>();
+    public DbSet<Booking> Bookings => Set<Booking>();
+    public DbSet<BookingPayment> BookingPayments => Set<BookingPayment>();
+    public DbSet<BookingIdempotency> BookingIdempotency => Set<BookingIdempotency>();
+    public DbSet<PaymentEvidence> PaymentEvidence => Set<PaymentEvidence>();
+    public DbSet<PaymentDecision> PaymentDecisions => Set<PaymentDecision>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasPostgresExtension("postgis");
         modelBuilder.HasPostgresExtension("btree_gist");
+        BookingModelConfiguration.Configure(modelBuilder);
 
         modelBuilder.Entity<User>(entity =>
         {
@@ -242,10 +250,12 @@ public sealed class ShuttleBookDbContext(DbContextOptions<ShuttleBookDbContext> 
         });
         modelBuilder.Entity<MediaUpload>(entity =>
         {
-            entity.ToTable("media_uploads"); entity.HasKey(x => x.Id);
+            entity.ToTable("media_uploads", t => t.HasCheckConstraint("ck_media_booking_purpose",
+                "(purpose='PAYMENT_PROOF' AND booking_id IS NOT NULL) OR (purpose IN ('QR','VENUE_IMAGE') AND booking_id IS NULL)")); entity.HasKey(x => x.Id);
             entity.Property(x => x.Id).HasColumnName("id");
             entity.Property(x => x.OwnerUserId).HasColumnName("owner_user_id");
             entity.Property(x => x.VenueId).HasColumnName("venue_id");
+            entity.Property(x => x.BookingId).HasColumnName("booking_id");
             entity.Property(x => x.Purpose).HasColumnName("purpose").HasMaxLength(32);
             entity.Property(x => x.ObjectKey).HasColumnName("object_key").HasMaxLength(300);
             entity.Property(x => x.ContentType).HasColumnName("content_type").HasMaxLength(100);
@@ -255,7 +265,10 @@ public sealed class ShuttleBookDbContext(DbContextOptions<ShuttleBookDbContext> 
             entity.Property(x => x.CreatedAt).HasColumnName("created_at");
             entity.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Venue>().WithMany().HasForeignKey(x => x.VenueId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Booking>().WithMany().HasForeignKey(x => new { x.BookingId, x.OwnerUserId, x.VenueId })
+                .HasPrincipalKey(x => new { x.Id, x.CustomerId, x.VenueId }).OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(x => x.ObjectKey).IsUnique();
+            entity.HasIndex(x => new { x.Id, x.BookingId, x.OwnerUserId, x.VenueId }).IsUnique();
         });
         modelBuilder.Entity<ApprovalRequest>(entity =>
         {
@@ -287,6 +300,8 @@ public sealed class ShuttleBookDbContext(DbContextOptions<ShuttleBookDbContext> 
             entity.Property(x => x.Payload).HasColumnName("payload").HasColumnType("jsonb");
             entity.Property(x => x.Attempts).HasColumnName("attempts");
             entity.Property(x => x.NextAttemptAt).HasColumnName("next_attempt_at");
+            entity.Property(x => x.LastFailureType).HasColumnName("last_failure_type").HasMaxLength(100);
+            entity.Property(x => x.AlertedAt).HasColumnName("alerted_at");
             entity.Property(x => x.ProcessedAt).HasColumnName("processed_at");
             entity.Property(x => x.CreatedAt).HasColumnName("created_at");
             entity.HasOne<User>().WithMany().HasForeignKey(x => x.TargetUserId).OnDelete(DeleteBehavior.Restrict);

@@ -17,3 +17,12 @@ button:disabled { opacity: .65; cursor: wait; }
 .admin-message { padding: 14px 18px; background: #fce9e5; color: #852e29; border-radius: 6px; }
 .admin-notice { padding: 20px 24px; background: #e5ece0; border-left: 4px solid #508263; line-height: 1.6; }
 footer { color: #60756d; font-size: 13px; }
+.admin-notifications { margin-top: 24px; padding-top: 20px; border-top: 1px solid #d5e3e6; }
+.admin-notifications header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.admin-notifications h2 { margin: 0; }
+.admin-notifications h2 span { display: block; font-size: 14px; font-weight: 400; }
+.admin-notifications ul { list-style: none; padding: 0; display: grid; gap: 12px; }
+.admin-notifications li { padding: 16px; border: 1px solid #d5e3e6; border-radius: 12px; overflow-wrap: anywhere; }
+.admin-notifications li.unread { background: #effaf8; border-color: #7bbcaf; }
+.admin-notifications li p { margin: 8px 0; }
+.admin-notifications li time, .admin-notifications li small { display: block; margin: 6px 0; font-size: 13px; }

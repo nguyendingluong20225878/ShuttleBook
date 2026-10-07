@@ -2,16 +2,17 @@ import { expect, test } from '@playwright/test';
 
 const contact = process.env.SHUTTLEBOOK_ADMIN_TEST_CONTACT;
 const password = process.env.SHUTTLEBOOK_ADMIN_TEST_PASSWORD;
+const api = process.env.SHUTTLEBOOK_TEST_API_URL ?? 'http://localhost:5080';
 test.skip(process.env.SHUTTLEBOOK_ADMIN_E2E_REAL !== '1' || !contact || !password,
   'Requires a disposable migrated PostgreSQL database, local API and test Admin credentials.');
 test.use({ trace: 'off' });
 
 test('admin portal uses the real API and clears its session on logout and reload', async ({ page }) => {
-  const ready = await fetch('http://localhost:5080/health/ready');
+  const ready = await fetch(`${api}/health/ready`);
   expect(ready.status).toBe(200);
   await page.route('**/*', route => {
     const origin = new URL(route.request().url()).origin;
-    return origin === 'http://localhost:5175' || origin === 'http://localhost:5080'
+    return origin === 'http://localhost:5175' || origin === new URL(api).origin
       ? route.continue() : route.abort();
   });
   const meResponses: number[] = [];

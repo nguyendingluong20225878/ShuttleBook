@@ -79,14 +79,16 @@ Nếu sử dụng `datlich.tenmien.vn` cho chiến dịch hoặc tên miền cũ
 5. [API, bảo mật và kế hoạch triển khai](./04-api-security-delivery.md)
 6. [Hướng dẫn triển khai theo từng bước](./05-implementation-guide.md)
 
+## Chính sách đã chốt
+
+- F05: quote có hiệu lực 2 phút; đặt trước tối đa 60 ngày theo múi giờ venue; hạn chuyển khoản theo holdMinutes snapshot từng sân (mặc định 20 phút).
+- F06 (nghiệm thu 2026-10-07): bỏ ô mã giao dịch ở customer/owner; API vẫn nhận mã tùy chọn để tương thích lịch sử cũ. Khách có thể gửi ảnh chụp màn hình chuyển khoản/ghi chú; chỉ xác nhận đúng tổng tiền. Sau 30 phút từ báo chuyển đầu tiên, owner + Admin nhận một cảnh báo; NEEDS_REVIEW vẫn giữ sân, bổ sung không reset SLA.
+- In-app là kênh bắt buộc qua transactional outbox; email/SMS/Zalo bổ sung sau.
+
 ## Các quyết định business còn cần chốt
 
-- Khách có bao nhiêu phút để chuyển khoản và báo đã chuyển?
-- Bằng chứng chuyển khoản là bắt buộc hay chỉ cần mã giao dịch?
-- Operator phải xác nhận trong bao lâu và quá SLA thì thông báo cho ai?
 - Lịch cố định thanh toán từng buổi, theo tháng hay toàn bộ series?
-- Khách được đặt trước tối đa bao nhiêu ngày và series dài tối đa bao lâu?
-- Kênh thông báo bắt buộc: in-app, email, SMS hay Zalo?
+- Series dài tối đa bao lâu và bao nhiêu occurrence?
 
 ## Trạng thái thiết kế
 

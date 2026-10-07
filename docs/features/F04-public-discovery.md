@@ -41,6 +41,12 @@ Prefix `/api/v1`, ẩn danh; thành công `{data,traceId}`; lỗi `application/p
 
 ## Acceptance
 
+### Điều chỉnh hiển thị theo phản hồi 2026-10-07
+
+Phạm vi chỉ bảng lịch F04/F05: sửa cột bị nén khi có cả ngày 05:00–22:00 (34 ca), trình bày theo ảnh tham chiếu thứ hai. Mỗi ca có độ rộng cố định, bảng cuộn ngang; tên sân sticky, giờ ở biên ô và giá ở giữa. Bỏ dòng “30 phút” lặp trên mỗi cột vì mô tả chung đã nêu rõ; ô trống chỉ hiện giá, ô chọn hiện trạng thái chọn, ô kín/ngoài giờ giữ màu và nhãn truy cập. Giữ selection/toggle, policy block/min, tổng tiền và handoff F05.
+
+Acceptance bổ sung: desktop/mobile với 34 ca không chồng giờ/giá, cột không bị nén, cuộn đến cuối vẫn thấy 22:00 và tên sân; 3/7 sân vẫn đủ hàng. API/error/data không đổi, không migration. Test bổ sung F04-T18 kiểm tra geometry thật và screenshot; các ca F04/F05 hiện có kiểm tra hành vi giữ nguyên.
+
 1. Public filtering, nearby geospatial và search text đúng; guest không cần đăng nhập.
 2. Lịch mọi sân một cơ sở đúng giờ local, giá và trạng thái từ PostgreSQL/PostGIS; thay đổi maintenance phản ánh ở lần đọc tiếp theo; chọn một court đúng policy.
 3. Public response và ảnh local private không lộ QR/payment/owner data. S3 bucket private và signed GET thuộc mốc tích hợp media sau khi có bucket thử nghiệm.

@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 export type VenueLocation = { address: string; latitude: number; longitude: number };
 type MapTilerMap = {
   setCenter: (center: [number, number]) => void;
   setZoom: (zoom: number) => void;
   remove: () => void;
+  resize?: () => void;
 };
 type MapTilerMarker = {
   setLngLat: (position: [number, number]) => MapTilerMarker;
@@ -44,6 +45,7 @@ function loadMapTiler(): Promise<MapTilerSdk> {
 export function MapTilerPlacePicker({ initial, onChange }: {
   initial?: VenueLocation | null; onChange?: (location: VenueLocation | null) => void }) {
   const [location, setLocation] = useState<VenueLocation | null>(initial ?? null);
+  const addressId = useId();
   const [input, setInput] = useState('');
   const [suggestions, setSuggestions] = useState<GeocodingFeature[]>([]);
   const [candidate, setCandidate] = useState<VenueLocation | null>(null);
@@ -58,6 +60,10 @@ export function MapTilerPlacePicker({ initial, onChange }: {
   useEffect(() => {
     if (!enabled || !mapHost.current) return;
     let cancelled = false;
+    const observer = new ResizeObserver(() => {
+      if (mapHost.current?.clientWidth) mapRef.current?.resize?.();
+    });
+    observer.observe(mapHost.current);
     void loadMapTiler().then(sdk => {
       if (cancelled || !mapHost.current) return;
       sdk.config.apiKey = apiKey!;
@@ -70,6 +76,7 @@ export function MapTilerPlacePicker({ initial, onChange }: {
     }).catch(() => { if (!cancelled) setError('Không tải được bản đồ MapTiler. Kiểm tra API key và kết nối mạng.'); });
     return () => {
       cancelled = true;
+      observer.disconnect();
       markerRef.current?.remove(); markerRef.current = null;
       mapRef.current?.remove(); mapRef.current = null;
     };
@@ -110,10 +117,10 @@ export function MapTilerPlacePicker({ initial, onChange }: {
     markerRef.current?.setLngLat([selected.longitude, selected.latitude]);
   }
 
-  return <div>
-    <label htmlFor="maptiler-venue-address">Địa chỉ cơ sở trên MapTiler</label>
+  return <div className="map-picker">
+    <label htmlFor={addressId}>Địa chỉ cơ sở trên MapTiler</label>
     {enabled ? <>
-      <input id="maptiler-venue-address" value={input} autoComplete="off"
+      <input id={addressId} value={input} autoComplete="off"
         placeholder="Nhập địa chỉ, ví dụ: 31 ngõ 16 Hoàng Cầu - Hà Nội"
         onChange={event => {
           setInput(event.target.value); setLocation(null); setCandidate(null); setError('');
@@ -124,7 +131,7 @@ export function MapTilerPlacePicker({ initial, onChange }: {
         const address = feature.place_name || feature.matching_place_name!;
         return <li key={`${address}-${index}`}><button type="button" onClick={() => selectSuggestion(feature)}>{address}</button></li>;
       })}</ul>}
-      <div ref={mapHost} style={{ height: 240, marginTop: 8 }} aria-label="Bản đồ vị trí cơ sở" />
+      <div ref={mapHost} className="map-canvas" aria-label="Bản đồ vị trí cơ sở" />
       {candidate && <p>Vị trí tìm thấy: {candidate.address} <button type="button" onClick={() => {
         setLocation(candidate); setInput(candidate.address); onChange?.(candidate); setCandidate(null);
       }}>Xác nhận vị trí này</button></p>}

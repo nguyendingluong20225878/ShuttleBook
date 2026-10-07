@@ -89,6 +89,7 @@ public sealed class MediaUpload
     public Guid Id { get; set; } = Guid.CreateVersion7();
     public Guid OwnerUserId { get; set; }
     public Guid VenueId { get; set; }
+    public Guid? BookingId { get; set; }
     public string Purpose { get; set; } = "";
     public string ObjectKey { get; set; } = "";
     public string ContentType { get; set; } = "";

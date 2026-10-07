@@ -39,6 +39,7 @@
 | Series | `GET /booking-series/{id}` | Customer/operator scope | Xem series và occurrence |
 | Bookings | `GET /me/bookings` | Customer | Lịch sử của tôi |
 | Bookings | `GET /bookings/{id}` | Booking owner/operator scope | Chi tiết và timeline |
+| Payment F05 | `GET /bookings/{id}/qr` | Customer sở hữu booking | QR private theo snapshot, no-store |
 | Payment | `POST /bookings/{id}/transfer-evidence` | Booking owner | Báo đã chuyển khoản |
 | Payment | `GET /payments/{id}` | Customer/operator scope | Xem trạng thái payment |
 | Operator | `GET /operator/businesses/{id}` | Active business membership | Xem doanh nghiệp và các cơ sở được phép |
@@ -65,6 +66,8 @@
 Customer không có endpoint cancel/reschedule.
 
 ## 3. Contract tạo booking vãng lai
+
+Contract F05 đã triển khai: public `POST /api/v1/availability/quote` nhận `{courtId,date,startsAt,endsAt}` với ngày `YYYY-MM-DD` và giờ địa phương `HH:mm`. Quote có hiệu lực 120 giây, horizon 60 ngày theo timezone venue và không giữ chỗ. Response có `quoteId`, expiry, interval UTC, từng ca/giá, tổng VND và policy block/minimum/hold. Tạo đơn cần Customer ACTIVE; operator scope ở bảng catalog thuộc F06, chưa được cấp trong F05.
 
 ```http
 POST /api/v1/bookings
@@ -93,7 +96,7 @@ Content-Type: application/json
       "bankCode": "VCB",
       "accountName": "NGUYEN VAN A",
       "maskedAccountNumber": "******6789",
-      "qrUrl": "short-lived-s3-url",
+      "qrUrl": "/api/v1/bookings/0199fca6-.../qr",
       "transferContent": "BK2610018F2Q"
     },
     "version": 1
@@ -102,9 +105,11 @@ Content-Type: application/json
 }
 ```
 
-Kết quả chính: `201`; slot conflict `409 SLOT_UNAVAILABLE`; quote hết hạn `409 QUOTE_EXPIRED`; cùng idempotency key nhưng request khác `409 IDEMPOTENCY_KEY_REUSED`.
+Kết quả chính: `201`; slot conflict `409 SLOT_UNAVAILABLE`; quote hết hạn `409 QUOTE_EXPIRED`; giá/policy/QR thay đổi `409 QUOTE_CHANGED` yêu cầu báo giá mới; cùng idempotency key nhưng request khác `409 IDEMPOTENCY_KEY_REUSED`. Retry cùng key/body trả lại booking hiện có kể cả quote cũ đã hết hạn. Booking code F05 gồm `BK` + ngày tạo `yyMMdd` + UUID không dấu, không phụ thuộc ví dụ code rút gọn trên.
 
-`startsAt` và `endsAt` phải nằm trên biên ca 30 phút; thời lượng vãng lai tối thiểu 30 phút và là bội số của 30. Ví dụ 18:00-20:00 tương ứng bốn ca nhưng API vẫn lưu một khoảng `[18:00,20:00)`.
+`startsAt` và `endsAt` phải nằm trên biên ca 30 phút **địa phương venue**; các ca liên tiếp và thời lượng đạt `minimumBookingMinutes`. Theo nghiệm thu 2026-10-07, đặt vãng lai được thêm từng ca 30 phút sau minimum, không yêu cầu tổng chia hết `bookingBlockMinutes`. Sân minimum 120 phút chấp nhận 4, 5, 6, 7... ca còn trống/có giá. Ví dụ 18:00–20:30 tương ứng năm ca nhưng API vẫn lưu một khoảng `[18:00,20:30)`. Deadline bắt đầu khi tạo đơn, theo `holdMinutes` snapshot (mặc định 20 phút). Múi giờ có offset lẻ không bị ép UTC phút 00/30; DST ambiguous/invalid bị từ chối.
+
+Payment snapshot lưu account/QR upload/object key/checksum, không lưu signed URL. `qrUrl` là route private ổn định, UI fetch bằng bearer; local trả bytes, S3 cấp signed GET 5 phút khi có cấu hình. List không có tài khoản/QR, detail mask số tài khoản. Giá và QR đơn cũ giữ nguyên sau owner sửa cấu hình. Contract đầy đủ: `docs/features/F05-casual-booking.md`.
 
 ### Contract quote lịch cố định
 
@@ -134,21 +139,23 @@ Idempotency-Key: 0199fd00-...
 If-Match: "1"
 
 {
-  "bankReference": "FT260922123456",
-  "proofObjectKey": "payment-proofs/0199fca6/receipt.webp",
+  "proofUploadId": "0199fca6-0000-7000-8000-000000000001",
   "note": "Chuyển từ tài khoản NGUYEN VAN B"
 }
 ```
 
 Response trả `AWAITING_OWNER_CONFIRMATION`, giao diện hiển thị **Chờ xác nhận**. Transaction đồng thời ghi outbox để gửi thông báo trong ứng dụng đến chủ sân của booking, kèm liên kết chi tiết. Quá deadline trả `409 PAYMENT_DEADLINE_EXPIRED`; version mismatch trả `412 PRECONDITION_FAILED`.
 
+Contract F06 chi tiết và trạng thái triển khai ở `docs/features/F06-payment-confirmation.md`. `proofUploadId` phải READY/PAYMENT_PROOF và gắn đúng booking/customer/venue; key do server tra, không nhận key/path/URL của client. Cùng endpoint xử lý bổ sung từ NEEDS_REVIEW, không áp dụng deadline giữ chỗ ban đầu. Evidence/history append-only. Policy theo nghiệm thu 2026-10-07: bỏ ô mã giao dịch customer/owner, ảnh chụp màn hình/ghi chú tùy chọn; API giữ bankReference tùy chọn và chuẩn hóa bỏ/null/trắng thành null cho tương thích dữ liệu/client cũ. Report cho phép `{}`. Confirm đúng expectedAmount, SLA 30 phút từ báo chuyển đầu tiên tới owner + Admin một lần, không giải phóng sân khi chậm xác nhận.
+
 ## 5. Contract operator xác nhận
 
 - Chỉ operator có active business membership hoặc venue membership bao phủ cơ sở của booking và có `payment.confirm`.
-- Request có `Idempotency-Key`, `If-Match`, confirmed amount, bank reference và note.
+- Request có `Idempotency-Key`, `If-Match`, confirmed amount; bank reference/note tùy chọn. UI owner không yêu cầu nhập mã giao dịch theo nghiệm thu 2026-10-07.
 - Transaction lock booking/payment, ghi `confirmed_by`, `confirmed_at`, payment `PAID`, booking `CONFIRMED` và outbox.
 - Response thành công trả booking `CONFIRMED`; cổng khách và cổng chủ sân hiển thị **Đã xác nhận** khi tải/cập nhật trạng thái, outbox gửi thông báo kết quả đến khách.
 - Reject bắt buộc `reasonCode`; terminal reject mới release allocation.
+- F06 phân biệt body `{resolution,reasonCode,reason}` với `resolution=NEEDS_REVIEW|FINAL_REJECTION`; cả hai có lý do. Confirm body `{confirmedAmount,note?,bankReference?}`; các command cần Idempotency-Key và booking If-Match. Operator reads dùng route `/operator/bookings/{id}` riêng, backend kiểm OWNER ACTIVE đúng business/venue; không mở GET customer F05 cho mọi operator.
 
 ## 6. Security review
 

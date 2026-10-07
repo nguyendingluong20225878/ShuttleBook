@@ -178,8 +178,7 @@ public static class CourtOperationsEndpoints
         for (var cursor = start; cursor < end; cursor = cursor.AddMinutes(30))
         {
             var next = cursor.AddMinutes(30);
-            var rule = rules.Where(x => x.StartsAt <= cursor && x.EndsAt >= next)
-                .OrderByDescending(x => x.Priority).FirstOrDefault();
+            var rule = CourtPricing.Select(rules, cursor, next);
             if (rule is null) return Problem(http, 409, "PRICE_UNAVAILABLE");
             total += rule.PricePerSlot;
             slots.Add(new { startsAt = cursor.ToString("HH:mm", CultureInfo.InvariantCulture),

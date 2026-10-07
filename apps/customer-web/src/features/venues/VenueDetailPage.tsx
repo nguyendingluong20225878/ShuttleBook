@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { CustomerNav } from '../auth/CustomerSession';
 import { getPublic } from './api';
 import { ScheduleGrid } from './components/ScheduleGrid';
 import { VenuePhoto } from './components/VenuePhoto';
@@ -52,11 +53,12 @@ export function VenueDetailPage({ venueId }: { venueId: string }) {
   useEffect(() => {
     if (!venue) return;
     const restore = () => {
+      if (location.pathname !== `/venues/${venueId}` && location.pathname !== `/venues/${venueId}/`) return;
       setDate(locationDate(venue)); setSchedule(null);
       setRetry(value => value + 1); };
     window.addEventListener('popstate', restore);
     return () => window.removeEventListener('popstate', restore);
-  }, [venue]);
+  }, [venue, venueId]);
 
   useEffect(() => {
     if (!venue || !date) return;
@@ -84,7 +86,7 @@ export function VenueDetailPage({ venueId }: { venueId: string }) {
 
   return <main className="customer-shell">
     <header className="site-header"><a className="brand" href="/venues">ShuttleBook</a>
-      <nav><a href="/venues">Tìm sân</a><a href="/login">Đăng nhập</a></nav></header>
+      <CustomerNav /></header>
     <p className="breadcrumbs"><a href="/venues">Danh sách cơ sở</a> / Chi tiết cơ sở</p>
     {loading && <p role="status">Đang tải cơ sở…</p>}
     {error && <p role="alert">{error} <a href="/venues">Quay lại danh sách</a></p>}

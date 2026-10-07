@@ -64,7 +64,7 @@ F02–F03 phải có owner hoàn tất hồ sơ và gửi duyệt trong luồng 
 | Pending owner cần khai báo giá/QR nhưng guard hiện mô tả chỉ active membership | F02–F03: đặc tả guard nháp đúng chủ sở hữu; chưa tự cho pending owner vận hành booking |
 | Hạn chuyển khoản, bằng chứng bắt buộc, booking horizon, giá quote thay đổi | F05 |
 | Booking thiếu transition bổ sung evidence từ NEEDS_REVIEW; sequence từ chối còn gửi notification trực tiếp | F06: đồng bộ state machine và outbox trước code |
-| SLA xác nhận; in-app đã bắt buộc, chỉ kênh email/SMS/Zalo còn tùy chọn | F06 |
+| SLA xác nhận đã chốt 30 phút, owner + Admin một lần, không release; in-app bắt buộc | F06: kiểm thử Worker/idempotency; email/SMS/Zalo còn tùy chọn |
 | Thanh toán series từng buổi/tháng/cả kỳ, số occurrence tối đa và liên kết payment nhiều booking | F07 |
 | Revision QR/tài khoản sau publish; QR hiện hành cho booking mới trong lúc chờ duyệt | F02–F03 |
 

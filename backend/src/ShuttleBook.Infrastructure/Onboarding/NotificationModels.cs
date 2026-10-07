@@ -11,6 +11,8 @@ public sealed class OutboxMessage
     public DateTimeOffset NextAttemptAt { get; set; }
     public DateTimeOffset? ProcessedAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+    public string? LastFailureType { get; set; }
+    public DateTimeOffset? AlertedAt { get; set; }
 }
 
 public sealed class Notification

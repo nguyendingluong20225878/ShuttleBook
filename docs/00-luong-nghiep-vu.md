@@ -130,7 +130,7 @@ Sau khi booking hoặc series được tạo, ứng dụng hiển thị:
 
 Chủ sân phải cung cấp QR nhận tiền hợp lệ trước khi cơ sở nhận booking. Khi tạo booking, hệ thống lưu snapshot QR và thông tin nhận tiền để việc chủ sân thay QR sau đó không thay đổi hướng dẫn thanh toán của booking đã tạo.
 
-Khách chuyển khoản bằng ứng dụng ngân hàng, sau đó bấm **Đã chuyển khoản**, nhập mã giao dịch và có thể tải ảnh biên lai. Việc bấm nút này chưa có nghĩa là đã thanh toán thành công; payment chuyển sang `TRANSFER_REPORTED` và booking sang `AWAITING_OWNER_CONFIRMATION`, hiển thị **Chờ xác nhận**. Với luồng xác nhận thủ công này, hệ thống ghi nhận việc chuyển tiền khi khách bấm nút, không tự biết giao dịch đã hoàn tất trong ứng dụng ngân hàng.
+Khách chuyển khoản bằng ứng dụng ngân hàng, sau đó bấm **Đã chuyển khoản** và có thể tải ảnh chụp màn hình chuyển khoản/ghi chú; không cần nhập mã giao dịch theo nghiệm thu 2026-10-07. Việc bấm nút này chưa có nghĩa là đã thanh toán thành công; payment chuyển sang `TRANSFER_REPORTED` và booking sang `AWAITING_OWNER_CONFIRMATION`, hiển thị **Chờ xác nhận**. Với luồng xác nhận thủ công này, hệ thống ghi nhận việc chuyển tiền khi khách bấm nút, không tự biết giao dịch đã hoàn tất trong ứng dụng ngân hàng.
 
 ## 9. Thông báo cho chủ sân
 

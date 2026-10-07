@@ -52,6 +52,7 @@ public sealed partial class OnboardingFlowTests
             async Task RunUntil(Func<OutboxMessage, bool> condition)
             {
                 var worker = new ApprovalOutboxWorker(services.GetRequiredService<IServiceScopeFactory>(),
+                    TimeProvider.System, new ConfigurationBuilder().Build(),
                     NullLogger<ApprovalOutboxWorker>.Instance);
                 await worker.StartAsync(CancellationToken.None);
                 try
@@ -427,6 +428,7 @@ public sealed partial class OnboardingFlowTests
                 options => options.UseNpgsql(connection)).BuildServiceProvider())
             {
                 var worker = new ApprovalOutboxWorker(services.GetRequiredService<IServiceScopeFactory>(),
+                    TimeProvider.System, new ConfigurationBuilder().Build(),
                     NullLogger<ApprovalOutboxWorker>.Instance);
                 await worker.StartAsync(CancellationToken.None);
                 try

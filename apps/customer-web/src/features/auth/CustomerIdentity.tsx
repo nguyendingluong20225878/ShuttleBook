@@ -1,9 +1,9 @@
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
+import { parseSession, useCustomerSession } from './CustomerSession';
+import { navigate as go, safeReturnTo } from '../../routes/navigation';
 
 type ContactType = 'email' | 'phone';
 type Page = 'register' | 'verify' | 'login';
-type Session = { accessToken: string; refreshToken: string; expiresAt: number };
-type AuthPayload = { data?: { tokenType: string; accessToken: string; refreshToken: string; expiresInSeconds: number; user: { accountType: string; status: string } } };
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5080';
 
 function pageFromPath(): Page {
@@ -35,14 +35,6 @@ async function post(path: string, body: object, bearer?: string): Promise<Respon
   });
 }
 
-async function parseSession(response: Response): Promise<Session | null> {
-  if (!response.ok) return null;
-  const data = (await response.json() as AuthPayload).data;
-  if (!data || data.tokenType !== 'Bearer' || data.user?.accountType !== 'CUSTOMER' || data.user?.status !== 'ACTIVE' ||
-      !data.accessToken || !data.refreshToken || !Number.isFinite(data.expiresInSeconds) || data.expiresInSeconds <= 0) return null;
-  return { accessToken: data.accessToken, refreshToken: data.refreshToken, expiresAt: Date.now() + data.expiresInSeconds * 1000 };
-}
-
 export function CustomerIdentity() {
   const [page, setPage] = useState<Page>(pageFromPath);
   const [contactType, setContactType] = useState<ContactType>(() => pendingContact()?.contactType ?? 'email');
@@ -50,11 +42,9 @@ export function CustomerIdentity() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [code, setCode] = useState('');
-  const [session, setSession] = useState<Session | null>(null);
+  const { session, setSession, logout: sharedLogout } = useCustomerSession();
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const refreshInFlight = useRef<Promise<void> | null>(null);
-  const sessionGeneration = useRef(0);
 
   useEffect(() => {
     const onPopState = () => {
@@ -68,31 +58,9 @@ export function CustomerIdentity() {
   }, []);
 
   const navigate = (next: Page, state: object | null = null) => {
-    history.pushState(state, '', next === 'register' ? '/' : `/${next}`);
+    go(`${next === 'register' ? '/' : `/${next}`}${location.search}`, false, state);
     setPage(next); setMessage('');
   };
-
-  useEffect(() => {
-    if (!session) return;
-    const timer = window.setTimeout(() => {
-      if (refreshInFlight.current) return;
-      const generation = sessionGeneration.current;
-      refreshInFlight.current = (async () => {
-        try {
-          const next = await parseSession(await post('/refresh', { refreshToken: session.refreshToken }));
-          if (!next) throw new Error('Refresh rejected');
-          if (generation === sessionGeneration.current) setSession(next);
-        } catch {
-          if (generation === sessionGeneration.current) {
-            sessionGeneration.current++;
-            setSession(null); navigate('login');
-            setMessage('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
-          }
-        } finally { refreshInFlight.current = null; }
-      })();
-    }, Math.max(0, session.expiresAt - Date.now() - 30_000));
-    return () => window.clearTimeout(timer);
-  }, [session]);
 
   const submitRegistration = async (event: FormEvent) => {
     event.preventDefault();
@@ -150,9 +118,8 @@ export function CustomerIdentity() {
       const next = await parseSession(response);
       setPassword('');
       if (next) {
-        sessionGeneration.current++;
-        history.replaceState(null, '', '/login');
         setSession(next); setMessage('Đăng nhập thành công.');
+        go(safeReturnTo(), true);
       }
       else if (response.ok) setMessage('Tài khoản này không phải tài khoản khách đang hoạt động.');
       else if (response.status === 429) setMessage(retryMessage(response));
@@ -163,12 +130,9 @@ export function CustomerIdentity() {
 
   const logout = async () => {
     if (!session) return;
-    const current = session;
-    sessionGeneration.current++;
-    setSession(null); setMessage('Đã đăng xuất.');
+    setMessage('Đã đăng xuất.');
     try {
-      const response = await post('/logout', { refreshToken: current.refreshToken }, current.accessToken);
-      if (!response.ok) setMessage('Đã rời phiên trên trình duyệt. Vui lòng đăng nhập lại sau khi kiểm tra kết nối.');
+      await sharedLogout();
     } catch { setMessage('Đã rời phiên trên trình duyệt. Vui lòng đăng nhập lại sau khi kiểm tra kết nối.'); }
   };
 

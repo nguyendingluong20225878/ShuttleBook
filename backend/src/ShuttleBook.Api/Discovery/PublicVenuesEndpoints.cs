@@ -174,9 +174,7 @@ public static class PublicVenuesEndpoints
             {
                 var startTime = TimeOnly.ParseExact(slot.StartsAt, "HH:mm", CultureInfo.InvariantCulture);
                 var endTime = TimeOnly.ParseExact(slot.EndsAt, "HH:mm", CultureInfo.InvariantCulture);
-                var rule = (rulesByCourt.GetValueOrDefault(c.Id) ?? [])
-                    .Where(x => x.StartsAt <= startTime && x.EndsAt >= endTime)
-                    .OrderByDescending(x => x.Priority).FirstOrDefault();
+                var rule = CourtPricing.Select(rulesByCourt.GetValueOrDefault(c.Id) ?? [], startTime, endTime);
                 var reserved = (allocationsByCourt.GetValueOrDefault(c.Id) ?? [])
                     .Any(x => x.StartsAt < slot.EndsAtUtc && x.EndsAt > slot.StartsAtUtc);
                 var status = slot.StartsAtUtc <= now ? "PAST" : reserved ? "RESERVED" :

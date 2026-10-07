@@ -1,6 +1,8 @@
 import { FormEvent, StrictMode, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { PartnerOnboarding } from './PartnerOnboarding';
+import { PartnerIcon } from './components/PartnerIcon';
+import './assets/partner.css';
 
 type ContactType = 'email' | 'phone';
 type View = 'register' | 'verify' | 'login' | 'session';
@@ -123,9 +125,24 @@ function PartnerIdentity() {
     finally { setSession(null); setView('login'); setSubmitting(false); }
   };
 
-  return <main style={{ fontFamily: 'system-ui, sans-serif', maxWidth: 520, margin: '3rem auto', padding: '0 1rem' }}>
-    <h1>Chào chủ sân.</h1>
-    <p>Đăng ký đối tác ShuttleBook để chuẩn bị quản lý sân.</p>
+  if (view === 'session' && session) return <PartnerOnboarding session={session} onSession={setSession}
+    onLogout={() => void logout()} logoutBusy={submitting} onExpired={() => {
+      setSession(null); setView('login'); setMessage('Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.');
+    }} />;
+
+  return <main className="auth-page">
+    <section className="auth-story">
+      <a className="brand" href="/"><span className="brand-mark"><PartnerIcon name="courts" /></span>ShuttleBook</a>
+      <p className="eyebrow">DÀNH CHO CHỦ SÂN</p>
+      <h1>Chào chủ sân.</h1>
+      <p>Một không gian để quản lý cơ sở, thiết lập lịch chơi và chuẩn bị đón khách.</p>
+      <ul className="auth-highlights">
+        <li><PartnerIcon name="venues" />Quản lý cơ sở và từng sân</li>
+        <li><PartnerIcon name="schedule" />Lịch hoạt động và bảng giá linh hoạt</li>
+        <li><PartnerIcon name="payments" />QR nhận tiền do bạn cung cấp</li>
+      </ul>
+    </section>
+    <section className="auth-panel"><div>
     <nav aria-label="Tài khoản chủ sân">
       {view !== 'register' && view !== 'session' && <button type="button" onClick={() => { setView('register'); setMessage(''); }}>Đăng ký</button>}{' '}
       {view !== 'login' && view !== 'session' && <button type="button" onClick={() => { setView('login'); setMessage(''); }}>Đăng nhập</button>}
@@ -171,13 +188,8 @@ function PartnerIdentity() {
       <button disabled={submitting} type="submit">{submitting ? 'Đang đăng nhập…' : 'Đăng nhập'}</button>
     </form>}
 
-    {view === 'session' && session && <section>
-      <PartnerOnboarding session={session} onSession={setSession} onExpired={() => {
-        setSession(null); setView('login'); setMessage('Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.');
-      }} />
-      <button disabled={submitting} type="button" onClick={logout}>Đăng xuất</button>
-    </section>}
-    {message && <p role="status">{message}</p>}
+    {message && <p className="feedback" role="status">{message}</p>}
+    </div></section>
   </main>;
 }
 

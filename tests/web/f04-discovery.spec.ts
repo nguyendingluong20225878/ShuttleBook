@@ -99,6 +99,17 @@ test('guest searches and reads the court-by-time grid without creating a booking
   await expect(page.getByRole('rowheader', { name: /Sân 3/ })).toBeVisible();
   const overflow = await page.locator('.schedule-scroll').evaluate(element => element.scrollWidth > element.clientWidth);
   if ((page.viewportSize()?.width ?? 1280) < 630) expect(overflow).toBeTruthy();
+  await page.getByRole('button', { name: /Sân 1, 17:00 đến 17:30/ }).click();
+  await page.getByRole('button', { name: /Sân 1, 17:30 đến 18:00/ }).click();
+  await page.getByRole('button', { name: 'Tiếp tục đặt vãng lai' }).click();
+  await expect(page.getByRole('heading', { name: 'Đăng nhập khách hàng' })).toBeVisible();
+  const returnTo = new URL(page.url()).searchParams.get('returnTo')!;
+  const review = new URL(returnTo, 'http://localhost:5173');
+  expect(review.pathname).toBe('/booking-review');
+  expect(review.searchParams.get('courtId')).toBe(courtA);
+  expect(review.searchParams.get('date')).toBe(initialDate);
+  expect(review.searchParams.get('startsAt')).toBe('17:00');
+  expect(review.searchParams.get('endsAt')).toBe('18:00');
   expect(bookingRequests).toBe(0);
 });
 
@@ -121,6 +132,106 @@ test('grid shows all seven courts without a court filter', async ({ page }) => {
   await page.goto(`http://localhost:5173/venues/${venueId}`);
   await expect(page.locator('.schedule-grid tbody tr')).toHaveCount(7);
   await expect(page.getByLabel('Xem sân')).toHaveCount(0);
+});
+
+for (const policy of [{ block: 60, minimum: 120 }, { block: 90, minimum: 90 }]) {
+  test(`casual selection accepts extra half hours after minimum with block ${policy.block}`, async ({ page }) => {
+    const time = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+    const slots = Array.from({ length: 7 }, (_, index) => slot(time(1020 + index * 30), time(1050 + index * 30), 'AVAILABLE', 100000));
+    let bookingRequests = 0;
+    await page.route('**/api/v1/bookings**', route => { bookingRequests++; return route.abort(); });
+    await page.route('**/api/v1/venues/**', route => {
+      const url = new URL(route.request().url());
+      const court = { courtId: courtA, name: 'Sân 1', bookingBlockMinutes: policy.block, minimumBookingMinutes: policy.minimum, holdMinutes: 20, slots };
+      const data = url.pathname.endsWith('/availability')
+        ? { venueId, date: url.searchParams.get('date'), timezone: 'Asia/Ho_Chi_Minh', stepMinutes: 30, courts: [court] }
+        : { id: venueId, name: 'Hoàng Cầu', address: 'Hà Nội', contact: 'Liên hệ cơ sở', latitude: 21.0278,
+          longitude: 105.8342, timezone: 'Asia/Ho_Chi_Minh', imageUrl: null, courts: [{ ...court, id: courtA }] };
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data }) });
+    });
+    await page.goto(`http://localhost:5173/venues/${venueId}`);
+    const selectSlot = (index: number) => page.getByRole('button', { name: new RegExp(`Sân 1, ${time(1020 + index * 30)} đến ${time(1050 + index * 30)}`) }).click();
+    const minimumSlots = policy.minimum / 30;
+    await selectSlot(0);
+    await selectSlot(minimumSlots - 2);
+    const continueBooking = page.getByRole('button', { name: 'Tiếp tục đặt vãng lai' });
+    const summary = page.locator('.selection-summary');
+    await expect(continueBooking).toBeDisabled();
+    await expect(summary).toContainText(`tối thiểu ${policy.minimum} phút`);
+
+    for (let count = minimumSlots; count <= 7; count++) {
+      await selectSlot(count - 1);
+      await expect(summary).toContainText(`${count * 30} phút`);
+      await expect(summary).toContainText(`Giá tham khảo ${new Intl.NumberFormat('vi-VN').format(count * 100000)}đ`);
+      await expect(continueBooking).toBeEnabled();
+    }
+
+    // Remove the last two slots; five contiguous slots remain valid, and the
+    // handoff keeps their full interval instead of rounding to the block.
+    await selectSlot(6);
+    await selectSlot(5);
+    await expect(summary).toContainText('150 phút');
+    await expect(continueBooking).toBeEnabled();
+    await continueBooking.click();
+    await expect(page.getByRole('heading', { name: 'Đăng nhập khách hàng' })).toBeVisible();
+    const review = new URL(new URL(page.url()).searchParams.get('returnTo')!, 'http://localhost:5173');
+    expect(review.pathname).toBe('/booking-review');
+    expect(review.searchParams.get('courtId')).toBe(courtA);
+    expect(review.searchParams.get('startsAt')).toBe('17:00');
+    expect(review.searchParams.get('endsAt')).toBe('19:30');
+    expect(bookingRequests).toBe(0);
+  });
+}
+
+test('full-day schedule keeps half-hour columns readable while scrolling', async ({ page }) => {
+  if ((page.viewportSize()?.width ?? 1280) > 630) await page.setViewportSize({ width: 860, height: 900 });
+  const time = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+  const slots = Array.from({ length: 34 }, (_, index) => slot(time(300 + index * 30), time(330 + index * 30),
+    index < 3 ? 'RESERVED' : index === 20 ? 'NO_PRICE' : 'AVAILABLE', index === 20 ? null : index === 10 ? 1000000 : 40000));
+  await page.route('**/api/v1/venues/**', route => {
+    const url = new URL(route.request().url());
+    const court = { courtId: courtA, name: 'Sân 1', bookingBlockMinutes: 60, minimumBookingMinutes: 120, holdMinutes: 20, slots };
+    const data = url.pathname.endsWith('/availability')
+      ? { venueId, date: url.searchParams.get('date'), timezone: 'Asia/Ho_Chi_Minh', stepMinutes: 30, courts: [court] }
+      : { id: venueId, name: 'Hoàng Cầu', address: 'Hà Nội', contact: 'Liên hệ cơ sở', latitude: 21.0278,
+        longitude: 105.8342, timezone: 'Asia/Ho_Chi_Minh', imageUrl: null, courts: [{ ...court, id: courtA }] };
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data }) });
+  });
+  await page.goto(`http://localhost:5173/venues/${venueId}`);
+  await expect(page.locator('.slot-cell')).toHaveCount(34);
+  const geometry = await page.locator('.schedule-grid').evaluate(table => {
+    const cells = [...table.querySelectorAll<HTMLElement>('.slot-cell')];
+    const headings = [...table.querySelectorAll<HTMLElement>('.time-heading')];
+    return {
+      widths: cells.map(cell => cell.getBoundingClientRect().width),
+      labelsFit: headings.every(heading => {
+        const label = heading.querySelector<HTMLElement>('.time-start')!.getBoundingClientRect();
+        const bounds = heading.getBoundingClientRect();
+        return label.left >= bounds.left && label.right <= bounds.right;
+      }),
+      pricesFit: cells.every(cell => {
+        const price = cell.querySelector<HTMLElement>('button small');
+        return !price || price.scrollWidth <= price.clientWidth;
+      }),
+    };
+  });
+  expect(Math.min(...geometry.widths)).toBeGreaterThanOrEqual(104);
+  expect(geometry.labelsFit).toBe(true);
+  expect(geometry.pricesFit).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: test.info().outputPath('f04-full-day-start.png'), fullPage: true });
+  await page.locator('.schedule-scroll').evaluate(element => { element.scrollLeft = element.scrollWidth; });
+  const sticky = await page.locator('.schedule-scroll').evaluate(element => ({
+    left: element.getBoundingClientRect().left,
+    court: element.querySelector<HTMLElement>('tbody .court-heading')!.getBoundingClientRect().left,
+    end: element.querySelector<HTMLElement>('.time-end')!.getBoundingClientRect().right,
+    right: element.getBoundingClientRect().right,
+  }));
+  expect(Math.abs(sticky.court - sticky.left)).toBeLessThan(3);
+  expect(sticky.end).toBeLessThanOrEqual(sticky.right);
+  expect(sticky.end).toBeGreaterThan(sticky.left);
+  await expect(page.locator('.time-end')).toHaveText('22:00');
+  await page.screenshot({ path: test.info().outputPath('f04-full-day-end.png'), fullPage: true });
 });
 
 test('guest can still search by name after location permission is denied', async ({ page }) => {
@@ -156,6 +267,7 @@ test('guest location searches the selected PostGIS radius', async ({ page, conte
   await page.getByRole('button', { name: 'Dùng vị trí của tôi' }).click();
   await expect(page.getByRole('heading', { name: 'Sân gần khu vực đã chọn' })).toBeVisible();
   await expect(page.getByText('Cách khoảng 0.0 km')).toBeVisible();
+  await expect.poll(() => nearbyUrl).toContain('/nearby?');
   const params = new URL(nearbyUrl).searchParams;
   expect(params.get('latitude')).toBe('21.0278');
   expect(params.get('longitude')).toBe('105.8342');

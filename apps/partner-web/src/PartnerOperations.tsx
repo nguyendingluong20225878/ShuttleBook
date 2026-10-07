@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
+import { statusLabel } from './features/workspace/navigation';
 
 type ApiRequest = <T>(path: string, method?: string, body?: object, version?: number) => Promise<T>;
 type CourtChoice = { id: string; name: string; status: string };
@@ -72,17 +73,26 @@ export function PartnerOperations({ venues, request }: { venues: VenueChoice[]; 
   function submit(event: FormEvent, work: () => Promise<void>) { event.preventDefault(); void run(work); }
   const root = `/operator/courts/${courtId}`;
 
-  return <section aria-label="Vận hành sân">
+  return <section className="operations-page" aria-label="Vận hành sân">
     <h3>Vận hành sân</h3>
-    <p>Giờ và giá cơ bản áp dụng theo tuần. Quy tắc theo ngày có độ ưu tiên cao hơn. QR sau publish đổi ở phần đề nghị Admin duyệt bên dưới.</p>
+    <p>Giờ và giá cơ bản áp dụng theo tuần. Quy tắc theo ngày có độ ưu tiên cao hơn. Thay đổi QR ở mục Thanh toán & QR để gửi Admin duyệt.</p>
     <label>Sân vận hành <select value={courtId} disabled={busy} onChange={event => setCourtId(event.target.value)}>
       {choices.map(choice => <option key={choice.id} value={choice.id}>{choice.label}</option>)}
     </select></label>
-    {message && <p role="status">{message}</p>}
+    {message && <p className={`feedback ${message === 'Đã lưu.' ? 'success' : 'error'}`} role="status">{message}</p>}
+    {busy && <p className="feedback" role="status">Đang xử lý…</p>}
+    {!loading && !operations && courtId && <button type="button" onClick={() => void run(() => load(courtId))}>Thử tải lại cấu hình</button>}
     {loading && <p>Đang tải cấu hình sân…</p>}
     {!loading && operations && <>
-      <p>{operations.name} · {operations.status} · múi giờ {operations.timezone} · phiên bản {operations.version}</p>
-      <form onSubmit={event => submit(event, async () => {
+      <p>{operations.name} · {statusLabel(operations.status)} · múi giờ {operations.timezone}</p>
+      <nav className="section-links" aria-label="Các phần cấu hình sân">{[
+        ['policy', 'Quy định đặt'], ['weekly', 'Lịch tuần'], ['pricing', 'Giá theo ngày'], ['preview', 'Xem thử giá'], ['maintenance', 'Bảo trì'],
+      ].map(([id, label]) => <a key={id} href="#/schedule" onClick={event => {
+        event.preventDefault(); const section = document.getElementById(`operator-${id}`);
+        section?.scrollIntoView({ block: 'start' }); section?.focus();
+      }}>{label}</a>)}</nav>
+      <fieldset disabled={busy}>
+      <form id="operator-policy" tabIndex={-1} onSubmit={event => submit(event, async () => {
         await request(`${root}/booking-policy`, 'PUT',
           { bookingBlockMinutes, minimumBookingMinutes, holdMinutes }, operations.version);
         await load(courtId);
@@ -101,7 +111,7 @@ export function PartnerOperations({ venues, request }: { venues: VenueChoice[]; 
           value={holdMinutes} onChange={event => setHoldMinutes(Number(event.target.value))} /> phút</label>
         <button disabled={busy}>Lưu quy định</button>
       </form>
-      <form onSubmit={event => submit(event, async () => {
+      <form id="operator-weekly" tabIndex={-1} onSubmit={event => submit(event, async () => {
         await request(`${root}/schedule`, 'PUT', { hours, prices }, operations.version);
         await load(courtId);
       })}>
@@ -137,7 +147,7 @@ export function PartnerOperations({ venues, request }: { venues: VenueChoice[]; 
         <button disabled={busy}>Lưu lịch tuần</button>
       </form>
 
-      <form onSubmit={event => submit(event, async () => {
+      <form id="operator-pricing" tabIndex={-1} onSubmit={event => submit(event, async () => {
         await request(`${root}/pricing-rules`, 'PUT', { rules }, operations.version);
         await load(courtId);
       })}>
@@ -168,7 +178,7 @@ export function PartnerOperations({ venues, request }: { venues: VenueChoice[]; 
         <button disabled={busy}>Lưu giá theo ngày</button>
       </form>
 
-      <form onSubmit={event => submit(event, async () => {
+      <form id="operator-preview" tabIndex={-1} onSubmit={event => submit(event, async () => {
         const result = await request<Preview>(`${root}/price-preview?date=${encodeURIComponent(date)}&startsAt=${encodeURIComponent(startsAt)}&endsAt=${encodeURIComponent(endsAt)}`);
         setPreview(result);
       })}>
@@ -180,7 +190,7 @@ export function PartnerOperations({ venues, request }: { venues: VenueChoice[]; 
         {preview && <p>Tổng giá: {preview.totalPrice.toLocaleString('vi-VN')} VND · {preview.slots.length} ca</p>}
       </form>
 
-      <form onSubmit={event => submit(event, async () => {
+      <form id="operator-maintenance" tabIndex={-1} onSubmit={event => submit(event, async () => {
         await request(`${root}/maintenance`, 'POST', { date, startsAt, endsAt, reason });
         setReason(''); await load(courtId);
       })}>
@@ -193,7 +203,7 @@ export function PartnerOperations({ venues, request }: { venues: VenueChoice[]; 
         <button disabled={busy}>Khóa ca bảo trì</button>
       </form>
       <h4>Ca bảo trì đang giữ</h4>
-      {maintenance.length === 0 ? <p>Chưa có ca bảo trì.</p> : <ul>{maintenance.map(item =>
+      {maintenance.length === 0 ? <p>Chưa có ca bảo trì.</p> : <ul className="maintenance-list">{maintenance.map(item =>
         <li key={item.id}>{new Date(item.startsAt).toLocaleString('vi-VN', { timeZone: operations.timezone })}
           {' – '}{new Date(item.endsAt).toLocaleString('vi-VN', { timeZone: operations.timezone })}
           {' · '}{item.reason}{' '}
@@ -201,6 +211,7 @@ export function PartnerOperations({ venues, request }: { venues: VenueChoice[]; 
             await request(`${root}/maintenance/${item.id}/cancel`, 'POST'); await load(courtId);
           })}>Hủy bảo trì</button>
         </li>)}</ul>}
+      </fieldset>
     </>}
     {choices.length === 0 && <p>Chưa có sân đã duyệt để vận hành.</p>}
   </section>;

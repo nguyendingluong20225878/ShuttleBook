@@ -11,6 +11,7 @@ stateDiagram-v2
     AwaitingTransfer --> Expired: quá hạn thanh toán
     AwaitingOwnerConfirmation --> Confirmed: operator xác nhận
     AwaitingOwnerConfirmation --> NeedsReview: cần thêm bằng chứng
+    NeedsReview --> AwaitingOwnerConfirmation: khách bổ sung bằng chứng
     AwaitingOwnerConfirmation --> PaymentRejected: operator từ chối
     NeedsReview --> Confirmed: giao dịch hợp lệ
     NeedsReview --> PaymentRejected: đối chiếu thất bại
@@ -25,6 +26,8 @@ stateDiagram-v2
 | `AwaitingTransfer` → `AwaitingOwnerConfirmation` | Customer | Còn deadline | Lưu evidence, dừng auto-expiry và thông báo operator |
 | `AwaitingTransfer` → `Expired` | Worker | Quá deadline, chưa report transfer | Giải phóng allocation |
 | Chờ xác nhận → `Confirmed` | Operator | Đúng venue scope và đúng giao dịch | Payment `PAID`, lưu `confirmed_by/at` |
+| Chờ xác nhận → `NeedsReview` | Operator | Cần đối chiếu thêm, có lý do | Giữ allocation, payment `NEEDS_REVIEW`, outbox tới customer |
+| `NeedsReview` → Chờ xác nhận | Customer | Bổ sung evidence thuộc đơn mình | Payment `TRANSFER_REPORTED`, lưu thêm history, outbox tới owner; không áp dụng deadline cũ |
 | Chờ xác nhận → `PaymentRejected` | Operator | Có lý do hợp lệ | Giải phóng allocation khi terminal |
 
 `CONFIRMED` là trạng thái cuối của luồng booking thành công. Khách chỉ cần đến sân chơi theo lịch; mọi vấn đề sau xác nhận thanh toán được giải quyết trực tiếp với nhân viên tại sân. Không có check-in/check-out, trạng thái vắng mặt hoặc hoàn thành. Booking giữ trạng thái `CONFIRMED` sau giờ chơi; allocation vẫn bảo vệ khoảng thời gian đã đặt, không cần thao tác đóng booking.
@@ -34,7 +37,7 @@ stateDiagram-v2
 ```mermaid
 stateDiagram-v2
     [*] --> AwaitingTransfer: booking được tạo
-    AwaitingTransfer --> TransferReported: khách gửi mã giao dịch
+    AwaitingTransfer --> TransferReported: khách báo chuyển, có thể gửi ảnh
     AwaitingTransfer --> Expired: quá deadline
     TransferReported --> Paid: operator xác nhận
     TransferReported --> NeedsReview: thiếu bằng chứng
@@ -243,6 +246,7 @@ sequenceDiagram
     participant API as ASP.NET API
     participant Auth as Authorization
     participant DB as PostgreSQL
+    participant W as Worker
     participant N as Notification
 
     O->>UI: Chọn booking đang chờ
@@ -250,11 +254,13 @@ sequenceDiagram
     API->>Auth: Kiểm tra business/venue membership
     API->>DB: Lock booking và payment
     alt Cần thêm bằng chứng
-      API->>DB: Payment NEEDS_REVIEW và outbox
+      API->>DB: Booking/payment NEEDS_REVIEW, giữ allocation và outbox
     else Từ chối cuối cùng
       API->>DB: PAYMENT_REJECTED, release allocation và outbox
     end
-    API->>N: Thông báo customer
+    API->>DB: COMMIT quyết định và outbox
+    W->>DB: Đọc outbox sau commit, retry/idempotency
+    W->>N: Thông báo customer
 ```
 
 ## 12. Upload QR hoặc biên lai bằng presigned URL

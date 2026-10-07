@@ -25,7 +25,7 @@ try {
     foreach ($portal in $portals) {
         $port = 5173 + [array]::IndexOf($portals, $portal)
         $preview = Start-Process -FilePath $nodeExecutable -ArgumentList @(
-            'node_modules/vite/bin/vite.js', 'preview', "apps/$portal-web", '--host', 'localhost',
+            'node_modules/vite/bin/vite.js', 'preview', "apps/$portal-web", '--host', '127.0.0.1',
             '--port', "$port", '--strictPort') -WorkingDirectory $projectRoot -WindowStyle Hidden -PassThru
         $previewProcesses += $preview
     }
@@ -33,7 +33,7 @@ try {
         $ready = $false
         for ($attempt = 0; $attempt -lt 60; $attempt++) {
             try {
-                $response = Invoke-WebRequest -Uri "http://localhost:$port/" -TimeoutSec 1 -UseBasicParsing
+                $response = Invoke-WebRequest -Uri "http://127.0.0.1:$port/" -TimeoutSec 1 -UseBasicParsing
                 if ($response.StatusCode -eq 200) { $ready = $true; break }
             } catch { Start-Sleep -Milliseconds 250 }
         }

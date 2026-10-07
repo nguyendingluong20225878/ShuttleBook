@@ -7,7 +7,7 @@ test.skip(process.env.SHUTTLEBOOK_E2E_REAL !== '1', 'Set SHUTTLEBOOK_E2E_REAL=1 
 test.use({ trace: 'off' });
 
 const mailpit = 'http://127.0.0.1:8025';
-const api = 'http://127.0.0.1:5080';
+const api = process.env.SHUTTLEBOOK_TEST_API_URL ?? 'http://localhost:5080';
 
 type MessageList = { messages: { ID: string; To: { Address: string }[] }[] };
 type Message = { Text: string };
@@ -30,8 +30,10 @@ test('customer registration works through browser, API, PostgreSQL and Mailpit',
   const ready = await fetch(`${api}/health/ready`);
   expect(ready.status).toBe(200);
   await page.route('**/*', route => {
-    const origin = new URL(route.request().url()).origin;
-    return origin === 'http://localhost:5173' || origin === 'http://localhost:5080'
+    const url = new URL(route.request().url()); const origin = url.origin;
+    if (url.pathname.startsWith('/api/v1/') && origin !== new URL(api).origin)
+      throw new Error(`Browser API origin ${origin} differs from test API ${new URL(api).origin}.`);
+    return origin === 'http://localhost:5173' || origin === new URL(api).origin
       ? route.continue() : route.abort();
   });
   const contact = `f011-live-${randomUUID()}@example.test`;
@@ -84,7 +86,7 @@ test('customer registration works through browser, API, PostgreSQL and Mailpit',
   await expect(page.getByRole('heading', { name: 'Đăng nhập khách hàng' })).toBeVisible();
   await page.getByLabel('Mật khẩu', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Đăng nhập', exact: true }).last().click();
-  await expect(page.getByRole('heading', { name: 'Xin chào khách hàng' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Chọn cơ sở phù hợp với bạn' })).toBeVisible();
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
 });
 
@@ -94,8 +96,10 @@ test('customer registration reports invalid contact and weak password', async ({
     if (request.url().endsWith('/api/v1/auth/register')) registerRequests.push(request.method());
   });
   await page.route('**/*', route => {
-    const origin = new URL(route.request().url()).origin;
-    return origin === 'http://localhost:5173' || origin === 'http://localhost:5080'
+    const url = new URL(route.request().url()); const origin = url.origin;
+    if (url.pathname.startsWith('/api/v1/') && origin !== new URL(api).origin)
+      throw new Error(`Browser API origin ${origin} differs from test API ${new URL(api).origin}.`);
+    return origin === 'http://localhost:5173' || origin === new URL(api).origin
       ? route.continue() : route.abort();
   });
   const contact = `f011-invalid-${randomUUID()}@example.test`;

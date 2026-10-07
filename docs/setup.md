@@ -68,7 +68,7 @@ npm.cmd run db:migrate
 npm.cmd run db:migrate
 ```
 
-PostgreSQL bind `127.0.0.1:54329`; named volume giữ dữ liệu khi restart. Migrator tạo extensions, EF migration history, bảng identity F01 và schema onboarding F02 gồm business/venue/court, PostGIS location, approval, media và outbox. Lần hai không áp dụng lại migration đã có. Không tự migrate trong API/Worker. Chưa có bảng booking.
+PostgreSQL bind `127.0.0.1:54329`; named volume giữ dữ liệu khi restart. Migrator tạo extensions, EF migration history, identity/onboarding, vận hành sân F03 và quote/booking/payment/idempotency F05. Lần hai không áp dụng lại migration đã có. Không tự migrate trong API/Worker.
 
 Không dùng `docker compose down -v` khi cần giữ dữ liệu. Thay mật khẩu trong `.env` không tự thay mật khẩu của volume đã khởi tạo; cần cập nhật database có chủ đích, không xóa dữ liệu để xử lý cho nhanh.
 
@@ -93,7 +93,7 @@ npm.cmd run dev:partner
 npm.cmd run dev:admin
 ```
 
-Mở `http://localhost:5173`, `http://localhost:5174`, `http://localhost:5175`. Cổng đối tác có hồ sơ chủ sân F02; cổng Admin có danh sách và quyết định duyệt. Chưa có chức năng booking. CORS Development chỉ chấp nhận chính xác ba origin này; dùng 127.0.0.1 thay localhost là origin khác.
+Mở `http://localhost:5173`, `http://localhost:5174`, `http://localhost:5175`. Cổng đối tác có hồ sơ/vận hành F02–F03; Admin duyệt hồ sơ; customer tìm sân/lịch F04 và đặt vãng lai F05. CORS Development chỉ chấp nhận chính xác ba origin này; dùng 127.0.0.1 thay localhost là origin khác.
 
 Trong môi trường local, OTP được gửi đến Mailpit tại `http://localhost:8025`, kể cả khi bạn nhập một địa chỉ email thật; Mailpit không chuyển tiếp thư ra ngoài. Hãy tìm thư theo địa chỉ vừa đăng ký. Phản hồi đăng ký `202` là thông báo chung để tránh lộ tài khoản tồn tại: nếu contact đã xác minh hoặc thuộc loại tài khoản khác, hệ thống không gửi mã mới. Dùng contact thử nghiệm mới khi kiểm tra luồng đăng ký.
 
@@ -137,7 +137,13 @@ Development dùng adapter file private `.media-local/` để tải ảnh/QR, URL
 
 ### Kiểm tra F04: khách tìm sân và xem lịch
 
-Sau khi business được Admin duyệt thành `ACTIVE`, venue thành `PUBLISHED` và có ít nhất một court `ACTIVE`, mở `http://localhost:5173/venues` ở browser. Tìm theo tên/địa chỉ, mở **Xem lịch các sân**, chọn ngày tương lai có giờ mở và giá. Mỗi hàng là một sân, mỗi cột là một ca 30 phút. Xanh nhạt là ca có giá và còn trống, đỏ là ca bị giữ, xám là ngoài giờ/chưa có giá, tím là ca đang chọn; mỗi ô cũng có chữ mô tả. Chọn các ca liên tiếp để xem tổng giá tham khảo và điều kiện thời lượng. F04 chưa gửi yêu cầu đặt sân; F05 sẽ kiểm tra lại lịch/giá khi tạo đơn.
+Sau khi business được Admin duyệt thành `ACTIVE`, venue thành `PUBLISHED` và có ít nhất một court `ACTIVE`, mở `http://localhost:5173/venues` ở browser. Tìm theo tên/địa chỉ, mở **Xem lịch các sân**, chọn ngày tương lai có giờ mở và giá. Mỗi hàng là một sân, mỗi cột là một ca 30 phút. Xanh nhạt là ca có giá và còn trống, đỏ là ca bị giữ, xám là ngoài giờ/chưa có giá, tím là ca đang chọn; mỗi ô cũng có chữ mô tả. Chọn các ca liên tiếp để xem tổng giá tham khảo và điều kiện thời lượng. Nút **Tiếp tục đặt vãng lai** mở luồng F05; API kiểm tra lại lịch/giá khi tạo đơn.
+
+### Nghiệm thu F05 — quote/booking vãng lai
+
+Hướng dẫn PowerShell VS Code và checklist đầy đủ: [F05 manual acceptance](testing/F05-manual-acceptance.md). Cần migrate schema F05 bằng `npm.cmd run db:migrate` sau khi kiểm tra đúng DB local, chạy API và Worker ở hai terminal riêng. Court cần hours/pricing/QR READY đã duyệt. Guest chọn ca → login/register → review quote → xác nhận → đơn/QR; **Đơn của tôi** giúp tìm lại đơn. F5 cần login lại theo session memory F01, rồi quay lại URL đơn để đọc, không tạo mới.
+
+`.env.example` có `Booking__QuoteSeconds=120`, `Booking__MaxAdvanceDays=60`; hold lấy từng court. Worker quét expiry mỗi 5 giây, chỉ release booking/payment AWAITING_TRANSFER quá deadline. F06 bổ sung báo chuyển/xác nhận; series thuộc F07. S3 live vẫn hoãn; local QR nằm trong media private, snapshot không mất khi F5.
 
 Trong portal partner `http://localhost:5174`, tạo bảo trì đúng sân/ngày/giờ đang xem. Quay lại trang khách, nhấn **Làm mới lịch**: ca đó chuyển thành **Đã kín**. Hủy bảo trì rồi làm mới: ca có giá trở thành **Còn trống**. Bảng luôn hiện đủ mỗi sân một hàng, không có dropdown **Xem sân**. Mốc giờ nằm ở ranh giới các ô giá 30 phút; bấm lại một trong hai ô đã chọn chỉ bỏ ô đó. Thay ngày rồi dùng Back/Forward của trình duyệt để kiểm tra URL giữ `date`. Tắt quyền định vị để kiểm tra tìm bằng chữ vẫn hoạt động; khi cho quyền, nút **Dùng vị trí của tôi** gọi nearby bằng PostGIS với bán kính chọn. Kiểm tra màn desktop và mobile hoặc cửa sổ hẹp: bảng có thể cuộn ngang.
 
@@ -153,7 +159,7 @@ Invoke-RestMethod "http://localhost:5080/api/v1/venues/$venueId/availability?dat
 
 Đổi `q` thành tên venue vừa tạo và `$date` thành ngày venue có giờ hoạt động; nếu danh sách rỗng, kiểm tra trạng thái business/venue/court. Kết quả availability trả `courts[].slots[]` với giờ local, UTC, `status` và `pricePerSlot` VND/30 phút. Ảnh venue nằm ở endpoint `/api/v1/venues/{id}/image` khi upload đã `READY`; ảnh local được lưu private dưới `backend/src/ShuttleBook.Api/.media-local` và không mất vì F5. Mất file trên đĩa local hoặc xóa DB sẽ làm ảnh không đọc được; S3 mode lưu object trong bucket riêng.
 
-S3 private dùng lại upload F02: `.env` local có thể đặt `Media__Mode=S3`, `Media__S3Region=<region>`, `Media__S3Bucket=<bucket-test>` khi **đã có bucket thử nghiệm và AWS credentials trên máy**. Không đặt key/secret trong repo hoặc gửi qua chat. Bucket phải chặn public access; IAM cần `s3:PutObject` và `s3:GetObject` cho prefix media của bucket (`HEAD` object dùng quyền đọc object). CORS bucket giới hạn origin partner `http://localhost:5174` cho presigned PUT; nếu dùng fetch trực tiếp signed GET từ customer `http://localhost:5173`, cho GET từ origin đó. Cho các header `Content-Type`, `x-amz-checksum-sha256`, `If-None-Match` theo request upload, không dùng wildcard origin ở môi trường thật. Kiểm tra presigned PUT → complete → public venue image redirect → signed GET, đồng thời kiểm tra object không đọc trực tiếp bằng URL không ký và QR không mở được qua route ảnh venue. Hiện chưa có bucket/credentials thử nghiệm nên các bước provider S3 thật là **NOT RUN**; adapter local và S3 path code không chứng minh S3 runtime.
+S3 private dùng lại upload F02: `.env` local có thể đặt `Media__Mode=S3`, `Media__S3Region=<region>`, `Media__S3Bucket=<bucket-test>` khi **đã có bucket thử nghiệm và AWS credentials trên máy**. Không đặt key/secret trong repo hoặc gửi qua chat. Bucket phải chặn public access; IAM cần `s3:PutObject` và `s3:GetObject` cho prefix media của bucket (`HEAD` object dùng quyền đọc object). CORS bucket cho presigned PUT từ partner `http://localhost:5174` (ảnh/QR) và customer `http://localhost:5173` (biên lai F06); nếu portal fetch trực tiếp signed GET, cho GET từ origin tương ứng. Cho các header `Content-Type`, `x-amz-checksum-sha256`, `If-None-Match` theo request upload, không dùng wildcard origin ở môi trường thật. Kiểm tra presigned PUT → complete → public venue image redirect → signed GET, đồng thời kiểm tra object không đọc trực tiếp bằng URL không ký và QR không mở được qua route ảnh venue. Hiện chưa có bucket/credentials thử nghiệm nên các bước provider S3 thật là **NOT RUN**; adapter local và S3 path code không chứng minh S3 runtime.
 
 ### Kiểm tra vận hành F03 bằng UI
 
@@ -162,6 +168,14 @@ Thực hiện sau bước duyệt F02: đăng xuất rồi đăng nhập lại c
 Nếu `/health/ready` trả 503 sau khi kéo code F03, kiểm tra migration còn pending và xác nhận đúng database local cần nâng cấp trước khi chạy `npm.cmd run db:migrate`. F03 thêm `F03CourtOperations`; lệnh test tự động dùng database tạm và không thay đổi database development. Với PowerShell, chạy lệnh tại repo root; nếu chạy từ WSL hãy dùng toolchain và checkout Linux riêng như phần WSL bên dưới.
 
 ## 7. Kiểm thử
+
+### F06 — báo chuyển và đối chiếu thanh toán
+
+Spec/contract ở `docs/features/F06-payment-confirmation.md`. Policy theo nghiệm thu: bỏ ô mã giao dịch customer/owner; ảnh chụp màn hình/ghi chú tùy chọn, API nhận reference tùy chọn để giữ tương thích dữ liệu cũ; chỉ xác nhận đúng tổng tiền; SLA 30 phút từ báo chuyển đầu tiên, owner + Admin nhận một cảnh báo. Bốn migration tăng dần gồm evidence/quyết định/idempotency actor, outbox diagnostics, CHECK số tiền PAID và F06OptionalBankReference (nullable reference evidence, decision không yêu cầu reference). API và UI có báo chuyển/bổ sung, xác nhận/yêu cầu bổ sung/từ chối cuối cùng; Worker xử lý outbox, expiry và SLA.
+
+Biên lai local ở `backend/src/ShuttleBook.Api/.media-local/<upload-id>`; metadata, liên kết booking/customer/venue và lịch sử ở PostgreSQL. F5 không xóa file; signed URL có hạn không được lưu DB. S3 live vẫn NOT RUN và hoãn riêng. `.env.example` có `Outbox__AlertAttempts=8` (ngưỡng kỹ thuật cảnh báo retry, không phải SLA xác nhận); Worker lưu attempts/last_failure_type/alerted_at và log message ID, không log payload/PII. Unknown/no-recipient event được giữ retry, không đánh dấu thành công.
+
+Test transaction dùng database tạm; DB development chưa được migrate tự động. Trước nghiệm thu local chạy `npm.cmd run db:migrate`, sau đó khởi động lại API và Worker bằng các terminal VS Code riêng. Mở customer5173 và partner5174 → **Đơn đặt sân**; Admin5175 chỉ nhận cảnh báo, không quyết định thanh toán. Hướng dẫn tay: `docs/testing/F06-manual-acceptance.md`. Xem kết quả thực tế và giới hạn PASS/NOT RUN tại `docs/testing/F06-test-cases.md`.
 
 ```powershell
 npm.cmd run test:api

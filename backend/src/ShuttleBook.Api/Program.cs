@@ -16,6 +16,7 @@ using Microsoft.EntityFrameworkCore;
 using Amazon;
 using Amazon.S3;
 using ShuttleBook.Api.Discovery;
+using ShuttleBook.Api.Bookings;
 
 var builder = WebApplication.CreateBuilder(args);
 if (builder.Configuration["DataProtection:KeysPath"] is { Length: > 0 } keysPath)
@@ -58,7 +59,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
     };
     options.Events = new JwtBearerEvents
     {
-        OnTokenValidated = async context =>
+        OnTokenValidated = JwtSessionValidation.HandleRequestCancellation(async context =>
         {
             var principal = context.Principal;
             if (!Guid.TryParse(principal?.FindFirst("sub")?.Value, out var userId) ||
@@ -95,7 +96,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
                     .ExecuteUpdateAsync(updates => updates.SetProperty(item => item.LastActivityAt, now),
                         context.HttpContext.RequestAborted);
             }
-        }
+        })
     };
 });
 builder.Services.AddAuthorization();
@@ -117,6 +118,12 @@ builder.Services.AddRateLimiter(options =>
     {
         PermitLimit = authRegisterPerIp, Window = TimeSpan.FromMinutes(15), QueueLimit = 0, AutoReplenishment = true
     }));
+    options.AddPolicy("booking-quote", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new FixedWindowRateLimiterOptions
+        { PermitLimit = 60, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
+    options.AddPolicy("booking-create", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.User.FindFirst("sub")?.Value ?? "unknown", _ => new FixedWindowRateLimiterOptions
+        { PermitLimit = 30, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
     options.AddPolicy("auth-verify", context => RateLimitPartition.GetFixedWindowLimiter(
         context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new FixedWindowRateLimiterOptions
     {
@@ -142,8 +149,8 @@ builder.Services.AddCors(options => options.AddPolicy("WebPortals", policy =>
 var app = builder.Build();
 app.UseMiddleware<ProblemDetailsMiddleware>();
 app.UseCors("WebPortals");
-app.UseRateLimiter();
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
 
 app.MapGet("/health/live", (HttpContext context) =>
@@ -168,6 +175,8 @@ app.MapMediaEndpoints();
 app.MapNotificationEndpoints();
 app.MapCourtOperationsEndpoints();
 app.MapPublicVenuesEndpoints();
+app.MapBookingEndpoints();
+app.MapPaymentEndpoints();
 
 app.Run();
 

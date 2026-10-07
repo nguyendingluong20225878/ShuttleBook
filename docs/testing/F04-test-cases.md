@@ -21,10 +21,19 @@ Trạng thái F04 local: **DONE** theo xác nhận nghiệm thu của người d
 | F04-T15 | Venue có 3 hoặc 7 sân; mở lịch desktop/mobile | Mỗi court ACTIVE là một hàng, không có dropdown Xem sân; số hàng khớp response | Browser | PASS 3 và 7 sân, desktop/mobile, route mock; NOT RUN tay trên venue thật |
 | F04-T16 | Nhìn trục giờ 17:00–18:00 và ô giá 30 phút, gồm mốc kết thúc cuối cùng | 17:00 và 17:30 ở hai biên ô đầu, 17:30 và 18:00 ở hai biên ô sau; giá nằm trong ô, cuộn mobile vẫn đọc được | Browser + visual review | PASS kiểm tra vị trí DOM và ảnh desktop/mobile; NOT RUN tay trên venue thật |
 | F04-T17 | Chọn hai ô liên tiếp, bấm lại từng ô; chọn ba ô rồi bấm ô giữa | Chỉ ô vừa bấm bị bỏ ở biên, ô còn lại/tổng giá được giữ; giữa ba ô giữ một dải liên tiếp, không tạo hai dải rời | Browser | PASS desktop/mobile route mock; NOT RUN tay trên venue thật |
+| F04-T18 | Lịch 05:00–22:00 có 34 ca, giá40.000đ/1.000.000đ, một sân block60/min120; desktop/mobile, cuộn đầu/cuối | Ca không bị nén; giờ/giá không chồng; mốc22:00 cuối cùng và tên sân sticky; không cuộn ngang cả trang | Browser geometry + screenshot | PASS — 2/2 desktop/mobile, ảnh đã review; NOT RUN người dùng nghiệm thu tay bản sửa |
 
 Sau mỗi lượt ghi ngày, môi trường, lệnh và PASS/FAIL/NOT RUN/BLOCKED cùng lý do. Mock UI không chứng minh PostGIS hoặc S3 provider; code review không chứng minh runtime.
 
 ## Bằng chứng điều chỉnh UI 2026-10-07
+
+### Sửa cột bị nén theo ảnh tham chiếu thứ hai
+
+- **Tái hiện FAIL:** `npm.cmd run test:web -- tests/web/f04-discovery.spec.ts --grep full-day --workers=2` trước sửa: desktop cột chỉ **18,23px**, không đạt tối thiểu104px; mobile pass. `table-layout: fixed` và width100% đã nén 34 ca vào viewport desktop.
+- **Sửa:** khai báo colgroup và tổng chiều rộng theo số ca; mỗi ca120px desktop/112px mobile, tên sân208px/156px sticky. Header chỉ hiện mốc giờ ở biên, bỏ dòng30 phút lặp; ô AVAILABLE chỉ hiện giá, SELECTED thêm Đang chọn; giữ nhãn truy cập và tooltip theo court/time/price. Bảng cuộn ngang bên trong, giữ hàng sân/selection/handoff F05.
+- **PASS:** `npm.cmd run build`, `npm.cmd run typecheck`, `git diff --check`; `npm.cmd run test:web -- tests/web/f04-discovery.spec.ts tests/web/f05-booking.spec.ts --workers=2` **14/14**, 10,4 giây. Đã xem ảnh đầu/cuối lịch cả ngày desktop/mobile và ảnh3 sân. Geometry kiểm tra rộng cột, nhãn giờ/giá, mốc22:00, tên sân sticky và không overflow cả trang.
+- Lượt regression đầu **12 PASS/2 FAIL** do mock quote F05 dùng số request để chuyển expiry sang valid; trace cho thấy request đầu bị abort khi chuyển trang. Fixture được sửa để chỉ chuyển sang quote valid khi test nhấn Lấy báo giá mới, không phụ thuộc request abort. Lượt cuối14/14PASS; không đổi logic quote/API.
+- API/DB/S3/live **NOT RUN ở mốc UI này** vì thay đổi chỉ render/CSS/test fixture; bằng chứng backend F05 ở testcase riêng giữ nguyên. Review tuần tự, chưa reviewer độc lập. Chờ người dùng kiểm tra lại giao diện bằng Ctrl+F5; không commit/push.
 
 - **PASS:** `npm.cmd run typecheck`; `npm.cmd run build`; `npm.cmd run test:web -- tests/web/f04-discovery.spec.ts` 8/8 desktop/mobile; `npm.cmd run test:web` 42 PASS/8 SKIP live theo cấu hình. Test kiểm tra 3 và 7 hàng sân, không có dropdown, mốc giờ nằm tại biên ô qua DOM, giá trong ô, bỏ chọn từng ô/tổng giá còn lại, Back khôi phục ngày. Đã xem ảnh Playwright desktop/mobile sau build.
 - **Nghiệm thu:** Người dùng xác nhận các thay đổi F04 đạt ngày 2026-10-07. Không có log chi tiết từng bước tay trên venue thật cho T15–T17 nên bằng chứng tự động vẫn được ghi riêng. API, migration, PostGIS và S3 không chạy lại tại mốc UI này; F04 local được chốt `DONE`, S3 live tiếp tục `NOT RUN`.

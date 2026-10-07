@@ -2,6 +2,7 @@ import { FormEvent, StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './admin.css';
 import { AdminApprovals } from './AdminApprovals';
+import { AdminNotifications } from './AdminNotifications';
 
 type ContactType = 'email' | 'phone';
 type Session = { accessToken: string; refreshToken: string; expiresAt: number };
@@ -195,6 +196,7 @@ function AdminPortal() {
       {restoring ? <p>Đang kiểm tra phiên quản trị…</p> : session ? <>
         <p className="admin-description">Bạn đã đăng nhập với tài khoản quản trị.</p>
         <AdminApprovals accessToken={session.accessToken} />
+        <AdminNotifications accessToken={session.accessToken} />
         <button type="button" onClick={logout} disabled={busy}>{busy ? 'Đang đăng xuất…' : 'Đăng xuất'}</button>
       </> : <>
         <p className="admin-description">Đăng nhập bằng tài khoản Admin đã được khởi tạo qua quy trình vận hành nội bộ.</p>
