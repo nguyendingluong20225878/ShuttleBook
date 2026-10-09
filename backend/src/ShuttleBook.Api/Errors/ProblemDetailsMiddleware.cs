@@ -42,8 +42,29 @@ public sealed class ProblemDetailsMiddleware(RequestDelegate next, ILogger<Probl
 
     private static bool IsDatabaseConflict(Exception exception)
     {
-        var databaseError = exception as PostgresException ?? (exception as DbUpdateException)?.InnerException as PostgresException;
-        return databaseError?.SqlState is "23505" or "23P01" or "40001" or "40P01";
+        const string uniqueViolation = "23505";
+        const string exclusionViolation = "23P01";
+        const string serializationFailure = "40001";
+        const string deadlockDetected = "40P01";
+
+        var pending = new Stack<Exception>();
+        pending.Push(exception);
+        while (pending.Count > 0)
+        {
+            var current = pending.Pop();
+            if (current is PostgresException { SqlState: uniqueViolation or exclusionViolation or serializationFailure or deadlockDetected })
+                return true;
+            if (current is AggregateException aggregate)
+            {
+                foreach (var inner in aggregate.InnerExceptions) pending.Push(inner);
+            }
+            else if (current.InnerException is not null)
+            {
+                pending.Push(current.InnerException);
+            }
+        }
+
+        return false;
     }
 
     private static Task WriteProblemAsync(HttpContext context, int status)

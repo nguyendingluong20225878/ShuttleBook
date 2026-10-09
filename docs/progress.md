@@ -1,5 +1,15 @@
 # Tiến độ ShuttleBook
 
+## Fix backend CI job (run 37928786200) — 2026-10-09
+
+- Đã phân tích log job `backend` (ID `113814085120`): các ca `OnboardingFlowTests` concurrent decision trả 500 thay vì 409 khi va chạm transaction serializable.
+- Sửa tối thiểu tại `backend/src/ShuttleBook.Api/Errors/ProblemDetailsMiddleware.cs`: mở rộng nhận diện lỗi conflict DB bằng cách duyệt toàn bộ chain exception (kể cả `AggregateException`) và map các `SqlState` `23505/23P01/40001/40P01` về HTTP 409.
+- Xác minh: chạy lại targeted tests với PostGIS local + `SHUTTLEBOOK_TEST_CONNECTION_STRING`:
+  - `OnboardingFlowTests.Concurrent_admin_decisions_commit_only_one_outcome` ✅
+  - `OnboardingFlowTests.Draft_approval_revision_and_scope_use_disposable_postgis` ✅
+  - `OnboardingFlowTests` (10 tests) ✅
+- Ghi chú: lượt chạy full `ShuttleBook.Database.Tests` local còn fail các ca ngoài phạm vi (CLI admin chưa build trong lệnh `--no-build` và một số ca auth phụ thuộc setup local khác); không chỉnh ngoài scope fix CI backend đã nêu.
+
 ## Partner chi tiết đơn thành trang riêng; M03 nghiệm thu — 2026-10-09
 
 - Người dùng xác nhận typecheck/build web/build backend --no-restore/test:api/test:db đã PASS và các ca test tay đã thực hiện đều PASS. **M03 DONE local**, F08 tiếp tục DEFERRED theo phạm vi owner. Không tự ghi số ca/log mới từ phía người dùng hoặc biến các gate production còn mở thành PASS.
