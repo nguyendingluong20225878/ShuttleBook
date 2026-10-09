@@ -5,6 +5,7 @@ public sealed class CourtAllocation
     public Guid Id { get; set; } = Guid.CreateVersion7();
     public Guid CourtId { get; set; }
     public string Kind { get; set; } = "MAINTENANCE";
+    public Guid? QuoteReservationId { get; set; }
     public DateTimeOffset StartsAt { get; set; }
     public DateTimeOffset EndsAt { get; set; }
     public string Status { get; set; } = "RESERVED";

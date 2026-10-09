@@ -8,6 +8,7 @@ using Amazon.Runtime;
 using Microsoft.EntityFrameworkCore;
 using ShuttleBook.Api.Identity;
 using ShuttleBook.Api.Bookings;
+using ShuttleBook.Infrastructure.Bookings;
 using ShuttleBook.Infrastructure.Data;
 using ShuttleBook.Infrastructure.Identity;
 using ShuttleBook.Infrastructure.Onboarding;
@@ -81,6 +82,7 @@ public static class MediaEndpoints
             if (user?.AccountType != AccountType.Customer || user.Status != UserStatus.Active) return Error(http, 403, "FORBIDDEN");
             var booking = await db.Bookings.AsNoTracking().SingleOrDefaultAsync(x => x.Id == proofBookingId && x.CustomerId == user.Id, ct);
             if (booking is null) return Error(http, 404, "NOT_FOUND");
+            bookingId = await BookingGroup.AnchorId(db, proofBookingId, ct) ?? throw new InvalidOperationException("Missing booking payment scope.");
             if (booking.Status is not ("AWAITING_TRANSFER" or "NEEDS_REVIEW")) return Error(http, 409, "STATE_CONFLICT");
             if (booking.Status == "AWAITING_TRANSFER" && booking.PaymentDeadline <= http.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow()) return Error(http, 409, "PAYMENT_DEADLINE_EXPIRED");
             venueId = booking.VenueId;

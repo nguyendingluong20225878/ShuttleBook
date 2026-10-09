@@ -13,7 +13,7 @@ export const partnerPages = [
 ] as const;
 export type PartnerPage = typeof partnerPages[number]['id'];
 function readPage(): PartnerPage {
-  const id = window.location.hash.replace(/^#\/?/, '').split('?')[0];
+  const id = window.location.hash.replace(/^#\/?/, '').split(/[/?]/)[0];
   return partnerPages.find(page => page.id === id)?.id ?? 'overview';
 }
 export function usePartnerNavigation() {
@@ -21,7 +21,14 @@ export function usePartnerNavigation() {
   const [bookingId, setBookingId] = useState(readBookingId);
   const [visited, setVisited] = useState<Set<PartnerPage>>(() => new Set([readPage()]));
   useEffect(() => {
-    const changed = () => { setPage(readPage()); setBookingId(readBookingId()); };
+    const changed = () => {
+      const id = readBookingId();
+      if (id && window.location.hash.startsWith('#/bookings?')) {
+        window.history.replaceState(window.history.state, '', `#/bookings/${encodeURIComponent(id)}`);
+      }
+      setPage(readPage()); setBookingId(id);
+    };
+    changed();
     window.addEventListener('hashchange', changed);
     return () => window.removeEventListener('hashchange', changed);
   }, []);
@@ -32,14 +39,16 @@ export function usePartnerNavigation() {
     setBookingId(null);
   }
   function openBooking(id: string | null) {
-    window.location.hash = `/bookings${id ? `?bookingId=${encodeURIComponent(id)}` : ''}`;
+    window.location.hash = `/bookings${id ? `/${encodeURIComponent(id)}` : ''}`;
     setPage('bookings'); setBookingId(id);
   }
   return { page, bookingId, visited, navigate, openBooking };
 }
 function readBookingId(): string | null {
   if (readPage() !== 'bookings') return null;
-  const id = new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('bookingId');
+  const path = window.location.hash.replace(/^#\/?/, '').split('?')[0].split('/');
+  const id = path.length === 2 ? path[1] : path.length === 1
+    ? new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('bookingId') : null;
   return id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) ? id : null;
 }
 export const statusLabel = (status: string) => ({ DRAFT: 'Hồ sơ nháp', ACTIVE: 'Đang hoạt động',

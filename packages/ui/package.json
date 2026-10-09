@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/PortalShell.tsx" },
+  "exports": { ".": "./src/PortalShell.tsx", "./browser-session": "./src/browser-session.ts" },
   "peerDependencies": { "react": "19.3.0" },
   "scripts": { "typecheck": "tsc -p tsconfig.json" }
 }

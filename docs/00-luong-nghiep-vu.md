@@ -89,6 +89,8 @@ Nếu khách từ chối quyền vị trí, hệ thống vẫn cho tìm theo t�
 
 ## 6. Đặt sân vãng lai
 
+Cập nhật2026-10-08: Customer ACTIVE lấy quote sẽ giữ các ca đến expiresAt; hết hạn tự trả trống. Create chuyển chính allocation giữ tạm sang BOOKING, không mở khoảng trống giữa hai bước.
+
 Khách thực hiện cả hai loại đặt ngay trên trang chi tiết sân. Lịch của sân được chia thành các ca 30 phút; ví dụ 18:00-20:00 gồm bốn ca: 18:00, 18:30, 19:00 và 19:30.
 
 1. Khách chọn chế độ **Vãng lai**, một ngày tương lai và một hoặc nhiều ca 30 phút liên tiếp.
@@ -101,6 +103,8 @@ Khách thực hiện cả hai loại đặt ngay trên trang chi tiết sân. L�
 8. Booking có `payment_deadline`; các ca đã chọn được giữ cho khách trong thời gian này.
 
 ## 7. Đặt sân cố định
+
+Cập nhật2026-10-08: quote không xung đột giữ toàn bộ buổi tạm120s; khách khác/bảo trì không được chồng. Hết hạn giải phóng mọi buổi. Create chuyển các allocation giữ tạm sang booking trong một transaction.
 
 Đặt cố định cũng bắt đầu từ trang chi tiết sân, nhưng dùng để giữ cùng một khung giờ lặp hàng tuần. Ví dụ: thứ Ba, 18:00-20:00, từ ngày 01/10 đến 30/11.
 
@@ -115,7 +119,7 @@ Khách thực hiện cả hai loại đặt ngay trên trang chi tiết sân. L�
 9. Mỗi occurrence là một booking thật để quản lý xác nhận thanh toán, doanh thu và lịch sân.
 10. Nếu một insert bị xung đột, toàn bộ transaction rollback; không âm thầm bỏ qua một buổi.
 
-Payment plan của lịch cố định cần chốt. Khuyến nghị MVP thu theo tháng để cân bằng dòng tiền và trải nghiệm khách hàng.
+F07 đã được người dùng duyệt ngày 2026-10-07: thu 100% toàn kỳ (FULL_SERIES), một QR/một payment, owner xác nhận một lần cho mọi buổi. Cửa sổ trong 60 ngày địa phương/tối đa 12 buổi; quote120s và holdMinutes của sân. Nếu đã báo chuyển hoặc NEEDS_REVIEW, giữ cả kỳ chờ owner; không giải phóng vì owner chậm.
 
 ## 8. Chuyển khoản bằng QR
 

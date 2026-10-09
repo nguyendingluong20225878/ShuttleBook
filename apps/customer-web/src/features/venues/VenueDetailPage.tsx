@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CustomerNav } from '../auth/CustomerSession';
+import { CustomerShell } from '../../components/CustomerShell';
 import { getPublic } from './api';
 import { ScheduleGrid } from './components/ScheduleGrid';
 import { VenuePhoto } from './components/VenuePhoto';
@@ -39,6 +39,7 @@ export function VenueDetailPage({ venueId }: { venueId: string }) {
   const [error, setError] = useState('');
   const [scheduleError, setScheduleError] = useState('');
   const [retry, setRetry] = useState(0);
+  const [bookingMode, setBookingMode] = useState<'casual' | 'fixed'>(() => new URLSearchParams(location.search).get('mode') === 'fixed' ? 'fixed' : 'casual');
 
   useEffect(() => {
     const controller = new AbortController();
@@ -54,7 +55,7 @@ export function VenueDetailPage({ venueId }: { venueId: string }) {
     if (!venue) return;
     const restore = () => {
       if (location.pathname !== `/venues/${venueId}` && location.pathname !== `/venues/${venueId}/`) return;
-      setDate(locationDate(venue)); setSchedule(null);
+      setDate(locationDate(venue)); setBookingMode(new URLSearchParams(location.search).get('mode') === 'fixed' ? 'fixed' : 'casual'); setSchedule(null);
       setRetry(value => value + 1); };
     window.addEventListener('popstate', restore);
     return () => window.removeEventListener('popstate', restore);
@@ -84,9 +85,7 @@ export function VenueDetailPage({ venueId }: { venueId: string }) {
       window.removeEventListener('focus', onFocus); document.removeEventListener('visibilitychange', onFocus); };
   }, [venue, date, venueId, retry]);
 
-  return <main className="customer-shell">
-    <header className="site-header"><a className="brand" href="/venues">ShuttleBook</a>
-      <CustomerNav /></header>
+  return <CustomerShell>
     <p className="breadcrumbs"><a href="/venues">Danh sách cơ sở</a> / Chi tiết cơ sở</p>
     {loading && <p role="status">Đang tải cơ sở…</p>}
     {error && <p role="alert">{error} <a href="/venues">Quay lại danh sách</a></p>}
@@ -95,7 +94,13 @@ export function VenueDetailPage({ venueId }: { venueId: string }) {
       <div><p className="eyebrow">Cơ sở ShuttleBook</p><h1>{venue.name}</h1>
         <p>{venue.address}</p><p>Liên hệ cơ sở: {venue.contact}</p>
         <p>Múi giờ lịch: {venue.timezone} · {venue.courts.length} sân đang hoạt động</p></div>
-    </section><section className="schedule-controls" aria-label="Chọn lịch">
+    </section><div className="booking-mode" role="group" aria-label="Hình thức đặt sân"><span>Hình thức đặt</span>
+      <button type="button" aria-pressed={bookingMode === 'casual'} onClick={() => { setBookingMode('casual');
+        const url = new URL(location.href); url.searchParams.set('mode', 'casual'); history.pushState(null, '', url); }}>Vãng lai</button>
+      <button type="button" aria-pressed={bookingMode === 'fixed'} onClick={() => { setBookingMode('fixed');
+        const url = new URL(location.href); url.searchParams.set('mode', 'fixed'); history.pushState(null, '', url); }}>Cố định hằng tuần</button>
+      {bookingMode === 'fixed' && <p>Mỗi buổi tối thiểu 2 giờ, kỳ tối thiểu 1 tháng. Chọn khung giờ ở bảng rồi kiểm tra toàn kỳ.</p>}
+    </div><section className="schedule-controls" aria-label="Chọn lịch">
       <label htmlFor="schedule-date">Ngày chơi</label><input id="schedule-date" type="date" value={date}
         min={todayInZone(venue.timezone)} onChange={event => { setDate(event.target.value);
           setSchedule(null); rememberDate(event.target.value); }} />
@@ -103,7 +108,7 @@ export function VenueDetailPage({ venueId }: { venueId: string }) {
       {scheduleLoading && <span role="status">Đang cập nhật lịch…</span>}
     </section>
     {scheduleError && <p role="alert">{scheduleError}</p>}
-    {schedule && schedule.date === date && <ScheduleGrid schedule={schedule} />}
+    {schedule && schedule.date === date && <ScheduleGrid schedule={schedule} bookingMode={bookingMode} />}
     </>}
-  </main>;
+  </CustomerShell>;
 }

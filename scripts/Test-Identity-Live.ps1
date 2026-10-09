@@ -1,4 +1,5 @@
-param([ValidateRange(1024, 65535)][int]$ApiPort = 5080)
+param([ValidateRange(1024, 65535)][int]$ApiPort = 5080,
+    [ValidateSet('Debug', 'Release')][string]$Configuration = 'Debug')
 . (Join-Path $PSScriptRoot 'Use-LocalEnvironment.ps1')
 $ErrorActionPreference = 'Stop'
 $adminContact = "admin-live-$([guid]::NewGuid().ToString('N'))@example.test"
@@ -43,14 +44,14 @@ function Assert-PortFree([int]$port) {
 Push-Location $projectRoot
 try {
     Assert-PortFree $ApiPort
-    $migrator = Join-Path $projectRoot 'backend/src/ShuttleBook.Migrator/bin/Debug/net10.0/ShuttleBook.Migrator.dll'
-    $cli = Join-Path $projectRoot 'backend/src/ShuttleBook.AdminCli/bin/Debug/net10.0/ShuttleBook.AdminCli.dll'
-    $api = Join-Path $projectRoot 'backend/src/ShuttleBook.Api/bin/Debug/net10.0/ShuttleBook.Api.dll'
-    $worker = Join-Path $projectRoot 'backend/src/ShuttleBook.Worker/bin/Debug/net10.0/ShuttleBook.Worker.dll'
+    $migrator = Join-Path $projectRoot "backend/src/ShuttleBook.Migrator/bin/$Configuration/net10.0/ShuttleBook.Migrator.dll"
+    $cli = Join-Path $projectRoot "backend/src/ShuttleBook.AdminCli/bin/$Configuration/net10.0/ShuttleBook.AdminCli.dll"
+    $api = Join-Path $projectRoot "backend/src/ShuttleBook.Api/bin/$Configuration/net10.0/ShuttleBook.Api.dll"
+    $worker = Join-Path $projectRoot "backend/src/ShuttleBook.Worker/bin/$Configuration/net10.0/ShuttleBook.Worker.dll"
     foreach ($file in @($migrator, $cli, $api, $worker)) {
         if (-not (Test-Path -LiteralPath $file)) { throw 'Build backend/ShuttleBook.slnx before the live Admin test.' }
     }
-    $contextInfo = & $dotnetExecutable ef dbcontext info --no-build `
+    $contextInfo = & $dotnetExecutable ef dbcontext info --no-build --configuration $Configuration `
         --project backend/src/ShuttleBook.Infrastructure `
         --startup-project backend/src/ShuttleBook.Migrator 2>&1
     if ($LASTEXITCODE -ne 0 -or $contextInfo -notcontains "Database name: $databaseName") {
@@ -98,13 +99,13 @@ try {
         Stop-Process -Id $apiProcess.Id -Force -ErrorAction SilentlyContinue
     }
     if ($databaseCreated) {
-        $dryRun = & $dotnetExecutable ef database drop --dry-run --no-build `
+        $dryRun = & $dotnetExecutable ef database drop --dry-run --no-build --configuration $Configuration `
             --project backend/src/ShuttleBook.Infrastructure `
             --startup-project backend/src/ShuttleBook.Migrator 2>&1
         if ($LASTEXITCODE -ne 0 -or ($dryRun -join ' ') -notlike "*'$databaseName'*") {
             Write-Error 'Temporary database cleanup target did not match the generated name. No database was dropped.'
         } else {
-            & $dotnetExecutable ef database drop --force --no-build `
+            & $dotnetExecutable ef database drop --force --no-build --configuration $Configuration `
                 --project backend/src/ShuttleBook.Infrastructure `
                 --startup-project backend/src/ShuttleBook.Migrator
             if ($LASTEXITCODE -ne 0) { Write-Error 'Temporary identity test database cleanup failed.' }

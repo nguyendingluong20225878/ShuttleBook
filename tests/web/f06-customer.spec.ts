@@ -1,4 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
+import { browserSessionFields, browserSessionRoute } from './helpers/browser-session';
+
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/v1/browser-auth/**', async route => {
+    if (!(await browserSessionRoute(route, page))) await route.fallback();
+  });
+});
 import { createHash } from 'node:crypto';
 
 const bookingId = '0199f060-0000-7000-8000-000000000001';
@@ -22,15 +29,16 @@ async function login(page: Page, returnTo: string) {
   await page.getByLabel('Mật khẩu', { exact: true }).fill('Test-password-2026!');
   await page.getByRole('button', { name: 'Đăng nhập', exact: true }).last().click();
 }
-const loginResponse = { tokenType: 'Bearer', accessToken: 'access-f06-test', refreshToken: 'refresh-f06-test', expiresInSeconds: 600,
+const loginResponse = { tokenType: 'Bearer', accessToken: 'access-f06-test', ...browserSessionFields(), expiresInSeconds: 600,
   user: { accountType: 'CUSTOMER', status: 'ACTIVE' } };
 
 test('reported booking survives old deadline, private proof/history and focus poll render confirmation', async ({ page }) => {
   let current = booking(); const mutations: string[] = [];
   await page.route('**/api/v1/**', async route => {
+    if (await browserSessionRoute(route, page)) return;
     const request = route.request(); const path = new URL(request.url()).pathname;
     const reply = (value: object) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: value }) });
-    if (path.endsWith('/auth/login')) return reply(loginResponse);
+    if (path.endsWith('/browser-auth/customer/login')) return reply(loginResponse);
     if (request.method() === 'POST') mutations.push(path);
     if (path.endsWith('/me/notifications')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: [], unreadCount: 0, nextCursor: null }) });
     if (path === `/api/v1/bookings/${bookingId}`) return reply(current);
@@ -58,12 +66,13 @@ test('reported booking survives old deadline, private proof/history and focus po
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-test('My Bookings uses all six statuses and requires login to recover the same booking after F5', async ({ page }) => {
+test('My Bookings uses all six statuses and restores the same booking after F5', async ({ page }) => {
   const statuses = ['AWAITING_TRANSFER', 'AWAITING_OWNER_CONFIRMATION', 'NEEDS_REVIEW', 'CONFIRMED', 'EXPIRED', 'PAYMENT_REJECTED'];
-  await page.route('**/api/v1/**', route => {
+  await page.route('**/api/v1/**', async route => {
+    if (await browserSessionRoute(route, page)) return;
     const path = new URL(route.request().url()).pathname;
     const reply = (value: object) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: value }) });
-    if (path.endsWith('/auth/login')) return reply(loginResponse);
+    if (path.endsWith('/browser-auth/customer/login')) return reply(loginResponse);
     if (path.endsWith('/me/notifications')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: [], unreadCount: 0 }) });
     if (path.endsWith('/me/bookings')) return reply({ items: statuses.map((status, index) => ({ ...booking(status), bookingId: `${bookingId.slice(0, -1)}${index}`, bookingNo: `BK-F06-${index}` })), nextCursor: null });
     if (path.startsWith('/api/v1/bookings/')) return reply(booking('NEEDS_REVIEW'));
@@ -75,19 +84,17 @@ test('My Bookings uses all six statuses and requires login to recover the same b
     await expect(page.getByText(label, { exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'BK-F06-1', exact: true }).click();
   await expect(page.getByText('Cần bổ sung bằng chứng', { exact: true })).toBeVisible(); await page.reload();
-  await expect(page.getByRole('heading', { name: 'Đăng nhập khách hàng' })).toBeVisible();
-  await page.getByLabel('Email', { exact: true }).fill('customer@example.test'); await page.getByLabel('Mật khẩu', { exact: true }).fill('Test-password-2026!');
-  await page.getByRole('button', { name: 'Đăng nhập', exact: true }).last().click();
   await expect(page.getByRole('heading', { name: 'Mã đơn: BK-F06-DEMO' })).toBeVisible();
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
 });
 
 test('notifications retain unread/read, allow only customer booking links and recover page after F5', async ({ page }) => {
   let readAt: string | null = null;
-  await page.route('**/api/v1/**', route => {
+  await page.route('**/api/v1/**', async route => {
+    if (await browserSessionRoute(route, page)) return;
     const path = new URL(route.request().url()).pathname;
     const reply = (value: object) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: value }) });
-    if (path.endsWith('/auth/login')) return reply(loginResponse);
+    if (path.endsWith('/browser-auth/customer/login')) return reply(loginResponse);
     if (path.endsWith('/me/notifications')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({
       data: [{ id: bookingId, title: 'Đã xác nhận đơn', body: 'Chủ sân đã nhận tiền', readAt, bookingId, action: 'CUSTOMER_BOOKING' },
         { id: uploadId, title: 'Thông báo khác', body: 'Không tạo link ngoài hệ thống', readAt: '2026-10-07T01:00:00Z', bookingId: 'https://example.test', action: 'OPERATOR_BOOKING' }],
@@ -102,9 +109,7 @@ test('notifications retain unread/read, allow only customer booking links and re
   await expect(page.getByRole('link', { name: 'Xem đơn đặt sân', exact: true })).toHaveAttribute('href', `/bookings/${bookingId}`);
   await page.getByRole('button', { name: 'Đánh dấu đã đọc' }).click();
   await expect(page.getByText('0 thông báo chưa đọc', { exact: true })).toBeVisible();
-  await page.reload(); await expect(page.getByRole('heading', { name: 'Đăng nhập khách hàng' })).toBeVisible();
-  await page.getByLabel('Email', { exact: true }).fill('customer@example.test'); await page.getByLabel('Mật khẩu', { exact: true }).fill('Test-password-2026!');
-  await page.getByRole('button', { name: 'Đăng nhập', exact: true }).last().click();
+  await page.reload();
   await expect(page.getByRole('heading', { name: 'Thông báo', exact: true })).toBeVisible();
 });
 
@@ -117,10 +122,11 @@ function awaitingTransfer() {
 test('screenshot-only report validates private proof, uses three phases once and retries one payment intent after network failure', async ({ page }) => {
   let current: ReturnType<typeof booking> = awaitingTransfer(); const phases: string[] = [];
   const intents: { key: string; version: string; body: string }[] = [];
-  await page.route('**/api/v1/**', route => {
+  await page.route('**/api/v1/**', async route => {
+    if (await browserSessionRoute(route, page)) return;
     const request = route.request(); const path = new URL(request.url()).pathname;
     const reply = (value: object) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: value }) });
-    if (path.endsWith('/auth/login')) return reply(loginResponse);
+    if (path.endsWith('/browser-auth/customer/login')) return reply(loginResponse);
     if (path.endsWith('/me/notifications')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: [], unreadCount: 0 }) });
     if (path === `/api/v1/bookings/${bookingId}`) return reply(current);
     if (path.endsWith('/qr') || path.endsWith('/view')) return route.fulfill({ contentType: 'image/png', body: png });
@@ -169,10 +175,11 @@ test('supplement is allowed after original deadline, keeps old evidence and does
   current.decisions = [{ decisionId: bookingId, resolution: 'NEEDS_REVIEW', reasonCode: 'EVIDENCE_REQUIRED', reason: 'Bổ sung thông tin chuyển khoản để đối chiếu',
     confirmedAmount: null, bankReference: null, note: null, decidedAt: '2026-10-07T01:15:00Z' }];
   let reports = 0; let uploads = 0;
-  await page.route('**/api/v1/**', route => {
+  await page.route('**/api/v1/**', async route => {
+    if (await browserSessionRoute(route, page)) return;
     const request = route.request(); const path = new URL(request.url()).pathname;
     const reply = (value: object) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: value }) });
-    if (path.endsWith('/auth/login')) return reply(loginResponse);
+    if (path.endsWith('/browser-auth/customer/login')) return reply(loginResponse);
     if (path.endsWith('/me/notifications')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: [], unreadCount: 0 }) });
     if (path === `/api/v1/bookings/${bookingId}`) return reply(current);
     if (path.endsWith('/view')) return route.fulfill({ contentType: 'image/png', body: png });
@@ -197,10 +204,11 @@ test('supplement is allowed after original deadline, keeps old evidence and does
 
 test('412 preserves draft, requires explicit reload and creates a new intent only after customer submits again', async ({ page }) => {
   let current: ReturnType<typeof booking> = awaitingTransfer(); const attempts: { key: string; version: string }[] = [];
-  await page.route('**/api/v1/**', route => {
+  await page.route('**/api/v1/**', async route => {
+    if (await browserSessionRoute(route, page)) return;
     const request = route.request(); const path = new URL(request.url()).pathname;
     const reply = (value: object) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: value }) });
-    if (path.endsWith('/auth/login')) return reply(loginResponse);
+    if (path.endsWith('/browser-auth/customer/login')) return reply(loginResponse);
     if (path.endsWith('/me/notifications')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: [], unreadCount: 0 }) });
     if (path === `/api/v1/bookings/${bookingId}`) return reply(current);
     if (path.endsWith('/qr')) return route.fulfill({ contentType: 'image/png', body: png });
@@ -226,10 +234,11 @@ test('412 preserves draft, requires explicit reload and creates a new intent onl
 
 test('past transfer deadline disables reporting and server 409 requires reload without automatic POST', async ({ page }) => {
   let current: ReturnType<typeof booking> = { ...awaitingTransfer(), paymentDeadline: '2020-01-01T00:00:00Z' }; let reports = 0;
-  await page.route('**/api/v1/**', route => {
+  await page.route('**/api/v1/**', async route => {
+    if (await browserSessionRoute(route, page)) return;
     const path = new URL(route.request().url()).pathname;
     const reply = (value: object) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: value }) });
-    if (path.endsWith('/auth/login')) return reply(loginResponse);
+    if (path.endsWith('/browser-auth/customer/login')) return reply(loginResponse);
     if (path.endsWith('/me/notifications')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: [], unreadCount: 0 }) });
     if (path === `/api/v1/bookings/${bookingId}`) return reply(current);
     if (path.endsWith('/qr')) return route.fulfill({ contentType: 'image/png', body: png });
@@ -249,10 +258,11 @@ test('past transfer deadline disables reporting and server 409 requires reload w
 
 test('a stale detail GET cannot restore the transfer form after a successful report', async ({ page }) => {
   const original = awaitingTransfer(); let reported = false; let staleReads = 0;
-  await page.route('**/api/v1/**', route => {
+  await page.route('**/api/v1/**', async route => {
+    if (await browserSessionRoute(route, page)) return;
     const path = new URL(route.request().url()).pathname;
     const reply = (value: object) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: value }) });
-    if (path.endsWith('/auth/login')) return reply(loginResponse);
+    if (path.endsWith('/browser-auth/customer/login')) return reply(loginResponse);
     if (path.endsWith('/me/notifications')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: [], unreadCount: 0 }) });
     if (path === `/api/v1/bookings/${bookingId}`) { if (reported) staleReads++; return reply(original); }
     if (path.endsWith('/qr')) return route.fulfill({ contentType: 'image/png', body: png });
@@ -273,10 +283,11 @@ test('a stale detail GET cannot restore the transfer form after a successful rep
 
 test('401, 403 and 404 revalidation clear cached private booking details and proof', async ({ page }) => {
   let rejectedStatus = 0;
-  await page.route('**/api/v1/**', route => {
+  await page.route('**/api/v1/**', async route => {
+    if (await browserSessionRoute(route, page)) return;
     const path = new URL(route.request().url()).pathname;
     const reply = (value: object) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: value }) });
-    if (path.endsWith('/auth/login') || path.endsWith('/auth/refresh')) return reply(loginResponse);
+    if (path.endsWith('/browser-auth/customer/login') || path.endsWith('/browser-auth/customer/restore')) return reply(loginResponse);
     if (path.endsWith('/me/notifications')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: [], unreadCount: 0 }) });
     if (path === `/api/v1/bookings/${bookingId}`) return rejectedStatus
       ? route.fulfill({ status: rejectedStatus, contentType: 'application/problem+json', body: JSON.stringify({ code: ({ 401: 'UNAUTHORIZED', 403: 'FORBIDDEN', 404: 'NOT_FOUND' } as Record<number, string>)[rejectedStatus] }) })
@@ -303,10 +314,11 @@ test('payment detail preserves exact 18-digit amounts and overdue text does not 
       confirmedAmount: Number(exact), confirmedAmountExact: exact },
     decisions: [{ decisionId: bookingId, resolution: 'CONFIRMED', reason: null, reasonCode: null, bankReference: 'FT-EXACT',
       note: null, confirmedAmount: Number(exact), confirmedAmountExact: exact, decidedAt: '2026-10-07T01:12:00Z' }] };
-  await page.route('**/api/v1/**', route => {
+  await page.route('**/api/v1/**', async route => {
+    if (await browserSessionRoute(route, page)) return;
     const path = new URL(route.request().url()).pathname;
     const reply = (value: object) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: value }) });
-    if (path.endsWith('/auth/login')) return reply(loginResponse);
+    if (path.endsWith('/browser-auth/customer/login')) return reply(loginResponse);
     if (path.endsWith('/me/notifications')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: [], unreadCount: 0 }) });
     if (path === `/api/v1/bookings/${bookingId}`) return reply(current);
     if (path.endsWith('/view')) return route.fulfill({ contentType: 'image/png', body: png });
@@ -326,10 +338,11 @@ test('lost report response can replay the same intent after its old deadline whi
   await page.clock.install();
   const original = { ...awaitingTransfer(), paymentDeadline: new Date(Date.now() + 60_000).toISOString() };
   const intents: { key: string; version: string; body: string }[] = [];
-  await page.route('**/api/v1/**', route => {
+  await page.route('**/api/v1/**', async route => {
+    if (await browserSessionRoute(route, page)) return;
     const request = route.request(); const path = new URL(request.url()).pathname;
     const reply = (value: object) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: value }) });
-    if (path.endsWith('/auth/login')) return reply(loginResponse);
+    if (path.endsWith('/browser-auth/customer/login')) return reply(loginResponse);
     if (path.endsWith('/me/notifications')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: [], unreadCount: 0 }) });
     if (path === `/api/v1/bookings/${bookingId}`) return reply(original);
     if (path.endsWith('/qr') || path.endsWith('/view')) return route.fulfill({ contentType: 'image/png', body: png });

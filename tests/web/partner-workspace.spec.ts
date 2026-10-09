@@ -1,4 +1,11 @@
 import { expect, Page, test } from '@playwright/test';
+import { browserSessionFields, browserSessionRoute } from './helpers/browser-session';
+
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/v1/browser-auth/**', async route => {
+    if (!(await browserSessionRoute(route, page))) await route.fallback();
+  });
+});
 import { openPartnerPage } from './helpers/partner-navigation';
 
 async function fixture(page: Page, status = 'DRAFT', approval?: { status: string }) {
@@ -26,13 +33,14 @@ async function fixture(page: Page, status = 'DRAFT', approval?: { status: string
     };
   });
   await page.route('http://localhost:5080/api/v1/**', async route => {
+    if (await browserSessionRoute(route, page)) return;
     const request = route.request(); const path = new URL(request.url()).pathname;
-    const headers = { 'Access-Control-Allow-Origin': 'http://localhost:5174', 'Access-Control-Allow-Headers': 'Authorization,Content-Type,If-Match',
+    const headers = { 'Access-Control-Allow-Origin': 'http://localhost:5174', 'Access-Control-Allow-Credentials': 'true', 'Access-Control-Allow-Headers': 'Authorization,Content-Type,If-Match',
       'Access-Control-Allow-Methods': 'GET,POST,PUT,OPTIONS' };
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
     calls.push({ path, method: request.method(), body: request.method() === 'GET' ? null : request.postDataJSON() });
     const respond = (data: unknown) => route.fulfill({ status: 200, contentType: 'application/json', headers, body: JSON.stringify({ data }) });
-    if (path === '/api/v1/auth/login') return respond({ accessToken: 'workspace-test', refreshToken: 'workspace-refresh', user: { accountType: 'VENUE_OPERATOR', status: 'ACTIVE' } });
+    if (path === '/api/v1/browser-auth/partner/login') return respond({ accessToken: 'workspace-test', ...browserSessionFields(), user: { accountType: 'VENUE_OPERATOR', status: 'ACTIVE' } });
     if (path === '/api/v1/partner-onboarding/businesses') return businessFail
       ? route.fulfill({ status: 503, headers, contentType: 'application/problem+json', body: JSON.stringify({ code: 'TEMPORARY_UNAVAILABLE' }) }) : respond(businesses);
     if (path === '/api/v1/me/notifications/') return noticesFail ? route.fulfill({ status: 503, headers })
@@ -125,9 +133,6 @@ test('pending profiles and pending revisions keep mutation forms locked', async 
   await expect(page.getByText(/Hồ sơ đang chờ Admin duyệt/)).toBeVisible();
   await page.unroute('http://localhost:5080/api/v1/**');
   await fixture(page, 'ACTIVE', { status: 'PENDING' }); await page.reload();
-  await page.getByRole('button', { name: 'Đăng nhập', exact: true }).first().click();
-  await page.getByLabel('Email', { exact: true }).fill('owner@example.test'); await page.getByLabel('Mật khẩu').fill('Test-password-2026!');
-  await page.getByRole('button', { name: 'Đăng nhập', exact: true }).last().click();
   await expect(page.locator('.status-banner')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Đề nghị thay đổi thông tin quan trọng' })).toHaveCount(0);
 });

@@ -39,6 +39,7 @@ export function PartnerOperations({ venues, request }: { venues: VenueChoice[]; 
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [messageKind, setMessageKind] = useState<'success' | 'error'>('error');
 
   async function load(id: string) {
     const root = `/operator/courts/${id}`;
@@ -58,19 +59,19 @@ export function PartnerOperations({ venues, request }: { venues: VenueChoice[]; 
   useEffect(() => {
     if (!courtId) return;
     let current = true;
-    setLoading(true); setOperations(null); setMaintenance([]); setMessage(''); setPreview(null);
+    setLoading(true); setOperations(null); setMaintenance([]); setMessage(''); setMessageKind('error'); setPreview(null);
     void load(courtId).catch(error => {
       if (current) setMessage(error instanceof Error ? error.message : 'Không tải được cấu hình sân.');
     }).finally(() => { if (current) setLoading(false); });
     return () => { current = false; };
   }, [courtId]);
-  async function run(work: () => Promise<void>) {
+  async function run(work: () => Promise<void>, successMessage = 'Đã lưu.') {
     setBusy(true); setMessage('');
-    try { await work(); setMessage('Đã lưu.'); }
-    catch (error) { setMessage(error instanceof Error ? error.message : 'Có lỗi xảy ra.'); }
+    try { await work(); setMessageKind('success'); setMessage(successMessage); }
+    catch (error) { setMessageKind('error'); setMessage(error instanceof Error ? error.message : 'Có lỗi xảy ra.'); }
     finally { setBusy(false); }
   }
-  function submit(event: FormEvent, work: () => Promise<void>) { event.preventDefault(); void run(work); }
+  function submit(event: FormEvent, work: () => Promise<void>, successMessage?: string) { event.preventDefault(); void run(work, successMessage); }
   const root = `/operator/courts/${courtId}`;
 
   return <section className="operations-page" aria-label="Vận hành sân">
@@ -79,9 +80,9 @@ export function PartnerOperations({ venues, request }: { venues: VenueChoice[]; 
     <label>Sân vận hành <select value={courtId} disabled={busy} onChange={event => setCourtId(event.target.value)}>
       {choices.map(choice => <option key={choice.id} value={choice.id}>{choice.label}</option>)}
     </select></label>
-    {message && <p className={`feedback ${message === 'Đã lưu.' ? 'success' : 'error'}`} role="status">{message}</p>}
+    {message && <p className={`feedback ${messageKind}`} role="status">{message}</p>}
     {busy && <p className="feedback" role="status">Đang xử lý…</p>}
-    {!loading && !operations && courtId && <button type="button" onClick={() => void run(() => load(courtId))}>Thử tải lại cấu hình</button>}
+    {!loading && !operations && courtId && <button type="button" onClick={() => void run(() => load(courtId), 'Đã tải cấu hình.')}>Thử tải lại cấu hình</button>}
     {loading && <p>Đang tải cấu hình sân…</p>}
     {!loading && operations && <>
       <p>{operations.name} · {statusLabel(operations.status)} · múi giờ {operations.timezone}</p>
@@ -179,9 +180,10 @@ export function PartnerOperations({ venues, request }: { venues: VenueChoice[]; 
       </form>
 
       <form id="operator-preview" tabIndex={-1} onSubmit={event => submit(event, async () => {
+        setPreview(null);
         const result = await request<Preview>(`${root}/price-preview?date=${encodeURIComponent(date)}&startsAt=${encodeURIComponent(startsAt)}&endsAt=${encodeURIComponent(endsAt)}`);
         setPreview(result);
-      })}>
+      }, 'Đã tính giá.')}>
         <h4>Xem thử giá</h4>
         <label>Ngày <input type="date" required value={date} onChange={event => setDate(event.target.value)} /></label>
         <label>Từ <input type="time" step="1800" required value={startsAt} onChange={event => setStartsAt(event.target.value)} /></label>

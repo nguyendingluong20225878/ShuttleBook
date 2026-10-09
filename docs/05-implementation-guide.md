@@ -1,5 +1,8 @@
 # Hướng dẫn triển khai theo mô hình đã chốt
 
+> Cập nhật2026-10-08: quote hợp lệ giữ chỗ tạm đến expiresAt; create chuyển allocation tạm sang BOOKING nguyên tử. Xem docs/features/F07-quote-reservations.md; chính sách mới thay mô tả quote không giữ chỗ trước đó.
+
+
 ## 1. Mô hình tài khoản
 
 Dùng một cột `users.account_type`; frontend không được phép truyền hoặc thay đổi giá trị này:

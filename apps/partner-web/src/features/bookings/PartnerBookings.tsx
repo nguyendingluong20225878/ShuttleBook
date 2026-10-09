@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { PartnerApiError, bookingStatusLabel, localDateTime, money, paymentError, type BookingDetail, type BookingList, type PartnerRequest } from './types';
 import { BookingDecisions } from './BookingDecisions';
+import { SeriesSchedule, seriesPeriod } from './SeriesSchedule';
+import './booking-layout.css';
 
 type Venue = { id: string; name: string };
 type Filter = { status: string; dateFrom: string; dateTo: string };
@@ -25,10 +27,21 @@ export function PartnerBookings({ businessId, venues, request, bookingId, openBo
   const [reload, setReload] = useState(0);
   const [listReload, setListReload] = useState(0);
   const more = useRef<AbortController | null>(null);
+  const listCurrent = useRef<AbortController | null>(null);
+  const loadedPages = useRef(1);
+  const refreshList = useRef<() => void>(() => {});
   const scopeGeneration = useRef(0);
   const detailGeneration = useRef(0);
   const actionBusy = useRef(false);
   const detailRef = useRef<BookingDetail | null>(null); detailRef.current = detail;
+  const detailHeading = useRef<HTMLHeadingElement | null>(null);
+  useEffect(() => { if (bookingId) detailHeading.current?.focus(); }, [bookingId]);
+  function discardPrivateBookings(error: unknown) {
+    scopeGeneration.current++; detailGeneration.current++; more.current?.abort(); more.current = null;
+    listCurrent.current?.abort(); listCurrent.current = null; loadedPages.current = 1;
+    detailRef.current = null; setDetail(null); setList(null); setDetailError(paymentError(error));
+    setLoading(false); setMoreLoading(false); setDetailLoading(false);
+  }
   function listPath(before?: string) {
     const query = new URLSearchParams({ limit: '20' });
     for (const [key, value] of Object.entries(filter)) if (value) query.set(key, value);
@@ -36,31 +49,46 @@ export function PartnerBookings({ businessId, venues, request, bookingId, openBo
     return `/operator/venues/${venueId}/bookings?${query}`;
   }
   useEffect(() => {
-    const generation = ++scopeGeneration.current;
-    const controller = new AbortController(); let current: AbortController | null = controller;
-    setList(null); setListError(''); setLoading(true); setMoreLoading(false);
-    if (!venueId) { setLoading(false); return; }
-    async function load(signal: AbortSignal, initial = false) {
+    scopeGeneration.current++;
+    loadedPages.current = 1;
+    setList(null); setListError(''); setLoading(false); setMoreLoading(false);
+    async function load(force = false) {
+      if (!venueId || actionBusy.current || (!force && (listCurrent.current || more.current))) return;
+      if (force) { listCurrent.current?.abort(); more.current?.abort(); more.current = null; setMoreLoading(false); }
+      const generation = scopeGeneration.current;
+      const controller = new AbortController(); listCurrent.current = controller;
+      setLoading(true);
       try {
-        const result = await latestRequest.current<BookingList>(listPath(), 'GET', undefined, undefined, { signal });
-        if (!signal.aborted && scopeGeneration.current === generation) { setList(result); setListError(''); }
-      } catch (error) { if (!signal.aborted && scopeGeneration.current === generation) {
-        if (error instanceof PartnerApiError && [403, 404].includes(error.status)) setList(null);
+        let before: string | undefined; let first: BookingList | null = null; let last: BookingList | null = null;
+        const items = new Map<string, BookingList['items'][number]>();
+        const cursors = new Set<string>();
+        for (let page = 0; page < loadedPages.current; page++) {
+          const result = await latestRequest.current<BookingList>(listPath(before), 'GET', undefined, undefined, { signal: controller.signal });
+          if (controller.signal.aborted || scopeGeneration.current !== generation) return;
+          first ??= result; last = result;
+          for (const item of result.items) items.set(item.bookingId, item);
+          if (!result.nextCursor || cursors.has(result.nextCursor)) break;
+          cursors.add(result.nextCursor); before = result.nextCursor;
+        }
+        if (first && last && !controller.signal.aborted && scopeGeneration.current === generation) {
+          setList({ ...first, items: [...items.values()], nextCursor: last.nextCursor }); setListError('');
+        }
+      } catch (error) { if (!controller.signal.aborted && scopeGeneration.current === generation) {
+        if (error instanceof PartnerApiError && [403, 404].includes(error.status)) discardPrivateBookings(error);
         setListError(paymentError(error));
       } }
-      finally { if (scopeGeneration.current === generation && !signal.aborted && initial) setLoading(false); }
+      finally { if (listCurrent.current === controller) { listCurrent.current = null; setLoading(false); } }
     }
-    void load(controller.signal, true).finally(() => { if (current === controller) current = null; });
-    const update = () => {
-      if (document.visibilityState !== 'visible' || current || more.current || actionBusy.current) return;
-      current = new AbortController(); const next = current;
-      void load(next.signal).finally(() => { if (current === next) current = null; });
-    };
+    refreshList.current = () => { void load(true); };
+    void load();
+    const update = () => { if (document.visibilityState === 'visible') void load(); };
     const timer = window.setInterval(update, 5000);
     window.addEventListener('focus', update); document.addEventListener('visibilitychange', update);
-    return () => { current?.abort(); more.current?.abort(); more.current = null; scopeGeneration.current++;
+    return () => { listCurrent.current?.abort(); listCurrent.current = null; more.current?.abort(); more.current = null;
+      scopeGeneration.current++; refreshList.current = () => {};
       window.clearInterval(timer); window.removeEventListener('focus', update); document.removeEventListener('visibilitychange', update); };
-  }, [venueId, filter, reload, listReload]);
+  }, [venueId, filter]);
+  useEffect(() => { if (reload || listReload) refreshList.current(); }, [reload, listReload]);
   useEffect(() => {
     const generation = ++detailGeneration.current;
     if (!bookingId) { setDetail(null); setDetailError(''); setDetailLoading(false); return; }
@@ -96,14 +124,23 @@ export function PartnerBookings({ businessId, venues, request, bookingId, openBo
       window.removeEventListener('focus', update); document.removeEventListener('visibilitychange', update); };
   }, [bookingId, businessId, reload]);
   async function loadMore() {
-    if (!list?.nextCursor || more.current) return;
+    if (!list?.nextCursor || more.current || listCurrent.current || actionBusy.current) return;
     const generation = scopeGeneration.current; const controller = new AbortController(); more.current = controller;
     setMoreLoading(true); setListError('');
     try {
       const result = await latestRequest.current<BookingList>(listPath(list.nextCursor), 'GET', undefined, undefined, { signal: controller.signal });
-      if (!controller.signal.aborted && scopeGeneration.current === generation) setList(previous => ({ ...result,
-        items: [...(previous?.items ?? []), ...result.items.filter(item => !previous?.items.some(old => old.bookingId === item.bookingId))] }));
-    } catch (error) { if (!controller.signal.aborted && scopeGeneration.current === generation) setListError(paymentError(error)); }
+      if (!controller.signal.aborted && scopeGeneration.current === generation) {
+        loadedPages.current++;
+        setList(previous => {
+          const items = new Map((previous?.items ?? []).map(item => [item.bookingId, item]));
+          for (const item of result.items) items.set(item.bookingId, item);
+          return { ...result, items: [...items.values()] };
+        });
+      }
+    } catch (error) { if (!controller.signal.aborted && scopeGeneration.current === generation) {
+      if (error instanceof PartnerApiError && [403, 404].includes(error.status)) discardPrivateBookings(error);
+      setListError(paymentError(error));
+    } }
     finally { if (more.current === controller) { more.current = null; setMoreLoading(false); } }
   }
   function apply(event: FormEvent) {
@@ -114,12 +151,42 @@ export function PartnerBookings({ businessId, venues, request, bookingId, openBo
     }
     setFilter({ ...draft });
   }
+  if (bookingId) return <section className="partner-bookings" aria-label="Quản lý đơn đặt sân">
+    <section id="partner-booking-detail" className="panel booking-detail" aria-label="Chi tiết đơn đặt sân">
+      <div className="panel-heading"><h3 ref={detailHeading} tabIndex={-1}>Chi tiết đơn đặt sân</h3><button type="button" onClick={() => openBooking(null)}>Quay lại danh sách đơn</button></div>
+      {detailLoading && <p role="status">Đang tải chi tiết đơn…</p>}
+      {detailError && <div className="feedback error" role="alert">{detailError}<button type="button" onClick={() => setReload(value => value + 1)}>Tải lại chi tiết</button></div>}
+      {detail && <>
+        <BookingInformation key={detail.bookingId} booking={detail} request={request} />
+        {['AWAITING_OWNER_CONFIRMATION', 'NEEDS_REVIEW'].includes(detail.status) &&
+          <BookingDecisions key={`${detail.bookingId}-${reload}`} booking={detail} request={request}
+            onBusy={busy => {
+              actionBusy.current = busy; onActionBusy(busy);
+              if (busy) {
+                listCurrent.current?.abort(); listCurrent.current = null; more.current?.abort(); more.current = null;
+                setLoading(false); setMoreLoading(false);
+              }
+            }} reload={() => setReload(value => value + 1)}
+            onUnavailable={error => {
+              discardPrivateBookings(error);
+            }}
+            onUpdated={updated => {
+              if (updated.businessId !== businessId || !venues.some(venue => venue.id === updated.venueId)) return;
+              detailRef.current = updated; setDetail(updated);
+              setListReload(value => value + 1);
+            }} />}
+      </>}
+    </section>
+  </section>;
+
   return <section className="partner-bookings" aria-label="Quản lý đơn đặt sân">
-    <div className="panel booking-scope"><label>Cơ sở xem đơn <select value={venueId} onChange={event => {
+    <div className="booking-workspace-intro"><p className="eyebrow">Vận hành đặt sân</p>
+      <h3>Danh sách đơn &amp; đối chiếu</h3><p className="muted">Chọn cơ sở, lọc đơn cần xử lý và xem thông tin giao dịch trước khi xác nhận.</p></div>
+    <div className="panel booking-scope"><label>Cơ sở xem đơn <select aria-label="Cơ sở xem đơn" value={venueId} onChange={event => {
       openBooking(null); setVenueId(event.target.value); setDetail(null); setDraft({ status: '', dateFrom: '', dateTo: '' });
       setFilter({ status: '', dateFrom: '', dateTo: '' });
     }}>{venues.map(venue => <option key={venue.id} value={venue.id}>{venue.name}</option>)}</select></label>
-      <p className="muted">Ngày lọc và giờ chơi theo múi giờ của cơ sở. Đơn đã báo chuyển tiếp tục giữ sân trong lúc đối chiếu.</p></div>
+      <p className="muted">Ngày lọc và giờ chơi theo múi giờ của cơ sở. Lịch cố định xuất hiện nếu có một buổi trong khoảng lọc. Đơn đã báo chuyển tiếp tục giữ sân trong lúc đối chiếu.</p></div>
     {venues.length === 0 ? <div className="panel empty-state"><h3>Chưa có cơ sở</h3><p>Thêm và hoàn tất hồ sơ cơ sở trước khi nhận đơn.</p></div> : <>
       <div className="booking-counts">
         <button type="button" onClick={() => { const next = { ...filter, status: 'AWAITING_OWNER_CONFIRMATION' }; setDraft(next); setFilter(next); }}>
@@ -128,7 +195,7 @@ export function PartnerBookings({ businessId, venues, request, bookingId, openBo
           <span>Cần bổ sung</span><strong>{list?.counts.needsReview ?? '—'}</strong></button>
       </div>
       <form className="booking-filters" onSubmit={apply}>
-        <label>Trạng thái đơn <select value={draft.status} onChange={e => setDraft({ ...draft, status: e.target.value })}>
+        <label>Trạng thái đơn <select aria-label="Trạng thái đơn" value={draft.status} onChange={e => setDraft({ ...draft, status: e.target.value })}>
           <option value="">Tất cả trạng thái</option>{statuses.map(status => <option key={status} value={status}>{bookingStatusLabel(status)}</option>)}</select></label>
         <label>Từ ngày <input type="date" value={draft.dateFrom} onChange={e => setDraft({ ...draft, dateFrom: e.target.value })} /></label>
         <label>Đến ngày <input type="date" value={draft.dateTo} onChange={e => setDraft({ ...draft, dateTo: e.target.value })} /></label>
@@ -137,35 +204,17 @@ export function PartnerBookings({ businessId, venues, request, bookingId, openBo
       {loading && <p role="status">Đang tải đơn đặt sân…</p>}
       {listError && <p className="feedback error" role="alert">{listError}</p>}
       {!loading && list?.items.length === 0 && <div className="panel empty-state"><h3>Chưa có đơn phù hợp</h3><p>Kiểm tra cơ sở, trạng thái và khoảng ngày đã chọn.</p></div>}
-      <ul className="booking-list">{list?.items.map(item => <li key={item.bookingId} className={item.bookingId === bookingId ? 'selected' : ''}>
-        <div><strong>{item.bookingNo}</strong><p>{item.courtName} · {item.date} · {item.localStart.slice(0, 5)}–{item.localEnd.slice(0, 5)}</p>
+      <ul className="booking-list">{list?.items.map(item => <li key={item.bookingId}>
+        <div><strong>{item.bookingNo}</strong><p>{item.courtName} · {item.series ? seriesPeriod(item.series) : `${item.date} · ${item.localStart.slice(0, 5)}–${item.localEnd.slice(0, 5)}`}</p>
+          {item.series && <span className="status-badge">Cố định · tổng cả kỳ</span>}
           <span className={`status-badge status-${item.status.toLowerCase()}`}>{bookingStatusLabel(item.status)}</span>
           {item.isOverdue && <span className="status-badge status-overdue">Quá hạn đối chiếu</span>}</div>
-        <div className="booking-list-price"><strong>{money(item.amountExact ?? item.amount)}</strong><button type="button" onClick={() => openBooking(item.bookingId)}>Xem đơn {item.bookingNo}</button></div>
+        <div className="booking-list-price"><strong>{money(item.amountExact ?? item.amount)}</strong><button type="button"
+          onClick={() => openBooking(item.bookingId)}>Xem đơn</button></div>
       </li>)}</ul>
-      {list?.nextCursor && <button type="button" disabled={moreLoading} onClick={() => void loadMore()}>{moreLoading ? 'Đang tải…' : 'Xem thêm đơn'}</button>}
+      {list?.nextCursor && <button type="button" disabled={loading || moreLoading} onClick={() => void loadMore()}>{moreLoading ? 'Đang tải…' : 'Xem thêm đơn'}</button>}
     </>}
-    {bookingId && <section className="panel booking-detail" aria-label="Chi tiết đơn đặt sân">
-      <div className="panel-heading"><h3>Chi tiết đơn đặt sân</h3><button type="button" onClick={() => openBooking(null)}>Đóng chi tiết</button></div>
-      {detailLoading && <p role="status">Đang tải chi tiết đơn…</p>}
-      {detailError && <div className="feedback error" role="alert">{detailError}<button type="button" onClick={() => setReload(value => value + 1)}>Tải lại chi tiết</button></div>}
-      {detail && <>
-        <BookingInformation key={detail.bookingId} booking={detail} request={request} />
-        {['AWAITING_OWNER_CONFIRMATION', 'NEEDS_REVIEW'].includes(detail.status) &&
-          <BookingDecisions key={`${detail.bookingId}-${reload}`} booking={detail} request={request}
-            onBusy={busy => { actionBusy.current = busy; onActionBusy(busy); }} reload={() => setReload(value => value + 1)}
-            onUnavailable={error => {
-              scopeGeneration.current++; detailGeneration.current++; more.current?.abort(); more.current = null;
-              detailRef.current = null; setDetail(null); setList(null); setDetailError(paymentError(error));
-              setLoading(false); setMoreLoading(false); setDetailLoading(false);
-            }}
-            onUpdated={updated => {
-              if (updated.businessId !== businessId || !venues.some(venue => venue.id === updated.venueId)) return;
-              detailRef.current = updated; setDetail(updated);
-              setListReload(value => value + 1);
-            }} />}
-      </>}
-    </section>}
+
   </section>;
 }
 
@@ -201,14 +250,15 @@ function BookingInformation({ booking, request }: { booking: BookingDetail; requ
     .sort((a, b) => b.at.localeCompare(a.at));
   return <>
     <div className="booking-detail-heading"><div><p className="eyebrow">{booking.bookingNo}</p><h4>{booking.venueName} / {booking.courtName}</h4>
-      <p>{booking.date} · {booking.localStart.slice(0, 5)}–{booking.localEnd.slice(0, 5)} · {booking.timezone}</p></div>
+      <p>{booking.series ? seriesPeriod(booking.series) : `${booking.date} · ${booking.localStart.slice(0, 5)}–${booking.localEnd.slice(0, 5)}`} · {booking.timezone}</p></div>
       <span className={`status-badge status-${booking.status.toLowerCase()}`}>{bookingStatusLabel(booking.status)}</span></div>
-    <dl className="booking-facts"><div><dt>Tổng tiền theo đơn</dt><dd>{money(payment.expectedAmountExact ?? payment.expectedAmount)}</dd></div>
+    <dl className="booking-facts"><div><dt>{booking.series ? 'Tổng tiền cả kỳ cần đối chiếu' : 'Tổng tiền theo đơn'}</dt><dd>{money(payment.expectedAmountExact ?? payment.expectedAmount)}</dd></div>
       <div><dt>Khách đặt sân</dt><dd>{booking.customer?.maskedContact ?? 'Đã bảo vệ thông tin liên hệ'}</dd></div>
       <div><dt>Tài khoản nhận tiền đã chốt</dt><dd>{payment.bankCode} · {payment.maskedAccountNumber}<small>{payment.accountName}</small></dd></div>
       <div><dt>Nội dung chuyển khoản</dt><dd>{payment.transferContent}</dd></div>
       <div><dt>Lần báo chuyển đầu tiên</dt><dd>{localDateTime(payment.firstReportedAt, booking.timezone)}</dd></div>
       <div><dt>Tiền đã xác nhận</dt><dd>{payment.confirmedAmount !== null ? money(payment.confirmedAmountExact ?? payment.confirmedAmount) : 'Chưa xác nhận'}</dd></div></dl>
+    {booking.series && <SeriesSchedule series={booking.series} timezone={booking.timezone} />}
     {booking.isOverdue && <p className="feedback">Đơn đang chờ đối chiếu quá hạn. Sân vẫn được giữ; hãy kiểm tra giao dịch và phản hồi khách.</p>}
     {['AWAITING_OWNER_CONFIRMATION', 'NEEDS_REVIEW'].includes(booking.status) && <p className="feedback">Đối chiếu giao dịch với tài khoản và tổng tiền đã chốt trong đơn trước khi quyết định.</p>}
     {booking.status === 'CONFIRMED' && <p className="feedback success">Đã xác nhận thanh toán lúc {localDateTime(payment.confirmedAt, booking.timezone)}. Đơn đã hoàn tất luồng đặt sân.</p>}

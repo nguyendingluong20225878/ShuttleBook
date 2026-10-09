@@ -1,0 +1,28 @@
+.booking-workspace-intro { margin-bottom:24px; }
+.booking-workspace-intro h3 { font-size:1.4rem; margin:8px 0; }
+.partner-bookings .booking-filters { padding:20px; background:var(--surface,#fff); border:1px solid var(--border,#d6e3e0); border-radius:16px; }
+.partner-bookings .booking-filters label { min-width:0; }
+.partner-bookings .booking-list > li { gap:20px; }
+.partner-bookings .booking-list > li.selected { border-color:#0f766e; background:#eff8f5; }
+.partner-bookings .booking-list-price strong { font-size:1.2rem; font-variant-numeric:tabular-nums; }
+.partner-bookings .booking-list-price button { white-space:normal; }
+.partner-bookings .booking-facts dd { overflow-wrap:anywhere; }
+.partner-bookings .booking-detail-heading { flex-wrap:wrap; }
+.partner-bookings .booking-history li { overflow-wrap:anywhere; }
+.partner-bookings .payment-decision-form fieldset { display:grid; gap:16px; }
+.partner-bookings .payment-decision-form .confirm-rejection { display:flex; align-items:flex-start; gap:12px; }
+.partner-bookings .confirm-rejection input { flex:0 0 auto; margin-top:6px; }
+@media (max-width:640px) {
+  .partner-bookings .booking-filters { padding:16px; }
+  .partner-bookings .booking-list-price { align-items:flex-start; width:100%; }
+  .partner-bookings .booking-list-price button { width:100%; }
+}
+.series-schedule { border: 1px solid var(--line, #dce5e3); border-radius: 12px; padding: 16px; margin: 20px 0; min-width: 0; }
+.series-schedule-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.series-schedule-heading h4 { margin: 4px 0; }
+.series-table-scroll { max-width: 100%; overflow-x: auto; margin-top: 12px; }
+.series-table-scroll table { width: 100%; min-width: 520px; border-collapse: collapse; text-align: left; }
+.series-table-scroll caption { text-align: left; color: #4e6260; padding: 0 0 12px; line-height: 1.5; }
+.series-table-scroll th, .series-table-scroll td { padding: 12px; border-bottom: 1px solid #dce5e3; white-space: nowrap; }
+.series-table-scroll thead { background: #eef7f5; }
+.series-table-scroll:focus-visible { outline: 3px solid #0e776b; outline-offset: 3px; }

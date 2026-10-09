@@ -1,5 +1,7 @@
 # Nghiệm thu F05 trong terminal VS Code và trình duyệt
 
+> Lưu ý phiên bản hiện tại (2026-10-09): hướng dẫn dưới đây ghi luồng F05 tại thời điểm trước F06/F07. **Báo giá hiện đã giữ chỗ 120 giây**; khách B không thể chen vào ca A đang có quote hợp lệ. Các bước cũ nói quote không giữ chỗ hoặc chưa có báo chuyển không áp dụng cho bản hiện tại. Dùng [nghiệm thu quote reservations](F07-quote-reservations-manual.md), [thanh toán F06](F06-manual-acceptance.md) và [mốc 2–5](M02-M05-acceptance-guide.md) cho test tích hợp mới.
+
 Chạy PowerShell tại `C:\Users\luong\Desktop\CLong`. Dữ liệu thử riêng; không dùng thông tin ngân hàng/khách thật. F05 tạo đơn và giữ sân, hiển thị QR; báo chuyển/xác nhận triển khai F06.
 
 ## 1. Khởi động

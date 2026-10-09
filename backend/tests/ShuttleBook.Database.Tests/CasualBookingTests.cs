@@ -109,7 +109,9 @@ public sealed class CasualBookingTests
         {
             Assert.Equal(4, await db.Bookings.CountAsync());
             Assert.Equal(4, await db.BookingPayments.CountAsync());
-            Assert.Equal(4, await db.CourtAllocations.CountAsync());
+            Assert.Equal(4, await db.CourtAllocations.CountAsync(x => x.Kind == "BOOKING"));
+            var held = Assert.Single(await db.CourtAllocations.Where(x => x.Kind == "QUOTE_HOLD" && x.Status == "RESERVED").ToArrayAsync());
+            Assert.Equal(beforePolicyChange.GetProperty("quoteId").GetGuid(), held.QuoteReservationId);
             Assert.Equal(4, await db.BookingIdempotency.CountAsync());
             Assert.Equal(4, await db.OutboxMessages.CountAsync(x => x.EventType == "BOOKING_CREATED"));
         }
@@ -120,19 +122,20 @@ public sealed class CasualBookingTests
     {
         await using var f = await Fixture.Create();
         using var client = f.Factory.CreateClient();
+        await Code(await client.PostAsJsonAsync("/api/v1/availability/quote", new { courtId=f.CourtId, date=f.Date, startsAt="18:00", endsAt="20:00" }), 401, "UNAUTHORIZED");
+        await f.Login(client, "customer");
         var q = await f.Quote(client, "18:00", "20:00");
         Assert.Equal(600000, q.GetProperty("amount").GetInt64());
         Assert.Equal(4, q.GetProperty("slots").GetArrayLength());
         Assert.Equal(11, q.GetProperty("startsAt").GetDateTimeOffset().Hour);
         Assert.DoesNotContain("accountNumber", q.GetRawText());
-        await using (var db = f.Context()) Assert.Empty(await db.CourtAllocations.ToListAsync());
+        await using (var db = f.Context()) Assert.Equal("QUOTE_HOLD", Assert.Single(await db.CourtAllocations.ToListAsync()).Kind);
         await Code(await client.PostAsJsonAsync("/api/v1/availability/quote", new { courtId=f.CourtId, date=f.Date, startsAt="18:10", endsAt="19:00" }), 400, "VALIDATION_FAILED");
         await Code(await client.PostAsJsonAsync("/api/v1/availability/quote", new { courtId=f.CourtId, date=f.Date, startsAt="16:00", endsAt="17:00" }), 409, "PRICE_UNAVAILABLE");
         await Code(await client.PostAsJsonAsync("/api/v1/availability/quote", new { courtId=f.CourtId, date=DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1).ToString("yyyy-MM-dd"), startsAt="18:00", endsAt="19:00" }), 400, "VALIDATION_FAILED");
         await Code(await client.PostAsJsonAsync("/api/v1/availability/quote", new { courtId=f.CourtId, date=f.Date, startsAt="18:00", endsAt="19:00", amount=1 }), 400, "UNSUPPORTED_FIELD");
         await Code(await client.PostAsJsonAsync("/api/v1/availability/quote", new { courtId=f.CourtId, date=DateOnly.FromDateTime(DateTime.UtcNow).AddDays(70).ToString("yyyy-MM-dd"), startsAt="18:00", endsAt="19:00" }), 400, "VALIDATION_FAILED");
-        await Code(await f.CreateBooking(client, q, "guest"), 401, "UNAUTHORIZED");
-        await f.Login(client, "customer");
+        using (var guest = f.Factory.CreateClient()) await Code(await f.CreateBooking(guest, q, "guest"), 401, "UNAUTHORIZED");
         var created = await Data(await f.CreateBooking(client, q, "first"), 201);
         var id = created.GetProperty("bookingId").GetGuid();
         Assert.Equal("AWAITING_TRANSFER", created.GetProperty("status").GetString());
@@ -171,20 +174,27 @@ public sealed class CasualBookingTests
     }
 
     [Fact]
-    public async Task Twenty_overlapping_requests_across_two_hosts_and_same_key_race_create_one_aggregate()
+    public async Task Twenty_overlapping_quote_requests_across_two_hosts_and_same_key_create_protect_one_aggregate()
     {
         await using var f = await Fixture.Create(); using var a=f.Factory.CreateClient(); using var hostB=new ApiFactory(f.Connection); using var b=hostB.CreateClient();
         await f.Login(a,"customer"); await f.Login(b,"other");
-        var quotes=new List<JsonElement>(); for(var i=0;i<20;i++) quotes.Add(await f.Quote(i%2==0?a:b,"18:00","20:00"));
-        var results=await Task.WhenAll(Enumerable.Range(0,20).Select(i=>f.CreateBooking(i%2==0?a:b,quotes[i],$"race-{i}")));
-        Assert.Equal(1,results.Count(r=>(int)r.StatusCode==201));
-        foreach(var result in results.Where(r=>(int)r.StatusCode!=201)) await Code(result,409,"SLOT_UNAVAILABLE");
-        foreach(var result in results) result.Dispose();
-        var adjacent=await f.Quote(a,"20:00","21:00");
-        var repeat=await Task.WhenAll(Enumerable.Range(0,8).Select(_=>f.CreateBooking(a,adjacent,"same-key")));
-        var ids=new List<Guid>(); foreach(var response in repeat) ids.Add((await Data(response,201)).GetProperty("bookingId").GetGuid());
-        Assert.Single(ids.Distinct());
-        await using var db=f.Context(); Assert.Equal(2,await db.Bookings.CountAsync()); Assert.Equal(2,await db.BookingPayments.CountAsync()); Assert.Equal(2,await db.CourtAllocations.CountAsync());
+        var replies = await Task.WhenAll(Enumerable.Range(0,20).Select(i => (i%2==0?a:b).PostAsJsonAsync("/api/v1/availability/quote", new {courtId=f.CourtId,date=f.Date,startsAt="18:00",endsAt="20:00"})));
+        var successful = new List<JsonElement>();
+        for (var i=0;i<replies.Length;i++) {
+            if (replies[i].StatusCode==HttpStatusCode.OK) successful.Add(await Data(replies[i]));
+            else await Code(replies[i],409,"SLOT_UNAVAILABLE");
+        }
+        Assert.NotEmpty(successful); Assert.True(successful.Count<20);
+        Guid ownerId; Guid currentQuote;
+        await using(var db=f.Context()) {
+            var hold=Assert.Single(await db.QuoteReservations.Where(x=>x.ReleasedAt==null && x.ConsumedAt==null).ToArrayAsync()); ownerId=hold.CustomerId;currentQuote=hold.Id;
+            Assert.Single(await db.CourtAllocations.Where(x=>x.Status=="RESERVED").ToArrayAsync());Assert.Empty(await db.Bookings.ToArrayAsync());
+        }
+        var active=successful.Single(q=>q.GetProperty("quoteId").GetGuid()==currentQuote);var winner=ownerId==f.CustomerId?a:b;
+        var create = await Task.WhenAll(Enumerable.Range(0,8).Select(_=>f.CreateBooking(winner,active,"same-key")));
+        var ids=new List<Guid>();foreach(var response in create)ids.Add((await Data(response,201)).GetProperty("bookingId").GetGuid());Assert.Single(ids.Distinct());
+        var adjacent=await f.Quote(winner,"20:00","21:00");await Data(await f.CreateBooking(winner,adjacent,"adjacent"),201);
+        await using var check=f.Context(); Assert.Equal(2,await check.Bookings.CountAsync());Assert.Equal(2,await check.BookingPayments.CountAsync());Assert.Equal(2,await check.CourtAllocations.CountAsync(x=>x.Status=="RESERVED"));
     }
 
     [Fact]
@@ -192,7 +202,7 @@ public sealed class CasualBookingTests
     {
         await using var f=await Fixture.Create(); using var client=f.Factory.CreateClient(); await f.Login(client,"customer");
         var q=await f.Quote(client,"18:00","19:00");
-        await using(var db=f.Context()) { var quote=await db.BookingQuotes.SingleAsync(); quote.CreatedAt=DateTimeOffset.UtcNow.AddMinutes(-3); quote.ExpiresAt=DateTimeOffset.UtcNow.AddMinutes(-1); await db.SaveChangesAsync(); }
+        await using(var db=f.Context()) { var quote=await db.BookingQuotes.SingleAsync(); quote.CreatedAt=DateTimeOffset.UtcNow.AddMinutes(-3); quote.ExpiresAt=DateTimeOffset.UtcNow.AddMinutes(-1); var hold=await db.QuoteReservations.SingleAsync();hold.CreatedAt=quote.CreatedAt;hold.ExpiresAt=quote.ExpiresAt; await db.SaveChangesAsync(); }
         await Code(await f.CreateBooking(client,q,"expired"),409,"QUOTE_EXPIRED");
         q=await f.Quote(client,"18:00","19:00");
         await using(var db=f.Context()) { (await db.PricingRules.SingleAsync(x=>x.Priority==1)).PricePerSlot=210000; await db.SaveChangesAsync(); }
@@ -207,8 +217,11 @@ public sealed class CasualBookingTests
         await Code(await client.PostAsJsonAsync("/api/v1/availability/quote",new {courtId=f.CourtId,date=f.Date,startsAt="18:00",endsAt="19:00"}),400,"VALIDATION_FAILED");
         q=await f.Quote(client,"18:00","19:30");
         await using(var db=f.Context()) { var court=await db.Courts.SingleAsync(); court.BookingBlockMinutes=30; court.MinimumBookingMinutes=30;
+            var hold=await db.QuoteReservations.SingleAsync(x=>x.Id==q.GetProperty("quoteId").GetGuid());hold.ExpiresAt=DateTimeOffset.UtcNow.AddMinutes(-1);hold.CreatedAt=hold.ExpiresAt.AddMinutes(-2);
+            var oldQuote=await db.BookingQuotes.SingleAsync(x=>x.Id==hold.Id);oldQuote.ExpiresAt=hold.ExpiresAt;oldQuote.CreatedAt=hold.CreatedAt;await db.SaveChangesAsync();await QuoteReservations.CleanupCourt(db,f.CourtId,DateTimeOffset.UtcNow,CancellationToken.None);
             db.CourtAllocations.Add(new CourtAllocation { CourtId=f.CourtId, Kind="MAINTENANCE", StartsAt=q.GetProperty("startsAt").GetDateTimeOffset(), EndsAt=q.GetProperty("startsAt").GetDateTimeOffset().AddMinutes(30),CreatedAt=DateTimeOffset.UtcNow }); await db.SaveChangesAsync(); }
-        await Code(await f.CreateBooking(client,q,"maintenance"),409,"SLOT_UNAVAILABLE");
+        await Code(await f.CreateBooking(client,q,"maintenance-old-quote"),409,"QUOTE_EXPIRED");
+        await Code(await client.PostAsJsonAsync("/api/v1/availability/quote",new {courtId=f.CourtId,date=f.Date,startsAt="18:00",endsAt="19:30"}),409,"SLOT_UNAVAILABLE");
         var free=await f.Quote(client,"18:30","19:00"); Assert.Equal(210000,free.GetProperty("amount").GetInt64());
         Guid otherCourt;
         await using(var db=f.Context()) {
@@ -288,8 +301,11 @@ public sealed class CasualBookingTests
         await Code(await client.PostAsJsonAsync("/api/v1/availability/quote",new {courtId=f.CourtId,date=spring.ToString("yyyy-MM-dd"),startsAt="02:00",endsAt="03:00"}),409,"SCHEDULE_UNAVAILABLE");
         await Code(await client.PostAsJsonAsync("/api/v1/availability/quote",new {courtId=f.CourtId,date=fall.ToString("yyyy-MM-dd"),startsAt="01:00",endsAt="02:00"}),409,"SCHEDULE_UNAVAILABLE");
         await Code(await client.PostAsJsonAsync("/api/v1/availability/quote?extra=1",new {courtId=f.CourtId,date=f.Date,startsAt="01:00",endsAt="02:00"}),400,"VALIDATION_FAILED");
+        // Changing the venue timezone does not move the earlier Chatham allocation.
+        // Use New York 03:00–04:00 to test publication scope independently of that booking.
+        var unpublishedQuote = await f.Quote(client,"03:00","04:00");
         await using(var db=f.Context()) { (await db.Venues.SingleAsync()).Status="SUSPENDED";await db.SaveChangesAsync(); }
-        await Code(await f.CreateBooking(client,q,"unpublished"),404,"NOT_FOUND");
+        await Code(await f.CreateBooking(client,unpublishedQuote,"unpublished"),404,"NOT_FOUND");
     }
 
     private sealed class Fixture : IAsyncDisposable

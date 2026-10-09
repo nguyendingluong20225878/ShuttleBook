@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { expect, test } from '@playwright/test';
+import { mkdir } from 'node:fs/promises';
+import { expect, test, type Page } from '@playwright/test';
 import { openPartnerPage, partnerLogout } from './helpers/partner-navigation';
 
 const adminContact = process.env.SHUTTLEBOOK_ADMIN_TEST_CONTACT;
@@ -23,8 +24,27 @@ async function verificationCode(contact: string): Promise<string | null> {
   return message.Text.match(/\b\d{6}\b/)?.[0] ?? null;
 }
 
-test('F02–F06 onboarding, court operations and payment reconciliation through real browser, API, Worker and PostGIS', async ({ page, context }) => {
+async function reloginPartner(page: Page, contact: string, password: string) {
+  const [loggedOut] = await Promise.all([
+    page.waitForResponse(response => response.url() === `${api}/api/v1/browser-auth/partner/logout` && response.request().method() === 'POST', { timeout: 20_000 }),
+    partnerLogout(page),
+  ]);
+  expect(loggedOut.status()).toBe(204);
+  await expect(page.getByRole('heading', { name: 'Đăng nhập chủ sân', exact: true })).toBeVisible();
+  const submit = page.getByRole('button', { name: 'Đăng nhập', exact: true }).last();
+  await expect(submit).toBeEnabled();
+  await page.getByLabel('Email', { exact: true }).fill(contact);
+  await page.getByLabel('Mật khẩu', { exact: true }).fill(password);
+  const [loggedIn] = await Promise.all([
+    page.waitForResponse(response => response.url() === `${api}/api/v1/browser-auth/partner/login` && response.request().method() === 'POST', { timeout: 20_000 }),
+    submit.click(),
+  ]);
+  expect(loggedIn.status()).toBe(200);
+}
+
+test('F02–F07 onboarding, casual and fixed-series payment through real browser, API, Worker and PostGIS', async ({ page, context }, testInfo) => {
   test.setTimeout(240_000);
+  await mkdir('.local/m03/screenshots', { recursive: true });
   expect((await fetch(`${api}/health/ready`)).status).toBe(200);
   await context.route('**/*', route => {
     const url = new URL(route.request().url()); const origin = url.origin;
@@ -56,7 +76,11 @@ test('F02–F06 onboarding, court operations and payment reconciliation through 
   await page.getByLabel('Email', { exact: true }).fill(contact);
   await page.getByLabel('Mật khẩu', { exact: true }).fill(password);
   await page.getByLabel('Nhập lại mật khẩu').fill(password);
-  await page.getByRole('button', { name: 'Đăng ký', exact: true }).click();
+  const [registered] = await Promise.all([
+    page.waitForResponse(response => response.url().endsWith('/api/v1/partner-auth/register') && response.request().method() === 'POST', { timeout: 20_000 }),
+    page.getByRole('button', { name: 'Đăng ký', exact: true }).click(),
+  ]);
+  expect(registered.status()).toBe(202);
   await expect(page.getByRole('heading', { name: 'Xác minh liên hệ' })).toBeVisible();
   await expect.poll(() => verificationCode(contact)).not.toBeNull();
   await page.getByLabel('Mã xác minh 6 chữ số').fill((await verificationCode(contact))!);
@@ -65,6 +89,11 @@ test('F02–F06 onboarding, court operations and payment reconciliation through 
   await page.getByLabel('Mật khẩu', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Đăng nhập', exact: true }).last().click();
   await expect(page.getByRole('heading', { name: 'Tạo doanh nghiệp' })).toBeVisible();
+  const partnerUrl = page.url(); await page.reload();
+  await expect(page.getByRole('heading', { name: 'Tạo doanh nghiệp' })).toBeVisible();
+  await expect(page).toHaveURL(partnerUrl);
+  await expect(page.getByRole('heading', { name: 'Đăng nhập chủ sân' })).toHaveCount(0);
+  await page.screenshot({ path: `.local/m03/screenshots/partner-f5-${testInfo.project.name}.png`, fullPage: true });
 
   const business = page.getByRole('heading', { name: 'Tạo doanh nghiệp' }).locator('..');
   await business.getByLabel('Tên hiển thị').fill(clubName);
@@ -126,9 +155,7 @@ test('F02–F06 onboarding, court operations and payment reconciliation through 
   await admin.getByRole('button', { name: 'Yêu cầu chỉnh sửa' }).click();
   await expect(admin.getByRole('button', { name: new RegExp(clubName) })).toHaveCount(0);
 
-  await partnerLogout(page);
-  await page.getByLabel('Mật khẩu', { exact: true }).fill(password);
-  await page.getByRole('button', { name: 'Đăng nhập', exact: true }).last().click();
+  await reloginPartner(page, contact, password);
   await expect(page.getByText('Admin yêu cầu bổ sung: Please correct the legal name')).toBeVisible();
   await openPartnerPage(page, 'Hồ sơ doanh nghiệp');
   const edit = page.getByRole('heading', { name: 'Thông tin doanh nghiệp' }).locator('..');
@@ -138,12 +165,11 @@ test('F02–F06 onboarding, court operations and payment reconciliation through 
   await expect(page.locator('.status-banner').getByText('Đang chờ duyệt', { exact: true })).toBeVisible();
   await admin.getByRole('button', { name: 'Tải lại danh sách' }).click();
   await admin.getByRole('button', { name: new RegExp(clubName) }).click();
-  await admin.getByRole('button', { name: 'Phê duyệt' }).click();
+  await admin.getByRole('button', { name: 'Phê duyệt', exact: true }).click();
+  await admin.getByRole('button', { name: 'Xác nhận phê duyệt', exact: true }).click();
   await expect(admin.getByRole('button', { name: new RegExp(clubName) })).toHaveCount(0);
 
-  await partnerLogout(page);
-  await page.getByLabel('Mật khẩu', { exact: true }).fill(password);
-  await page.getByRole('button', { name: 'Đăng nhập', exact: true }).last().click();
+  await reloginPartner(page, contact, password);
   await expect(page.locator('.status-banner').getByText('Đang hoạt động', { exact: true })).toBeVisible();
   await openPartnerPage(page, 'Lịch & giá');
   await expect(page.getByRole('heading', { name: 'Vận hành sân' })).toBeVisible();
@@ -232,11 +258,20 @@ test('F02–F06 onboarding, court operations and payment reconciliation through 
   await customer.getByLabel('Mã xác minh 6 chữ số').fill((await verificationCode(customerContact))!);
   await customer.getByRole('button', { name: 'Xác minh', exact: true }).click();
   await customer.getByLabel('Mật khẩu', { exact: true }).fill(customerPassword);
-  const loginReply = customer.waitForResponse(response => response.url().endsWith('/api/v1/auth/login') && response.request().method() === 'POST');
+  const loginReply = customer.waitForResponse(response => response.url().endsWith('/api/v1/browser-auth/customer/login') && response.request().method() === 'POST');
   await customer.getByRole('button', { name: 'Đăng nhập', exact: true }).last().click();
   const customerAccess = (await (await loginReply).json()).data.accessToken as string;
   await expect(customer.getByRole('heading', { name: 'Xác nhận đặt vãng lai' })).toBeVisible();
   await expect(customer.getByText('Tổng tiền: 400.000đ')).toBeVisible();
+  await expect(customer.locator('.quote-hold-notice')).toContainText('Đang giữ chỗ tạm cho bạn');
+  const casualSelection = new URL(customer.url()).searchParams;
+  const casualPublic = await fetch(`${api}/api/v1/venues/${casualSelection.get('venueId')}/availability?date=${nextMonday}`);
+  expect(casualPublic.status).toBe(200);
+  const casualAvailability = (await casualPublic.json()).data;
+  const casualHeld = casualAvailability.courts.find((court: { courtId: string }) => court.courtId === casualSelection.get('courtId'));
+  const casualHeldSlots = casualHeld.slots.filter((slot: { startsAt: string }) => slot.startsAt === '08:00' || slot.startsAt === '08:30');
+  expect(casualHeldSlots).toHaveLength(2);
+  expect(casualHeldSlots.every((slot: { status: string }) => slot.status === 'RESERVED')).toBe(true);
   await customer.getByRole('button', { name: 'Xác nhận tạo đơn' }).click();
   await expect(customer.getByRole('heading', { name: 'Chi tiết đơn đặt sân' })).toBeVisible();
   await expect(customer.getByRole('img', { name: 'QR nhận tiền của cơ sở cho đơn đặt sân' })).toBeVisible();
@@ -259,16 +294,15 @@ test('F02–F06 onboarding, court operations and payment reconciliation through 
   await expect(revision).toHaveCount(0);
   await admin.getByRole('button', { name: 'Tải lại danh sách' }).click();
   await admin.getByRole('button', { name: new RegExp(clubName) }).click();
-  await admin.getByRole('button', { name: 'Phê duyệt' }).click();
+  await admin.getByRole('button', { name: 'Phê duyệt', exact: true }).click();
+  await admin.getByRole('button', { name: 'Xác nhận phê duyệt', exact: true }).click();
   await expect(admin.getByRole('button', { name: new RegExp(clubName) })).toHaveCount(0);
   await customer.reload();
-  await expect(customer.getByRole('heading', { name: 'Đăng nhập khách hàng' })).toBeVisible();
-  await customer.getByLabel('Email', { exact: true }).fill(customerContact);
-  await customer.getByLabel('Mật khẩu', { exact: true }).fill(customerPassword);
-  await customer.getByRole('button', { name: 'Đăng nhập', exact: true }).last().click();
   await expect(customer).toHaveURL(bookingUrl);
   await expect(customer.getByText('Ngân hàng: TEST · Chủ tài khoản: F02 CLUB', { exact: true })).toBeVisible();
   await expect(customer.getByRole('img', { name: 'QR nhận tiền của cơ sở cho đơn đặt sân' })).toBeVisible();
+  await expect(customer.getByRole('heading', { name: 'Đăng nhập khách hàng' })).toHaveCount(0);
+  await customer.screenshot({ path: `.local/m03/screenshots/customer-f5-${testInfo.project.name}.png`, fullPage: true });
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
 
   // F06: proof is uploaded privately, customer reporting does not mark payment PAID.
@@ -295,10 +329,11 @@ test('F02–F06 onboarding, court operations and payment reconciliation through 
   const ownerNotice = page.locator('.notice-list li').filter({ hasText: 'Khách đã báo chuyển khoản' }).filter({ hasText: reported.bookingNo });
   await expect(ownerNotice).toBeVisible({ timeout: 15_000 });
   await ownerNotice.getByRole('button', { name: 'Xem đơn đặt sân' }).click();
-  await expect(page).toHaveURL(new RegExp(`bookingId=${reported.bookingId}`));
+  await expect(page).toHaveURL(new RegExp(`#/bookings/${reported.bookingId}$`));
   await openPartnerPage(page, 'Đơn đặt sân');
-  await expect(page.getByRole('button', { name: `Xem đơn ${reported.bookingNo}` })).toBeVisible();
-  await page.getByRole('button', { name: `Xem đơn ${reported.bookingNo}` }).click();
+  const reportedRow = page.locator('.booking-list > li').filter({ has: page.getByText(reported.bookingNo, { exact: true }) });
+  await expect(reportedRow.getByRole('button', { name: 'Xem đơn', exact: true })).toBeVisible();
+  await reportedRow.getByRole('button', { name: 'Xem đơn', exact: true }).click();
   const detail = page.getByRole('region', { name: 'Chi tiết đơn đặt sân', exact: true });
   await expect(detail.locator('.status-badge')).toHaveText('Chờ xác nhận');
   await detail.getByRole('button', { name: 'Xem biên lai' }).click();
@@ -339,10 +374,91 @@ test('F02–F06 onboarding, court operations and payment reconciliation through 
     return ((await response.json()).data as Array<{ title: string }>).map(item => item.title);
   }, { timeout: 15_000 }).toContain('Đơn đặt sân đã xác nhận');
   await customer.reload();
-  await customer.getByLabel('Email', { exact: true }).fill(customerContact);
-  await customer.getByLabel('Mật khẩu', { exact: true }).fill(customerPassword);
-  await customer.getByRole('button', { name: 'Đăng nhập', exact: true }).last().click();
   await expect(customer).toHaveURL(bookingUrl);
   await expect(customer.locator('.booking-status')).toHaveText('Đã xác nhận');
   await expect(customer.getByRole('button', { name: 'Đã chuyển khoản', exact: true })).toHaveCount(0);
+
+  // F07: the same public grid selects a weekly interval; one real payment confirms the whole period.
+  await customer.getByRole('link', { name: 'Tìm sân', exact: true }).click();
+  await customer.getByLabel('Tên sân hoặc địa chỉ').fill(venueName);
+  await customer.getByRole('button', { name: 'Tìm sân' }).click();
+  await customer.locator('.venue-card').filter({ has: customer.getByRole('heading', { name: venueName }) })
+    .getByRole('link', { name: 'Xem lịch các sân' }).click();
+  await customer.getByLabel('Ngày chơi').fill(nextMonday);
+  await customer.getByRole('button', { name: 'Cố định hằng tuần', exact: true }).click();
+  for (const [start, end] of [['09:00', '09:30'], ['09:30', '10:00'], ['10:00', '10:30'], ['10:30', '11:00']])
+    await customer.getByRole('button', { name: new RegExp(`F02 Court, ${start} đến ${end}, Còn trống`) }).click();
+  await customer.getByRole('button', { name: 'Tiếp tục đặt cố định', exact: true }).click();
+  await expect(customer.getByRole('heading', { name: 'Thiết lập lịch cố định', exact: true })).toBeVisible();
+  const [seriesQuoted] = await Promise.all([
+    customer.waitForResponse(response => response.url().endsWith('/booking-series/quote') && response.request().method() === 'POST'),
+    customer.getByRole('button', { name: 'Xem báo giá toàn kỳ', exact: true }).click(),
+  ]);
+  expect(seriesQuoted.status()).toBe(200);
+  const seriesQuote = (await seriesQuoted.json()).data;
+  expect(seriesQuote.canCreate).toBe(true); expect(seriesQuote.conflicts).toEqual([]);
+  expect(seriesQuote.occurrenceCount).toBeGreaterThanOrEqual(4);
+  expect(seriesQuote.amount).toBe(seriesQuote.occurrenceCount * 400000);
+  await expect(customer.locator('.quote-hold-notice')).toContainText('Đang giữ chỗ tạm toàn kỳ cho bạn');
+  // Public reads see all held occurrences before a booking exists, without exposing identity.
+  for (const occurrence of seriesQuote.occurrences) {
+    const publicResponse = await fetch(`${api}/api/v1/venues/${seriesQuote.venueId}/availability?date=${occurrence.date}`);
+    expect(publicResponse.status).toBe(200);
+    const publicData = (await publicResponse.json()).data;
+    const heldCourt = publicData.courts.find((court: { courtId: string }) => court.courtId === seriesQuote.courtId);
+    const heldSlots = heldCourt.slots.filter((slot: { startsAt: string }) => slot.startsAt >= '09:00' && slot.startsAt < '11:00');
+    expect(heldSlots).toHaveLength(4);
+    expect(heldSlots.every((slot: { status: string }) => slot.status === 'RESERVED')).toBe(true);
+    expect(JSON.stringify(publicData)).not.toContain(seriesQuote.quoteId);
+  }
+  const [seriesCreated] = await Promise.all([
+    customer.waitForResponse(response => response.url().endsWith('/api/v1/booking-series') && response.request().method() === 'POST'),
+    customer.getByRole('button', { name: 'Xác nhận tạo lịch cố định', exact: true }).click(),
+  ]);
+  expect(seriesCreated.status()).toBe(201);
+  const group = (await seriesCreated.json()).data;
+  expect(group.bookingType).toBe('RECURRING_OCCURRENCE'); expect(group.series.paymentPlan).toBe('FULL_SERIES');
+  expect(group.amount).toBe(seriesQuote.amount); expect(group.payment.expectedAmount).toBe(seriesQuote.amount);
+  expect(group.series.occurrences).toHaveLength(seriesQuote.occurrenceCount);
+  expect(group.series.occurrences.every((item: { amount: number }) => item.amount === 400000)).toBe(true);
+  expect(group.payment.transferContent).toBe(group.series.seriesNo);
+  await expect(customer.getByRole('region', { name: 'Lịch các buổi trong kỳ', exact: true }).locator('li')).toHaveCount(seriesQuote.occurrenceCount);
+  await expect(customer.getByRole('img', { name: 'QR nhận tiền của cơ sở cho đơn đặt sân' })).toBeVisible();
+  const seriesUrl = customer.url();
+  await customer.getByRole('button', { name: 'Đã chuyển khoản', exact: true }).click();
+  await customer.getByLabel('Ảnh chụp màn hình chuyển khoản (không bắt buộc)').setInputFiles({ name: 'series-proof.png', mimeType: 'image/png', buffer: png });
+  const [seriesReported] = await Promise.all([
+    customer.waitForResponse(response => response.url().endsWith('/transfer-evidence') && response.request().method() === 'POST'),
+    customer.getByRole('button', { name: 'Gửi báo chuyển khoản', exact: true }).click(),
+  ]);
+  const groupReported = (await seriesReported.json()).data;
+  expect(groupReported.series.occurrences.every((item: { status: string }) => item.status === 'AWAITING_OWNER_CONFIRMATION')).toBe(true);
+  expect(groupReported.evidence).toHaveLength(1);
+  await openPartnerPage(page, 'Đơn đặt sân');
+  const groupRow = page.locator('.booking-list > li').filter({ has: page.getByText(group.bookingNo, { exact: true }) });
+  await expect(groupRow.getByRole('button', { name: 'Xem đơn', exact: true })).toBeVisible({ timeout: 15_000 });
+  await groupRow.getByRole('button', { name: 'Xem đơn', exact: true }).click();
+  const fixedDetail = page.getByRole('region', { name: 'Chi tiết đơn đặt sân', exact: true });
+  await expect(fixedDetail.getByRole('region', { name: 'Lịch cố định toàn kỳ', exact: true }).locator('tbody tr')).toHaveCount(seriesQuote.occurrenceCount);
+  await fixedDetail.getByRole('button', { name: 'Xem biên lai', exact: true }).click();
+  await expect(fixedDetail.getByRole('img', { name: 'Biên lai chuyển khoản khách cung cấp' })).toBeVisible();
+  const fixedDecision = fixedDetail.getByRole('form', { name: 'Quyết định thanh toán' });
+  await expect(fixedDecision.getByLabel('Số tiền thực nhận (đ)')).toHaveValue(String(seriesQuote.amount));
+  const [seriesConfirmed] = await Promise.all([
+    page.waitForResponse(response => response.url().endsWith('/confirm-payment') && response.request().method() === 'POST'),
+    fixedDecision.getByRole('button', { name: 'Xác nhận đã nhận đủ tiền', exact: true }).click(),
+  ]);
+  const groupConfirmed = (await seriesConfirmed.json()).data;
+  expect(groupConfirmed.status).toBe('CONFIRMED'); expect(groupConfirmed.payment.status).toBe('PAID');
+  expect(groupConfirmed.payment.confirmedAmount).toBe(seriesQuote.amount);
+  expect(groupConfirmed.series.occurrences.every((item: { status: string }) => item.status === 'CONFIRMED')).toBe(true);
+  await expect(customer.getByRole('region', { name: 'Lịch các buổi trong kỳ', exact: true }).locator('.booking-status').first()).toHaveText('Đã xác nhận', { timeout: 15_000 });
+  await customer.locator('.site-header').getByRole('link', { name: 'Đơn của tôi', exact: true }).click();
+  await expect(customer.locator('.booking-list > li').filter({ hasText: group.bookingNo })).toHaveCount(1);
+  await customer.getByRole('link', { name: group.bookingNo, exact: true }).click();
+  await expect(customer).toHaveURL(seriesUrl);
+  await customer.reload();
+  await expect(customer).toHaveURL(seriesUrl);
+  await expect(customer.getByRole('region', { name: 'Lịch các buổi trong kỳ', exact: true }).locator('li')).toHaveCount(seriesQuote.occurrenceCount);
+  expect(await customer.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });

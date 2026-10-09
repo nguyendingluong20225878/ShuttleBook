@@ -13,6 +13,14 @@ namespace ShuttleBook.Api.Identity;
 public sealed record AuthUser(Guid Id, string AccountType, string Status);
 public sealed record AuthTokens(string TokenType, string AccessToken, int ExpiresInSeconds,
     string RefreshToken, DateTimeOffset RefreshExpiresAt, AuthUser User);
+public sealed record BrowserAuthTokens(AuthTokens Tokens, DateTimeOffset IdleExpiresAt);
+
+public interface IBrowserAuthSessionService
+{
+    Task<BrowserAuthTokens?> BrowserLoginAsync(AccountType role, string contactType, string contact, string password, string traceId, CancellationToken cancellationToken);
+    Task<BrowserAuthTokens?> RestoreBrowserAsync(AccountType role, string refreshToken, bool activity, string traceId, CancellationToken cancellationToken);
+    Task LogoutBrowserAsync(AccountType role, string refreshToken, string traceId, CancellationToken cancellationToken);
+}
 
 public interface IAuthSessionService
 {
@@ -27,7 +35,7 @@ public sealed class AuthSessionService(
     ShuttleBookDbContext database,
     IPasswordHasher<User> passwordHasher,
     IConfiguration configuration,
-    TimeProvider clock) : IAuthSessionService
+    TimeProvider clock) : IAuthSessionService, IBrowserAuthSessionService
 {
     private static readonly TimeSpan AccessLifetime = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan RefreshLifetime = TimeSpan.FromDays(30);
@@ -74,14 +82,15 @@ public sealed class AuthSessionService(
     }
 
     private async Task<AuthTokens?> LoginForPortalAsync(string contactType, string contact, string password,
-        string traceId, bool adminPortal, CancellationToken cancellationToken)
+        string traceId, bool adminPortal, CancellationToken cancellationToken, AccountType? browserRole = null)
     {
         if (!ContactNormalizer.TryNormalize(contactType, contact, out var type, out var normalized) || password.Length is < 1 or > 128)
             return null;
         var user = type == ContactType.Email
             ? await database.Users.SingleOrDefaultAsync(item => item.NormalizedEmail == normalized, cancellationToken)
             : await database.Users.SingleOrDefaultAsync(item => item.NormalizedPhone == normalized, cancellationToken);
-        var eligible = user is not null && (adminPortal ? CanAdminLogin(user) : CanLogin(user));
+        var eligible = user is not null && (adminPortal ? CanAdminLogin(user) : CanLogin(user)) &&
+            (browserRole is null || user.AccountType == browserRole);
         var hash = adminPortal && !eligible ? DummyAdminHash : user?.PasswordHash;
         var passwordMatches = hash is not null && passwordHasher.VerifyHashedPassword(user ?? new User(), hash, password)
             != PasswordVerificationResult.Failed;
@@ -102,7 +111,7 @@ public sealed class AuthSessionService(
         {
             FamilyId = familyId, UserId = user.Id, TokenHash = HashToken(refresh),
             CreatedAt = now, ExpiresAt = now.Add(RefreshLifetime),
-            LastActivityAt = adminPortal ? now : null
+            LastActivityAt = adminPortal || browserRole is not null ? now : null
         });
         database.AuditEvents.Add(Audit(adminPortal ? "admin.login_succeeded" : "auth.login_succeeded", user.Id, traceId, now));
         await database.SaveChangesAsync(cancellationToken);
@@ -113,16 +122,19 @@ public sealed class AuthSessionService(
     {
         if (refreshToken.Length is < 32 or > 256) return null;
         var hash = HashToken(refreshToken);
-        var now = clock.GetUtcNow();
-        var accountType = await database.RefreshSessions.Where(item => item.TokenHash == hash)
-            .Select(item => (AccountType?)item.User.AccountType).SingleOrDefaultAsync(cancellationToken);
+        var lookup = await database.RefreshSessions.AsNoTracking().Where(item => item.TokenHash == hash)
+            .Select(item => new { item.FamilyId, item.User.AccountType }).SingleOrDefaultAsync(cancellationToken);
+        if (lookup is null) return null;
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
-        if (accountType == AccountType.Admin)
+        if (lookup.AccountType == AccountType.Admin)
             await AdminOperations.AcquireLockAsync(database, cancellationToken);
+        await AcquireFamilyLockAsync(database, lookup.FamilyId, cancellationToken);
+        var now = clock.GetUtcNow();
         var session = await database.RefreshSessions
             .FromSqlInterpolated($"SELECT * FROM refresh_sessions WHERE token_hash = {hash} FOR UPDATE")
             .SingleOrDefaultAsync(cancellationToken);
         if (session is null) return null;
+        await database.Entry(session).ReloadAsync(cancellationToken);
         if (session.ConsumedAt is not null)
         {
             await RevokeFamilyAsync(session.FamilyId, now, cancellationToken);
@@ -133,7 +145,7 @@ public sealed class AuthSessionService(
         }
         if (session.RevokedAt is not null || session.ExpiresAt <= now) return null;
         var user = await database.Users.SingleAsync(item => item.Id == session.UserId, cancellationToken);
-        if (user.AccountType == AccountType.Admin &&
+        if ((user.AccountType == AccountType.Admin || session.LastActivityAt is not null) &&
             (session.LastActivityAt is null || session.LastActivityAt <= now.AddMinutes(-30)))
         {
             await RevokeFamilyAsync(session.FamilyId, now, cancellationToken);
@@ -150,7 +162,7 @@ public sealed class AuthSessionService(
         var replacement = new RefreshSession
         {
             FamilyId = session.FamilyId, UserId = user.Id, TokenHash = HashToken(replacementToken),
-            CreatedAt = now, ExpiresAt = now.Add(RefreshLifetime), LastActivityAt = session.LastActivityAt
+            CreatedAt = now, ExpiresAt = session.ExpiresAt, LastActivityAt = session.LastActivityAt
         };
         session.ConsumedAt = now;
         session.ReplacedById = replacement.Id;
@@ -158,7 +170,7 @@ public sealed class AuthSessionService(
         database.AuditEvents.Add(Audit("auth.refresh_rotated", user.Id, traceId, now));
         await database.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return Tokens(user, session.FamilyId, replacementToken, now);
+        return Tokens(user, session.FamilyId, replacementToken, now, session.ExpiresAt);
     }
 
     public async Task<bool> LogoutAsync(Guid userId, Guid familyId, string refreshToken, string traceId, CancellationToken cancellationToken)
@@ -167,32 +179,78 @@ public sealed class AuthSessionService(
         var tokenHash = HashToken(refreshToken);
         var isAdmin = await database.Users.AnyAsync(user => user.Id == userId && user.AccountType == AccountType.Admin,
             cancellationToken);
+        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
         if (isAdmin)
-        {
-            await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
             await AdminOperations.AcquireLockAsync(database, cancellationToken);
-            // A refresh may have consumed the token just before logout. Its family is still the
-            // authenticated family and must be revoked rather than left active in the background.
-            var belongsToFamily = await database.RefreshSessions.AnyAsync(item => item.UserId == userId &&
-                item.FamilyId == familyId && item.TokenHash == tokenHash && item.RevokedAt == null, cancellationToken);
-            if (!belongsToFamily) return false;
-            var adminNow = clock.GetUtcNow();
-            await RevokeFamilyAsync(familyId, adminNow, cancellationToken);
-            database.AuditEvents.Add(Audit("auth.logout", userId, traceId, adminNow));
-            await database.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-            return true;
-        }
+        await AcquireFamilyLockAsync(database, familyId, cancellationToken);
         var exists = await database.RefreshSessions.AnyAsync(item => item.UserId == userId &&
-            item.FamilyId == familyId && item.TokenHash == tokenHash && item.ConsumedAt == null &&
+            item.FamilyId == familyId && item.TokenHash == tokenHash &&
             item.RevokedAt == null, cancellationToken);
         if (!exists) return false;
         var now = clock.GetUtcNow();
         await RevokeFamilyAsync(familyId, now, cancellationToken);
         database.AuditEvents.Add(Audit("auth.logout", userId, traceId, now));
         await database.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return true;
     }
+
+    public async Task<BrowserAuthTokens?> BrowserLoginAsync(AccountType role, string contactType,
+        string contact, string password, string traceId, CancellationToken cancellationToken)
+    {
+        if (role is not (AccountType.Customer or AccountType.VenueOperator)) return null;
+        var tokens = await LoginForPortalAsync(contactType, contact, password, traceId, false, cancellationToken, role);
+        if (tokens is null) return null;
+        var activity = await database.RefreshSessions.Where(item => item.TokenHash == HashToken(tokens.RefreshToken))
+            .Select(item => item.LastActivityAt).SingleAsync(cancellationToken);
+        return new(tokens, activity!.Value.AddMinutes(30));
+    }
+
+    public async Task<BrowserAuthTokens?> RestoreBrowserAsync(AccountType role, string refreshToken,
+        bool activity, string traceId, CancellationToken cancellationToken)
+    {
+        if (refreshToken.Length is < 32 or > 256 || role is not (AccountType.Customer or AccountType.VenueOperator)) return null;
+        var hash = HashToken(refreshToken);
+        var family = await database.RefreshSessions.AsNoTracking().Where(item => item.TokenHash == hash)
+            .Select(item => (Guid?)item.FamilyId).SingleOrDefaultAsync(cancellationToken);
+        if (family is null) return null;
+        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        await AcquireFamilyLockAsync(database, family.Value, cancellationToken);
+        var session = await database.RefreshSessions.SingleAsync(item => item.TokenHash == hash, cancellationToken);
+        await database.Entry(session).ReloadAsync(cancellationToken);
+        var user = await database.Users.AsNoTracking().SingleAsync(item => item.Id == session.UserId, cancellationToken);
+        var now = clock.GetUtcNow();
+        if (session.ConsumedAt is not null || session.RevokedAt is not null || user.AccountType != role) return null;
+        if (session.ExpiresAt <= now || session.LastActivityAt is null ||
+            session.LastActivityAt <= now.AddMinutes(-30) || !CanLogin(user))
+        {
+            await RevokeFamilyAsync(session.FamilyId, now, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return null;
+        }
+        if (activity)
+        {
+            session.LastActivityAt = now;
+            await database.SaveChangesAsync(cancellationToken);
+        }
+        await transaction.CommitAsync(cancellationToken);
+        var idle = session.LastActivityAt.Value.AddMinutes(30);
+        return new(Tokens(user, session.FamilyId, refreshToken, now, session.ExpiresAt),
+            idle < session.ExpiresAt ? idle : session.ExpiresAt);
+    }
+
+    public async Task LogoutBrowserAsync(AccountType role, string refreshToken, string traceId, CancellationToken cancellationToken)
+    {
+        if (refreshToken.Length is < 32 or > 256) return;
+        var hash = HashToken(refreshToken);
+        var lookup = await database.RefreshSessions.AsNoTracking().Where(item => item.TokenHash == hash && item.User.AccountType == role)
+            .Select(item => new { item.UserId, item.FamilyId }).SingleOrDefaultAsync(cancellationToken);
+        if (lookup is not null) await LogoutAsync(lookup.UserId, lookup.FamilyId, refreshToken, traceId, cancellationToken);
+    }
+
+    // Transaction-scoped family lock serializes replacement insertion and family revocation.
+    public static Task AcquireFamilyLockAsync(ShuttleBookDbContext database, Guid familyId, CancellationToken cancellationToken) =>
+        database.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({familyId.ToString()}, 771904))", cancellationToken);
 
     private Task<int> RevokeFamilyAsync(Guid familyId, DateTimeOffset now, CancellationToken cancellationToken) =>
         database.RefreshSessions.Where(item => item.FamilyId == familyId && item.RevokedAt == null)

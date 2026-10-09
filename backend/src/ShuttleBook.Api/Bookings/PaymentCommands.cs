@@ -33,6 +33,7 @@ public static partial class PaymentEndpoints
         var scope = await db.Bookings.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, ct);
         if (scope is null || (customerAction ? scope.CustomerId != actor!.Id : !await HasVenueScope(db, actor!.Id, scope.VenueId, ct)))
             return Error(http, 404, "NOT_FOUND");
+        id = await BookingGroup.AnchorId(db, id, ct) ?? throw new InvalidOperationException("Missing booking payment scope.");
         if (http.Request.Query.Count != 0) return Error(http, 400, "VALIDATION_FAILED");
         var keys = http.Request.Headers["Idempotency-Key"];
         if (keys.Count != 1 || string.IsNullOrEmpty(keys[0]) || keys[0]!.Length > 128 ||
@@ -51,8 +52,9 @@ public static partial class PaymentEndpoints
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var lockKey = $"{operation}:{actor!.Id}:{keys[0]}";
         await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({lockKey},0))", ct);
-        var booking = await db.Bookings.FromSqlInterpolated($"SELECT * FROM bookings WHERE id={id} FOR UPDATE").SingleOrDefaultAsync(ct);
-        if (booking is null) return Error(http, 404, "NOT_FOUND");
+        var group = await BookingGroup.Lock(db, scope, ct);
+        if (group is null) return Error(http, 404, "NOT_FOUND");
+        var booking = group.Anchor;
         var user = await db.Users.FromSqlInterpolated($"SELECT * FROM users WHERE id={actor.Id} FOR SHARE").AsNoTracking().SingleOrDefaultAsync(ct);
         if (user is null || user.Status != UserStatus.Active) return Error(http, 401, "UNAUTHORIZED");
         if (user.AccountType != requiredType) return Error(http, 403, "FORBIDDEN");
@@ -74,6 +76,7 @@ public static partial class PaymentEndpoints
             return Ok(http, await BookingReadModel.Data(db, id, !customerAction, ct, clock.GetUtcNow()));
         }
         if (booking.Version != version) return Error(http, 412, "PRECONDITION_FAILED");
+        if (!group.Consistent) return Error(http, 409, "STATE_CONFLICT");
         var payment = await db.BookingPayments.FromSqlInterpolated($"SELECT * FROM payments WHERE booking_id={id} FOR UPDATE").SingleAsync(ct);
         var now = clock.GetUtcNow(); // Must be sampled after waiting for the booking lock.
         var reported = booking.Status == "AWAITING_OWNER_CONFIRMATION" && payment.Status == "TRANSFER_REPORTED";
@@ -124,9 +127,8 @@ public static partial class PaymentEndpoints
                 }
                 else
                 {
-                    var allocation = await db.CourtAllocations.FromSqlInterpolated($"SELECT * FROM court_allocations WHERE id={booking.AllocationId} FOR UPDATE").SingleAsync(ct);
                     booking.Status = "PAYMENT_REJECTED"; payment.Status = "REJECTED";
-                    allocation.Status = "RELEASED"; allocation.ReleasedAt = now;
+                    await group.Release(db, now, ct);
                     eventType = "PAYMENT_REJECTED"; auditAction = "payment.rejected";
                 }
                 payload = JsonSerializer.Serialize(new { reason = input.Reason }, Json);
@@ -134,7 +136,7 @@ public static partial class PaymentEndpoints
                     Resolution = input.Resolution!, ReasonCode = input.ReasonCode, Reason = input.Reason, DecidedAt = now });
             }
         }
-        booking.Version++;
+        group.SetStatus(booking.Status);
         db.BookingIdempotency.Add(new BookingIdempotency { ActorUserId = actor.Id, Operation = operation, Key = keys[0]!,
             BookingId = id, RequestHash = hash, CreatedAt = now });
         db.AuditEvents.Add(new AuditEvent { ActorUserId = actor.Id, Action = auditAction, EntityType = "booking",

@@ -1,3 +1,4 @@
+using ShuttleBook.Infrastructure.Bookings;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -161,7 +162,7 @@ public static class PublicVenuesEndpoints
         {
             var first = candidates.Min(x => x.StartsAtUtc);
             var last = candidates.Max(x => x.EndsAtUtc);
-            allocations = await db.CourtAllocations.AsNoTracking().Where(x => ids.Contains(x.CourtId) &&
+            allocations = await QuoteReservations.Active(db, now).AsNoTracking().Where(x => ids.Contains(x.CourtId) &&
                 x.Status == "RESERVED" && x.StartsAt < last && x.EndsAt > first).ToListAsync(ct);
         }
         var byCourt = candidates.GroupBy(x => x.CourtId).ToDictionary(g => g.Key, g => g.ToList());

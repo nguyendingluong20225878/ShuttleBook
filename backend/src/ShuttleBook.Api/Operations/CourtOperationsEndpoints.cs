@@ -1,3 +1,4 @@
+using ShuttleBook.Infrastructure.Bookings;
 using System.Globalization;
 using System.Security.Claims;
 using System.Text.Json;
@@ -226,6 +227,7 @@ public static class CourtOperationsEndpoints
         var endsAt = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(localEnd, zone), TimeSpan.Zero);
         if (startsAt <= clock.GetUtcNow() || endsAt <= startsAt)
             return Problem(http, 400, "VALIDATION_FAILED");
+        await QuoteReservations.CleanupCourt(db, courtId, clock.GetUtcNow(), ct);
         if (await db.CourtAllocations.AnyAsync(x => x.CourtId == courtId && x.Status == "RESERVED" &&
             x.StartsAt < endsAt && x.EndsAt > startsAt, ct))
             return Problem(http, 409, "SLOT_CONFLICT");

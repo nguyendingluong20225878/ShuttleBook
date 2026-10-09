@@ -29,6 +29,8 @@ public sealed class Booking
     public Guid VenueId { get; set; }
     public Guid CourtId { get; set; }
     public Guid AllocationId { get; set; }
+    public Guid? SeriesId { get; set; }
+    public Guid PaymentScopeId { get; set; }
     public string BookingType { get; set; } = "CASUAL";
     public string Status { get; set; } = "AWAITING_TRANSFER";
     public string VenueName { get; set; } = "";
@@ -54,6 +56,7 @@ public sealed class BookingPayment
 {
     public Guid Id { get; set; } = Guid.CreateVersion7();
     public Guid BookingId { get; set; }
+    public Guid PaymentScopeId { get; set; }
     public string Status { get; set; } = "AWAITING_TRANSFER";
     public long ExpectedAmount { get; set; }
     public string RecipientSnapshot { get; set; } = "{}";
@@ -65,6 +68,42 @@ public sealed class BookingPayment
     public Guid? ConfirmedBy { get; set; }
     public DateTimeOffset? ConfirmedAt { get; set; }
     public DateTimeOffset? ConfirmationAlertedAt { get; set; }
+}
+
+public sealed class BookingSeries
+{
+    public Guid Id { get; set; } = Guid.CreateVersion7();
+    public string SeriesNo { get; set; } = "";
+    public Guid CustomerId { get; set; }
+    public Guid VenueId { get; set; }
+    public Guid CourtId { get; set; }
+    public DateOnly StartsOn { get; set; }
+    public DateOnly EndsOn { get; set; }
+    public int DayOfWeek { get; set; }
+    public TimeOnly LocalStart { get; set; }
+    public int DurationMinutes { get; set; }
+    public int OccurrenceCount { get; set; }
+    public string Timezone { get; set; } = "";
+    public string PaymentPlan { get; set; } = "FULL_SERIES";
+    public long Amount { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+public sealed class BookingSeriesQuote
+{
+    public Guid Id { get; set; } = Guid.CreateVersion7();
+    public Guid CourtId { get; set; }
+    public Guid VenueId { get; set; }
+    public DateOnly StartsOn { get; set; }
+    public DateOnly EndsOn { get; set; }
+    public int DayOfWeek { get; set; }
+    public TimeOnly LocalStart { get; set; }
+    public int DurationMinutes { get; set; }
+    public long Amount { get; set; }
+    public string Fingerprint { get; set; } = "";
+    public string Occurrences { get; set; } = "[]";
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset ExpiresAt { get; set; }
 }
 
 public sealed class BookingIdempotency

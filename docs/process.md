@@ -55,7 +55,7 @@ Ghi ngày, môi trường, lệnh, PASS/FAIL/NOT RUN/BLOCKED và lý do. Không 
 | F08 | Mời nhân viên và phân quyền cơ sở | F01–F03, tái kiểm tra F06 |
 | F09 | Báo cáo/chức năng tùy chọn, backup/restore, giám sát, chuẩn bị production | Luồng chính đã nghiệm thu |
 
-F02–F03 phải có owner hoàn tất hồ sơ và gửi duyệt trong luồng tích hợp. F05–F06 phải hoàn chỉnh trước khi nhận booking thật. Staff invitation thuộc phạm vi MVP dù triển khai sau owner flow. Không có feature check-in/check-out.
+F02–F03 phải có owner hoàn tất hồ sơ và gửi duyệt trong luồng tích hợp. F05–F06 phải hoàn chỉnh trước khi nhận booking thật. Theo quyết định người dùng 2026-10-09, **F08 tạm hoãn (DEFERRED)**: phạm vi nghiệm thu hiện tại chỉ chủ sân vận hành, không phân quyền nhân viên. F08 vẫn nằm trên roadmap, không coi là DONE và không chặn nghiệm thu MVP owner trong đợt này. Không có feature check-in/check-out.
 
 ## Những điểm chưa chốt
 
@@ -65,7 +65,7 @@ F02–F03 phải có owner hoàn tất hồ sơ và gửi duyệt trong luồng 
 | Hạn chuyển khoản, bằng chứng bắt buộc, booking horizon, giá quote thay đổi | F05 |
 | Booking thiếu transition bổ sung evidence từ NEEDS_REVIEW; sequence từ chối còn gửi notification trực tiếp | F06: đồng bộ state machine và outbox trước code |
 | SLA xác nhận đã chốt 30 phút, owner + Admin một lần, không release; in-app bắt buộc | F06: kiểm thử Worker/idempotency; email/SMS/Zalo còn tùy chọn |
-| Thanh toán series từng buổi/tháng/cả kỳ, số occurrence tối đa và liên kết payment nhiều booking | F07 |
+| F07 đã duyệt 2026-10-07: FULL_SERIES 100% một QR/xác nhận, horizon60 ngày/max12 buổi, quote120s/holdMinutes; hết hạn chưa báo chuyển giải phóng cả kỳ | Triển khai và kiểm thử F07 theo designer notes |
 | Revision QR/tài khoản sau publish; QR hiện hành cho booking mới trong lúc chờ duyệt | F02–F03 |
 
 Các điểm này không chặn F00. Không tạo trước schema/payment policy dựa trên giả định chưa được người dùng chốt.

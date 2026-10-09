@@ -1,8 +1,8 @@
 import { FormEvent, StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './admin.css';
-import { AdminApprovals } from './AdminApprovals';
-import { AdminNotifications } from './AdminNotifications';
+import { AdminWorkspace } from './features/workspace/AdminWorkspace';
+import { AdminIcon } from './components/AdminIcon';
 
 type ContactType = 'email' | 'phone';
 type Session = { accessToken: string; refreshToken: string; expiresAt: number };
@@ -10,7 +10,7 @@ type AuthPayload = { data?: { tokenType?: string; accessToken?: string; refreshT
   expiresInSeconds?: number; user?: { accountType?: string; status?: string } } };
 type MePayload = { data?: { accountType?: string; status?: string } };
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5080';
-let restoreRequest: Promise<Response> | null = null;
+let restoreRequest: Promise<Session | null> | null = null;
 
 async function post(path: string, body: object, bearer?: string): Promise<Response> {
   return fetch(`${apiBaseUrl}/api/v1/${path}`, {
@@ -55,8 +55,8 @@ function AdminPortal() {
 
   useEffect(() => {
     let cancelled = false;
-    if (!restoreRequest) restoreRequest = post('admin-auth/restore', {});
-    void restoreRequest.then(readSession).then(next => {
+    if (!restoreRequest) restoreRequest = post('admin-auth/restore', {}).then(readSession);
+    void restoreRequest.then(next => {
       if (cancelled) return;
       if (next) { lastActivity.current = Date.now(); lastServerActivity.current = Date.now(); setSession(next); }
     }).catch(() => {}).finally(() => { if (!cancelled) setRestoring(false); });
@@ -188,25 +188,23 @@ function AdminPortal() {
     }
   }
 
-  return <main className="admin-page">
-    <header className="admin-brand">ShuttleBook <span>Quản trị</span></header>
+  if (!restoring && session) return <AdminWorkspace accessToken={session.accessToken} busy={busy} onLogout={() => void logout()} />;
+
+  return <main className="admin-page admin-auth-page">
+    <header className="admin-brand"><AdminIcon name="brand" />ShuttleBook <small>Quản trị</small></header>
     <section className="admin-card">
       <p className="admin-eyebrow">CỔNG QUẢN TRỊ NỀN TẢNG</p>
       <h1>Quản trị ShuttleBook.</h1>
-      {restoring ? <p>Đang kiểm tra phiên quản trị…</p> : session ? <>
-        <p className="admin-description">Bạn đã đăng nhập với tài khoản quản trị.</p>
-        <AdminApprovals accessToken={session.accessToken} />
-        <AdminNotifications accessToken={session.accessToken} />
-        <button type="button" onClick={logout} disabled={busy}>{busy ? 'Đang đăng xuất…' : 'Đăng xuất'}</button>
-      </> : <>
+      {restoring ? <p role="status" className="admin-state">Đang kiểm tra phiên quản trị…</p> : <>
         <p className="admin-description">Đăng nhập bằng tài khoản Admin đã được khởi tạo qua quy trình vận hành nội bộ.</p>
-        <form onSubmit={login} noValidate>
+        <form onSubmit={login} noValidate aria-busy={busy}>
           <label htmlFor="contact-type">Phương thức liên hệ</label>
           <select id="contact-type" value={contactType} onChange={event => setContactType(event.target.value as ContactType)} disabled={busy}>
             <option value="email">Email</option><option value="phone">Số điện thoại</option>
           </select>
           <label htmlFor="contact">{contactType === 'email' ? 'Email' : 'Số điện thoại E.164'}</label>
           <input id="contact" type={contactType === 'email' ? 'email' : 'tel'} autoComplete="username" value={contact}
+            placeholder={contactType === 'email' ? 'admin@example.com' : '+84901234567'}
             onChange={event => setContact(event.target.value)} disabled={busy} />
           <label htmlFor="password">Mật khẩu</label>
           <input id="password" type="password" autoComplete="current-password" value={password}

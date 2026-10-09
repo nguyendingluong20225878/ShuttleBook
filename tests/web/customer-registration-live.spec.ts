@@ -27,6 +27,7 @@ async function newestCode(contact: string, exceptId?: string): Promise<{ id: str
 }
 
 test('customer registration works through browser, API, PostgreSQL and Mailpit', async ({ page }) => {
+  test.setTimeout(120_000);
   const ready = await fetch(`${api}/health/ready`);
   expect(ready.status).toBe(200);
   await page.route('**/*', route => {
@@ -52,7 +53,11 @@ test('customer registration works through browser, API, PostgreSQL and Mailpit',
   expect(registerRequests).toHaveLength(0);
 
   await page.getByLabel('Nhập lại mật khẩu').fill(password);
-  await page.getByRole('button', { name: 'Đăng ký', exact: true }).last().click();
+  const [registered] = await Promise.all([
+    page.waitForResponse(response => response.url().endsWith('/api/v1/auth/register') && response.request().method() === 'POST', { timeout: 20_000 }),
+    page.getByRole('button', { name: 'Đăng ký', exact: true }).last().click(),
+  ]);
+  expect(registered.status()).toBe(202);
   await expect(page.getByRole('heading', { name: 'Xác minh tài khoản khách' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Mailpit' })).toHaveCount(0);
   expect(registerRequests).toHaveLength(1);
@@ -66,7 +71,11 @@ test('customer registration works through browser, API, PostgreSQL and Mailpit',
   await page.getByRole('button', { name: 'Xác minh', exact: true }).click();
   await expect(page.getByRole('status')).toContainText('không hợp lệ');
 
-  await page.getByRole('button', { name: 'Gửi lại mã' }).click();
+  const [resent] = await Promise.all([
+    page.waitForResponse(response => response.url() === `${api}/api/v1/auth/verification-resend` && response.request().method() === 'POST', { timeout: 20_000 }),
+    page.getByRole('button', { name: 'Gửi lại mã' }).click(),
+  ]);
+  expect(resent.status()).toBe(202);
   await expect(page.getByRole('status')).toContainText('mã mới đã được gửi');
   await expect.poll(async () => Boolean(await newestCode(contact, first!.id))).toBe(true);
   const second = await newestCode(contact, first!.id);
@@ -110,11 +119,14 @@ test('customer registration reports invalid contact and weak password', async ({
   await page.getByLabel('Mật khẩu', { exact: true }).fill('F011-Valid-password-2026!');
   await page.getByLabel('Nhập lại mật khẩu').fill('F011-Valid-password-2026!');
   await page.getByRole('button', { name: 'Đăng ký', exact: true }).last().click();
-  await expect(page.getByRole('status')).toContainText('Thông tin chưa hợp lệ');
+  await expect(page.getByLabel('Email', { exact: true })).toBeFocused();
+  expect(await page.getByLabel('Email', { exact: true }).evaluate(element => (element as HTMLInputElement).validity.typeMismatch)).toBe(true);
+  expect(registerRequests).toHaveLength(0);
   await page.getByLabel('Email', { exact: true }).fill(contact);
   await page.getByLabel('Mật khẩu', { exact: true }).fill('abcdefghijkl');
   await page.getByLabel('Nhập lại mật khẩu').fill('abcdefghijkl');
   await page.getByRole('button', { name: 'Đăng ký', exact: true }).last().click();
   await expect(page.getByRole('status')).toContainText('Thông tin chưa hợp lệ');
+  expect(registerRequests).toHaveLength(1);
   await expect(page.getByRole('heading', { name: 'Tạo tài khoản khách' })).toBeVisible();
 });

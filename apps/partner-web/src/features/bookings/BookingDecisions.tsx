@@ -84,6 +84,7 @@ export function BookingDecisions({ booking, request, onUpdated, onBusy, onUnavai
   }
   return <form className="payment-decision-form" onSubmit={submit} aria-label="Quyết định thanh toán">
     <h4>Quyết định thanh toán</h4><p>Tổng tiền cần đối chiếu: <strong>{money(expectedAmount)}</strong>. Chỉ xác nhận sau khi bạn đã kiểm tra giao dịch ngân hàng.</p>
+    {booking.series && <p className="decision-guidance">Quyết định áp dụng cho toàn bộ {booking.series.occurrenceCount} buổi trong kỳ. Xác nhận một lần khi đã nhận đủ 100% tổng tiền cả kỳ.</p>}
     {error && <p className="feedback error" role="alert">{error}</p>}
     {stale && <p>Hãy tải lại đơn và xem trạng thái mới. Hệ thống sẽ không tự gửi lại quyết định.</p>}
     <fieldset disabled={busy || stale}>
@@ -98,9 +99,10 @@ export function BookingDecisions({ booking, request, onUpdated, onBusy, onUnavai
         <label>Lý do đối chiếu <select value={reasonCode} onChange={e => setReasonCode(e.target.value)}>
           {reasonCodes.map(([code, label]) => <option key={code} value={code}>{label}</option>)}</select></label>
         <label>Nội dung gửi khách <textarea required maxLength={1000} value={reason} onChange={e => setReason(e.target.value)} /></label>
-        {action === 'NEEDS_REVIEW' ? <p className="decision-guidance">Khách sẽ nhận yêu cầu bổ sung. Sân tiếp tục được giữ và không hết hạn theo hạn chuyển khoản cũ.</p>
+        {action === 'NEEDS_REVIEW' ? <p className="decision-guidance">Khách sẽ nhận yêu cầu bổ sung. {booking.series ? 'Tất cả buổi trong kỳ tiếp tục được giữ' : 'Sân tiếp tục được giữ'} và không hết hạn theo hạn chuyển khoản cũ.</p>
           : <label className="confirm-rejection"><input type="checkbox" checked={confirmedRejection} onChange={e => setConfirmedRejection(e.target.checked)} />
-            Tôi xác nhận không chấp nhận giao dịch và giải phóng khung giờ của đơn này. Quyết định là cuối cùng.</label>}
+            {booking.series ? `Tôi xác nhận không chấp nhận giao dịch và giải phóng toàn bộ ${booking.series.occurrenceCount} buổi trong kỳ. Quyết định là cuối cùng.`
+              : 'Tôi xác nhận không chấp nhận giao dịch và giải phóng khung giờ của đơn này. Quyết định là cuối cùng.'}</label>}
       </>}
       <button type="submit" className={action === 'FINAL_REJECTION' ? 'danger-action' : ''}>
         {busy ? 'Đang gửi quyết định…' : action === 'CONFIRMED' ? 'Xác nhận đã nhận đủ tiền' : action === 'NEEDS_REVIEW' ? 'Gửi yêu cầu bổ sung' : 'Xác nhận từ chối cuối cùng'}

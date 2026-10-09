@@ -1,10 +1,22 @@
 import { expect, test } from '@playwright/test';
+import { browserSessionFields, browserSessionRoute } from './helpers/browser-session';
+
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/v1/browser-auth/**', async route => {
+    if (!(await browserSessionRoute(route, page))) await route.fallback();
+  });
+});
 
 test('partner can register, verify, log in and log out without persisting tokens in the browser', async ({ page }) => {
   const requests: { path: string; body: unknown }[] = [];
   await page.route('http://localhost:5080/api/v1/**', async route => {
+    if (route.request().url().endsWith('/browser-auth/partner/logout') && route.request().method() === 'POST') {
+      const body = route.request().postDataJSON(); expect(body).toEqual({});
+      requests.push({ path: '/api/v1/browser-auth/partner/logout', body });
+    }
+    if (await browserSessionRoute(route, page)) return;
     const request = route.request();
-    const corsHeaders = { 'Access-Control-Allow-Origin': 'http://localhost:5174',
+    const corsHeaders = { 'Access-Control-Allow-Origin': 'http://localhost:5174', 'Access-Control-Allow-Credentials': 'true',
       'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, Authorization' };
     if (request.method() === 'OPTIONS') {
       await route.fulfill({ status: 204, headers: corsHeaders, body: '' });
@@ -19,18 +31,14 @@ test('partner can register, verify, log in and log out without persisting tokens
     } else if (path === '/api/v1/partner-auth/verify') {
       await route.fulfill({ status: 200, contentType: 'application/json', headers: corsHeaders,
         body: JSON.stringify({ data: { verified: true } }) });
-    } else if (path === '/api/v1/auth/login') {
+    } else if (path === '/api/v1/browser-auth/partner/login') {
       await route.fulfill({ status: 200, contentType: 'application/json', headers: corsHeaders, body: JSON.stringify({
-        data: { accessToken: 'test-access-token', refreshToken: 'test-refresh-token',
+        data: { accessToken: 'test-access-token', ...browserSessionFields(),
           user: { accountType: 'VENUE_OPERATOR', status: 'PENDING_ONBOARDING' } }
       }) });
     } else if (path === '/api/v1/partner-onboarding/businesses') {
       await route.fulfill({ status: 200, contentType: 'application/json', headers: corsHeaders,
         body: JSON.stringify({ data: [] }) });
-    } else if (path === '/api/v1/auth/logout') {
-      expect(request.headers().authorization).toBe('Bearer test-access-token');
-      expect(body).toEqual({ refreshToken: 'test-refresh-token' });
-      await route.fulfill({ status: 204, headers: corsHeaders, body: '' });
     } else {
       await route.fulfill({ status: 404, body: '' });
     }
@@ -55,15 +63,17 @@ test('partner can register, verify, log in and log out without persisting tokens
   await page.getByRole('button', { name: 'Đăng xuất' }).click();
   await expect(page.getByRole('heading', { name: 'Đăng nhập chủ sân' })).toBeVisible();
   const paths = requests.map(request => request.path);
-  expect(paths.slice(0, 3)).toEqual(['/api/v1/partner-auth/register', '/api/v1/partner-auth/verify', '/api/v1/auth/login']);
+  const actions = paths.filter(path => !path.endsWith('/restore'));
+  expect(actions.slice(0, 3)).toEqual(['/api/v1/partner-auth/register', '/api/v1/partner-auth/verify', '/api/v1/browser-auth/partner/login']);
   // Startup business and notification reads are independent; assert each exactly once without ordering them.
-  expect(paths.slice(3, -1).sort()).toEqual(['/api/v1/me/notifications/', '/api/v1/partner-onboarding/businesses'].sort());
-  expect(paths.at(-1)).toBe('/api/v1/auth/logout');
+  expect(actions.slice(3, -1).sort()).toEqual(['/api/v1/me/notifications/', '/api/v1/partner-onboarding/businesses'].sort());
+  expect(paths.at(-1)).toBe('/api/v1/browser-auth/partner/logout');
 });
 
 test('partner registration catches mismatched passwords before making an API request', async ({ page }) => {
   let requested = false;
   await page.route('http://localhost:5080/api/v1/**', async route => {
+    if (await browserSessionRoute(route, page)) return;
     requested = true;
     await route.fulfill({ status: 500, body: '' });
   });
@@ -77,14 +87,15 @@ test('partner registration catches mismatched passwords before making an API req
 });
 
 test('partner portal rejects an unexpected Admin session response', async ({ page }) => {
-  await page.route('http://localhost:5080/api/v1/auth/login', async route => {
-    const headers = { 'Access-Control-Allow-Origin': 'http://localhost:5174',
+  await page.route('http://localhost:5080/api/v1/browser-auth/partner/login', async route => {
+    if (await browserSessionRoute(route, page)) return;
+    const headers = { 'Access-Control-Allow-Origin': 'http://localhost:5174', 'Access-Control-Allow-Credentials': 'true',
       'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' };
     if (route.request().method() === 'OPTIONS') {
       await route.fulfill({ status: 204, headers });
     } else {
       await route.fulfill({ status: 200, contentType: 'application/json', headers,
-        body: JSON.stringify({ data: { accessToken: 'admin-access', refreshToken: 'admin-refresh',
+        body: JSON.stringify({ data: { accessToken: 'admin-access', ...browserSessionFields(),
           user: { accountType: 'ADMIN', status: 'ACTIVE' } } }) });
     }
   });

@@ -4,6 +4,6 @@ export function navigate(path: string, replace = false, state: unknown = null) {
 }
 export function safeReturnTo() {
   const value = new URLSearchParams(location.search).get('returnTo');
-  if (!value || !/^\/(venues(?:\/|\?|$)|booking-review\?|bookings\/|me\/(?:bookings|notifications)(?:\?|$))/.test(value) || value.startsWith('//')) return '/venues';
+  if (!value || !/^\/(venues(?:\/|\?|$)|booking-review\?|series-review(?:\?|$)|bookings\/|me\/(?:bookings|notifications)(?:\?|$))/.test(value) || value.startsWith('//')) return '/venues';
   return value;
 }

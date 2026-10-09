@@ -81,14 +81,16 @@ Nếu sử dụng `datlich.tenmien.vn` cho chiến dịch hoặc tên miền cũ
 
 ## Chính sách đã chốt
 
+- Cập nhật theo yêu cầu 2026-10-08: báo giá hợp lệ giữ chỗ tạm đến expiresAt (mặc định2phút), áp dụng vãng lai và toàn kỳ cố định. Cần Customer ACTIVE; guest vẫn xem lịch. Hết hạn các ô trở về trống; create chuyển hold sang booking nguyên tử. [Contract](./features/F07-quote-reservations.md).
+
 - F05: quote có hiệu lực 2 phút; đặt trước tối đa 60 ngày theo múi giờ venue; hạn chuyển khoản theo holdMinutes snapshot từng sân (mặc định 20 phút).
 - F06 (nghiệm thu 2026-10-07): bỏ ô mã giao dịch ở customer/owner; API vẫn nhận mã tùy chọn để tương thích lịch sử cũ. Khách có thể gửi ảnh chụp màn hình chuyển khoản/ghi chú; chỉ xác nhận đúng tổng tiền. Sau 30 phút từ báo chuyển đầu tiên, owner + Admin nhận một cảnh báo; NEEDS_REVIEW vẫn giữ sân, bổ sung không reset SLA.
 - In-app là kênh bắt buộc qua transactional outbox; email/SMS/Zalo bổ sung sau.
+- F07 (duyệt 2026-10-07): FULL_SERIES thu 100% cả kỳ bằng một QR, owner xác nhận một lần cho mọi buổi. Cửa sổ trong 60 ngày địa phương, tối đa 12 buổi, ít nhất một tháng lịch. Quote120s; giữ cả kỳ theo holdMinutes sân; hết hạn chưa báo chuyển giải phóng cả kỳ, đã báo chuyển/NEEDS_REVIEW không tự giải phóng.
 
-## Các quyết định business còn cần chốt
+## Contract F07
 
-- Lịch cố định thanh toán từng buổi, theo tháng hay toàn bộ series?
-- Series dài tối đa bao lâu và bao nhiêu occurrence?
+Chi tiết dữ liệu, API/error, payment anchor và lock ở [thiết kế F07](./features/F07-designer-notes.md). Phê duyệt chính sách không đồng nghĩa feature đã hoàn tất; bằng chứng và phần còn mở theo `progress.md`.
 
 ## Trạng thái thiết kế
 

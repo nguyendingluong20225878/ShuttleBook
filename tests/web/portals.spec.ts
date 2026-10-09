@@ -1,4 +1,9 @@
 import { expect, test } from '@playwright/test';
+import { browserSessionRoute } from './helpers/browser-session';
+
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/v1/browser-auth/**', async route => { if (!(await browserSessionRoute(route, page))) await route.fallback(); });
+});
 
 const portals = [
   { port: 5173, title: 'ShuttleBook — Khách đặt sân', heading: 'ShuttleBook' },

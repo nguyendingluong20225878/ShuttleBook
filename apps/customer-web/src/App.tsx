@@ -5,6 +5,7 @@ import { useLayoutEffect, useState } from 'react';
 import { BookingDetail, BookingReview, MyBookings } from './features/bookings/BookingPages';
 import { navigate } from './routes/navigation';
 import { CustomerNotificationsPage } from './features/notifications/CustomerNotifications';
+import { SeriesReview } from './features/bookings/SeriesReview';
 
 export function App() {
   const [url, setUrl] = useState(location.pathname + location.search);
@@ -21,6 +22,7 @@ export function App() {
   }, []);
   const path = url.split('?')[0];
   if (path === '/booking-review') return <BookingReview key={url} />;
+  if (path === '/series-review') return <SeriesReview key={url} />;
   if (path === '/me/bookings') return <MyBookings />;
   if (path === '/me/notifications') return <CustomerNotificationsPage />;
   const booking = /^\/bookings\/([^/]+)\/?$/.exec(path);

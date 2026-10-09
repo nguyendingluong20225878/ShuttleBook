@@ -410,23 +410,77 @@ public static class OnboardingEndpoints
         return Ok(http, new { approval.Id, approval.Kind, approval.Status, venueId });
     }
 
+    private sealed record ApprovalCursor(int Version, DateTimeOffset SubmittedAt, Guid Id, string Query, string Kind);
+
     private static async Task<IResult> ListApprovals(HttpContext http, ShuttleBookDbContext db, CancellationToken ct)
     {
         if (!Admin(await UserAsync(http, db, ct))) return Problem(http, 403, "FORBIDDEN");
-        var rows = await (from a in db.ApprovalRequests where a.Status == "PENDING"
-            join b in db.Businesses on a.BusinessId equals b.Id
-            orderby a.SubmittedAt select new { a.Id, a.BusinessId, businessName = b.Name, a.Kind, a.Status, a.SubmittedAt })
-            .Take(100).ToListAsync(ct);
-        return Ok(http, rows);
+        var query = from a in db.ApprovalRequests.AsNoTracking() where a.Status == "PENDING"
+            join b in db.Businesses.AsNoTracking() on a.BusinessId equals b.Id
+            select new { a.Id, a.BusinessId, businessName = b.Name, a.Kind, a.Status, a.SubmittedAt };
+        // Preserve the original response for clients deployed before the paged queue.
+        if (http.Request.Query.Count == 0)
+            return Ok(http, await query.OrderBy(x => x.SubmittedAt).ThenBy(x => x.Id).Take(100).ToListAsync(ct));
+        var parameters = http.Request.Query;
+        if (parameters.Any(x => x.Value.Count != 1 || !new[] { "paged", "q", "kind", "limit", "before" }.Contains(x.Key)) ||
+            !string.Equals(parameters["paged"].ToString(), "true", StringComparison.OrdinalIgnoreCase))
+            return Problem(http, 400, "VALIDATION_FAILED");
+        var q = parameters["q"].ToString().Trim(); var kind = parameters["kind"].ToString();
+        var limit = 20;
+        if (q.Length > 120 || (kind.Length > 0 && kind is not ("ONBOARDING" or "VENUE_REVISION")) ||
+            (parameters.ContainsKey("limit") && (!int.TryParse(parameters["limit"], out limit) || limit is < 1 or > 100)))
+            return Problem(http, 400, "VALIDATION_FAILED");
+        ApprovalCursor? cursor = null;
+        if (parameters.ContainsKey("before"))
+        {
+            var value = parameters["before"].ToString();
+            if (value.Length is < 1 or > 2048) return Problem(http, 400, "VALIDATION_FAILED");
+            try { cursor = JsonSerializer.Deserialize<ApprovalCursor>(Microsoft.AspNetCore.WebUtilities.WebEncoders.Base64UrlDecode(value), Json); }
+            catch (Exception error) when (error is FormatException or JsonException or ArgumentException)
+            { return Problem(http, 400, "VALIDATION_FAILED"); }
+            if (cursor is null || cursor.Version != 1 || cursor.Id == Guid.Empty || cursor.SubmittedAt == default ||
+                cursor.SubmittedAt.Offset != TimeSpan.Zero || cursor.Query != q || cursor.Kind != kind)
+                return Problem(http, 400, "VALIDATION_FAILED");
+        }
+        await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, ct);
+        var pendingCount = await query.CountAsync(ct);
+        if (q.Length > 0)
+        {
+            var pattern = "%" + q.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+            query = query.Where(x => EF.Functions.ILike(x.businessName, pattern, "\\"));
+        }
+        if (kind.Length > 0) query = query.Where(x => x.Kind == kind);
+        var totalCount = await query.CountAsync(ct);
+        if (cursor is not null)
+        {
+            var afterTime = cursor.SubmittedAt; var afterId = cursor.Id;
+            query = query.Where(x => x.SubmittedAt > afterTime || (x.SubmittedAt == afterTime && x.Id.CompareTo(afterId) > 0));
+        }
+        var rows = await query.OrderBy(x => x.SubmittedAt).ThenBy(x => x.Id).Take(limit + 1).ToListAsync(ct);
+        var items = rows.Take(limit).ToArray();
+        var nextCursor = rows.Count > limit ? Microsoft.AspNetCore.WebUtilities.WebEncoders.Base64UrlEncode(
+            JsonSerializer.SerializeToUtf8Bytes(new ApprovalCursor(1, items[^1].SubmittedAt, items[^1].Id, q, kind), Json)) : null;
+        await tx.CommitAsync(ct);
+        return Ok(http, new { items, nextCursor, totalCount, pendingCount });
     }
 
     private static async Task<IResult> GetApproval(HttpContext http, ShuttleBookDbContext db, Guid requestId, CancellationToken ct)
     {
         if (!Admin(await UserAsync(http, db, ct))) return Problem(http, 403, "FORBIDDEN");
-        var approval = await db.ApprovalRequests.SingleOrDefaultAsync(a => a.Id == requestId, ct);
+        var approval = await db.ApprovalRequests.AsNoTracking().SingleOrDefaultAsync(a => a.Id == requestId, ct);
         if (approval is null) return Problem(http, 404, "NOT_FOUND");
+        object? current = null;
+        if (approval.Kind == "VENUE_REVISION" && approval.VenueId is Guid venueId)
+        {
+            current = await (from venue in db.Venues.AsNoTracking()
+                where venue.Id == venueId && venue.BusinessId == approval.BusinessId
+                join payment in db.VenuePaymentAccounts.AsNoTracking() on venue.Id equals payment.VenueId
+                select new { venueName = venue.Name, venue.Version, venue.Address, venue.Contact, venue.Timezone,
+                    venue.Latitude, venue.Longitude, payment.BankCode, payment.AccountName, payment.AccountNumber,
+                    payment.QrUploadId }).SingleOrDefaultAsync(ct);
+        }
         return Ok(http, new { approval.Id, approval.BusinessId, approval.VenueId, approval.Kind, approval.Status, approval.Snapshot,
-            approval.Reason, approval.SubmittedAt, approval.ReviewedAt });
+            approval.Reason, approval.SubmittedAt, approval.ReviewedAt, current });
     }
 
     private static async Task<IResult> Approve(HttpContext http, ShuttleBookDbContext db, Guid requestId, CancellationToken ct)

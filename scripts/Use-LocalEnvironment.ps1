@@ -21,7 +21,7 @@ $localEnvPath = Join-Path $projectRoot '.env'
 if (Test-Path -LiteralPath $localEnvPath) {
     $localConfig = @{}
     foreach ($line in [IO.File]::ReadAllLines($localEnvPath)) {
-        if ($line -match '^\s*(POSTGRES_DB|POSTGRES_USER|POSTGRES_PASSWORD|POSTGRES_PORT|IDENTITY_OTP_PEPPER|IDENTITY_JWT_SIGNING_KEY|ASPNETCORE_ENVIRONMENT|DOTNET_ENVIRONMENT|ASPNETCORE_URLS|VITE_API_BASE_URL|VITE_MAPTILER_API_KEY|AdminSession__AllowedOrigin|Media__Mode|Media__S3Region|Media__S3Bucket|Booking__QuoteSeconds|Booking__MaxAdvanceDays|Outbox__AlertAttempts)=(.*)$') {
+        if ($line -match '^\s*(POSTGRES_DB|POSTGRES_USER|POSTGRES_PASSWORD|POSTGRES_PORT|IDENTITY_OTP_PEPPER|IDENTITY_JWT_SIGNING_KEY|ASPNETCORE_ENVIRONMENT|DOTNET_ENVIRONMENT|ASPNETCORE_URLS|VITE_API_BASE_URL|VITE_MAPTILER_API_KEY|AdminSession__AllowedOrigin|BrowserSession__CustomerOrigin|BrowserSession__PartnerOrigin|Media__Mode|Media__S3Region|Media__S3Bucket|Booking__QuoteSeconds|Booking__MaxAdvanceDays|Outbox__AlertAttempts)=(.*)$') {
             $localConfig[$matches[1]] = $matches[2].Trim()
         }
     }
@@ -43,7 +43,7 @@ if (Test-Path -LiteralPath $localEnvPath) {
     }
     if (-not $env:Identity__OtpPepper) { $env:Identity__OtpPepper = $localConfig.IDENTITY_OTP_PEPPER }
     if (-not $env:Identity__JwtSigningKey) { $env:Identity__JwtSigningKey = $localConfig.IDENTITY_JWT_SIGNING_KEY }
-    foreach ($name in @('ASPNETCORE_ENVIRONMENT', 'DOTNET_ENVIRONMENT', 'ASPNETCORE_URLS', 'VITE_API_BASE_URL', 'VITE_MAPTILER_API_KEY', 'AdminSession__AllowedOrigin', 'Media__Mode', 'Media__S3Region', 'Media__S3Bucket', 'Booking__QuoteSeconds', 'Booking__MaxAdvanceDays', 'Outbox__AlertAttempts')) {
+    foreach ($name in @('ASPNETCORE_ENVIRONMENT', 'DOTNET_ENVIRONMENT', 'ASPNETCORE_URLS', 'VITE_API_BASE_URL', 'VITE_MAPTILER_API_KEY', 'AdminSession__AllowedOrigin', 'BrowserSession__CustomerOrigin', 'BrowserSession__PartnerOrigin', 'Media__Mode', 'Media__S3Region', 'Media__S3Bucket', 'Booking__QuoteSeconds', 'Booking__MaxAdvanceDays', 'Outbox__AlertAttempts')) {
         if ($localConfig.ContainsKey($name) -and -not [Environment]::GetEnvironmentVariable($name, 'Process')) {
             [Environment]::SetEnvironmentVariable($name, $localConfig[$name], 'Process')
         }

@@ -24,12 +24,12 @@ public static class BookingEndpoints
     public sealed record PriceSlot(string StartsAt, string EndsAt, long PricePerSlot);
     public sealed record Recipient(string BankCode, string AccountName, string AccountNumber, Guid QrUploadId,
         string ObjectKey, string ContentType, long SizeBytes, string Sha256Base64);
-    private sealed record Computed(Court Court, Venue Venue, DateTimeOffset Start, DateTimeOffset End,
+    internal sealed record Computed(Court Court, Venue Venue, DateTimeOffset Start, DateTimeOffset End,
         List<PriceSlot> Slots, long Amount, Recipient Recipient, string Fingerprint);
 
     public static void MapBookingEndpoints(this WebApplication app)
     {
-        app.MapPost("/api/v1/availability/quote", Quote).RequireRateLimiting("booking-quote");
+        app.MapPost("/api/v1/availability/quote", Quote).RequireAuthorization().RequireRateLimiting("booking-quote");
         app.MapPost("/api/v1/bookings", Create).RequireAuthorization().RequireRateLimiting("booking-create");
         app.MapGet("/api/v1/me/bookings", List).RequireAuthorization();
         app.MapGet("/api/v1/bookings/{id:guid}", Detail).RequireAuthorization();
@@ -39,12 +39,20 @@ public static class BookingEndpoints
     private static async Task<IResult> Quote(HttpContext http, ShuttleBookDbContext db, TimeProvider clock,
         IConfiguration config, CancellationToken ct)
     {
+        var (customer, authError) = await Customer(http, db, ct);
+        if (authError is not null) return authError;
         if (http.Request.Query.Count != 0) return Error(http, 400, "VALIDATION_FAILED");
         var (input, error) = await Read<QuoteInput>(http, ["courtId", "date", "startsAt", "endsAt"], ct);
         if (error is not null) return error;
         if (input!.CourtId == Guid.Empty || !DateOnly.TryParseExact(input.Date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date) ||
             !Time(input.StartsAt, out var start) || !Time(input.EndsAt, out var end)) return Error(http, 400, "VALIDATION_FAILED");
-        await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, ct);
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await QuoteReservations.LockCourt(db, input.CourtId, ct);
+        var current = await db.Users.FromSqlInterpolated($"SELECT * FROM users WHERE id={customer!.Id} FOR SHARE").AsNoTracking().SingleAsync(ct);
+        if (current.Status != UserStatus.Active) return Error(http, 401, "UNAUTHORIZED");
+        if (current.AccountType != AccountType.Customer) return Error(http, 403, "FORBIDDEN");
+        await QuoteReservations.CleanupCourt(db, input.CourtId, clock.GetUtcNow(), ct);
+        var priorDeadline = await QuoteReservations.ReplaceOwn(db, customer.Id, input.CourtId, clock.GetUtcNow(), ct);
         var (value, failure) = await Compute(db, input.CourtId, date, start, end, clock.GetUtcNow(), config, ct);
         if (failure is not null) return Error(http, failure == "NOT_FOUND" ? 404 : failure == "VALIDATION_FAILED" ? 400 : 409, failure);
         var now = clock.GetUtcNow();
@@ -53,8 +61,13 @@ public static class BookingEndpoints
             Amount = value.Amount, Slots = JsonSerializer.Serialize(value.Slots, Json), Fingerprint = value.Fingerprint,
             BookingBlockMinutes = value.Court.BookingBlockMinutes, MinimumBookingMinutes = value.Court.MinimumBookingMinutes,
             HoldMinutes = value.Court.HoldMinutes, CreatedAt = now,
-            ExpiresAt = now.AddSeconds(Math.Clamp(config.GetValue("Booking:QuoteSeconds", 120), 30, 600)) };
-        db.BookingQuotes.Add(q); await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
+            ExpiresAt = priorDeadline ?? now.AddSeconds(Math.Clamp(config.GetValue("Booking:QuoteSeconds", 120), 30, 600)) };
+        if (q.ExpiresAt <= clock.GetUtcNow()) return Error(http, 409, "QUOTE_EXPIRED");
+        db.BookingQuotes.Add(q);
+        QuoteReservations.Reserve(db, q.Id, customer.Id, q.CourtId, "CASUAL", now, q.ExpiresAt, [(q.StartsAt, q.EndsAt)]);
+        try { await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: "23P01" })
+        { await tx.RollbackAsync(ct); return Error(http, 409, "SLOT_UNAVAILABLE"); }
         return Ok(http, new { quoteId = q.Id, q.ExpiresAt, q.CourtId, q.VenueId, courtName = value.Court.Name,
             venueName = value.Venue.Name, q.Timezone, date = date.ToString("yyyy-MM-dd"), startsAt = q.StartsAt,
             endsAt = q.EndsAt, slots = value.Slots, q.Amount, currency = "VND", q.BookingBlockMinutes,
@@ -81,15 +94,19 @@ public static class BookingEndpoints
             x.Operation == "CASUAL_CREATE" && x.Key == key[0], ct);
         if (previous is not null)
         {
-            if (previous.RequestHash != hash) return Error(http, 409, "IDEMPOTENCY_KEY_REUSED");
             var replay = await db.Bookings.FromSqlInterpolated($"SELECT * FROM bookings WHERE id={previous.BookingId} FOR UPDATE").AsNoTracking().SingleAsync(ct);
             var replayUser = await db.Users.FromSqlInterpolated($"SELECT * FROM users WHERE id={customer.Id} FOR SHARE").AsNoTracking().SingleAsync(ct);
             if (replayUser.Status != UserStatus.Active) return Error(http, 401, "UNAUTHORIZED");
+            if (replayUser.AccountType != AccountType.Customer) return Error(http, 403, "FORBIDDEN");
+            if (replay.CustomerId != replayUser.Id) return Error(http, 404, "NOT_FOUND");
+            if (previous.RequestHash != hash) return Error(http, 409, "IDEMPOTENCY_KEY_REUSED");
             return Results.Json(new { data = await Data(db, replay, ct, clock.GetUtcNow()), traceId = http.TraceIdentifier }, statusCode: 201);
         }
         var q = await db.BookingQuotes.AsNoTracking().SingleOrDefaultAsync(x => x.Id == input.QuoteId, ct);
         if (q is null || q.CourtId != input.CourtId || q.StartsAt != input.StartsAt || q.EndsAt != input.EndsAt)
             return Error(http, 400, "VALIDATION_FAILED");
+        var reservationOwner = await db.QuoteReservations.AsNoTracking().SingleOrDefaultAsync(r => r.Id == q.Id, ct);
+        if (reservationOwner is not null && reservationOwner.CustomerId != customer.Id) return Error(http, 404, "NOT_FOUND");
         if (q.ExpiresAt <= clock.GetUtcNow()) return Error(http, 409, "QUOTE_EXPIRED");
         // Match F02 revision and F03 operation lock order: business, venue, court.
         await db.Database.ExecuteSqlInterpolatedAsync($"SELECT b.id FROM businesses b JOIN venues v ON v.business_id=b.id WHERE v.id={q.VenueId} FOR UPDATE OF b", ct);
@@ -98,13 +115,21 @@ public static class BookingEndpoints
         var user = await db.Users.FromSqlInterpolated($"SELECT * FROM users WHERE id={customer.Id} FOR SHARE").AsNoTracking().SingleAsync(ct);
         if (user.Status != UserStatus.Active) return Error(http, 401, "UNAUTHORIZED");
         if (q.ExpiresAt <= clock.GetUtcNow()) return Error(http, 409, "QUOTE_EXPIRED");
-        var (value, failure) = await Compute(db, q.CourtId, q.LocalDate, q.LocalStart, q.LocalEnd, clock.GetUtcNow(), config, ct);
+        if (user.AccountType != AccountType.Customer) return Error(http, 403, "FORBIDDEN");
+        await QuoteReservations.CleanupCourt(db, q.CourtId, clock.GetUtcNow(), ct);
+        var reservation = await db.QuoteReservations.SingleOrDefaultAsync(r => r.Id == q.Id, ct);
+        if (reservation is null || reservation.ReleasedAt is not null || reservation.ExpiresAt <= clock.GetUtcNow()) return Error(http, 409, "QUOTE_EXPIRED");
+        if (reservation.CustomerId != customer.Id || reservation.Kind != "CASUAL") return Error(http, 404, "NOT_FOUND");
+        if (reservation.ConsumedAt is not null) return Error(http, 409, "QUOTE_CONSUMED");
+        var held = await QuoteReservations.Allocations(db, q.Id, ct);
+        if (held.Count != 1 || held[0].StartsAt != q.StartsAt || held[0].EndsAt != q.EndsAt) return Error(http, 409, "QUOTE_EXPIRED");
+        var (value, failure) = await Compute(db, q.CourtId, q.LocalDate, q.LocalStart, q.LocalEnd, clock.GetUtcNow(), config, ct, true, q.Id);
         if (failure is not null) return Error(http, failure == "NOT_FOUND" ? 404 : failure == "VALIDATION_FAILED" ? 400 : 409, failure);
         if (value!.Fingerprint != q.Fingerprint || value.Start != q.StartsAt || value.End != q.EndsAt)
             return Error(http, 409, "QUOTE_CHANGED");
         var now = clock.GetUtcNow();
-        var allocation = new CourtAllocation { CourtId = q.CourtId, Kind = "BOOKING", StartsAt = q.StartsAt,
-            EndsAt = q.EndsAt, CreatedAt = now };
+        if (q.ExpiresAt <= now) return Error(http, 409, "QUOTE_EXPIRED");
+        var allocation = held[0]; allocation.Kind = "BOOKING"; reservation.ConsumedAt = now;
         var booking = new Booking { CustomerId = customer.Id, CourtId = q.CourtId, VenueId = q.VenueId,
             AllocationId = allocation.Id, VenueName = value.Venue.Name, CourtName = value.Court.Name,
             Timezone = q.Timezone, LocalDate = q.LocalDate, LocalStart = q.LocalStart, LocalEnd = q.LocalEnd,
@@ -112,8 +137,9 @@ public static class BookingEndpoints
             BookingBlockMinutes = value.Court.BookingBlockMinutes, MinimumBookingMinutes = value.Court.MinimumBookingMinutes,
             HoldMinutes = value.Court.HoldMinutes, PaymentDeadline = now.AddMinutes(value.Court.HoldMinutes), CreatedAt = now };
         booking.BookingNo = $"BK{now:yyMMdd}{booking.Id:N}";
-        db.CourtAllocations.Add(allocation); db.Bookings.Add(booking);
-        db.BookingPayments.Add(new BookingPayment { BookingId = booking.Id, ExpectedAmount = booking.Amount,
+        booking.PaymentScopeId = booking.Id;
+        db.Bookings.Add(booking);
+        db.BookingPayments.Add(new BookingPayment { BookingId = booking.Id, PaymentScopeId = booking.Id, ExpectedAmount = booking.Amount,
             QrUploadId = value.Recipient.QrUploadId, RecipientSnapshot = JsonSerializer.Serialize(value.Recipient, Json), CreatedAt = now });
         db.BookingIdempotency.Add(new BookingIdempotency { ActorUserId = customer.Id, Key = key[0]!, RequestHash = hash,
             BookingId = booking.Id, CreatedAt = now });
@@ -128,8 +154,8 @@ public static class BookingEndpoints
         return Results.Json(new { data = responseData, traceId = http.TraceIdentifier }, statusCode: 201);
     }
 
-    private static async Task<(Computed?, string?)> Compute(ShuttleBookDbContext db, Guid courtId, DateOnly date,
-        TimeOnly start, TimeOnly end, DateTimeOffset now, IConfiguration config, CancellationToken ct)
+    internal static async Task<(Computed?, string?)> Compute(ShuttleBookDbContext db, Guid courtId, DateOnly date,
+        TimeOnly start, TimeOnly end, DateTimeOffset now, IConfiguration config, CancellationToken ct, bool checkAllocation = true, Guid? ownReservationId = null)
     {
         var court = await db.Courts.AsNoTracking().SingleOrDefaultAsync(x => x.Id == courtId && x.Status == "ACTIVE", ct);
         if (court is null) return (null, "NOT_FOUND");
@@ -153,7 +179,7 @@ public static class BookingEndpoints
         if (utcStart <= now) return (null, "VALIDATION_FAILED");
         var hours = await db.CourtOperatingHours.AsNoTracking().SingleOrDefaultAsync(x => x.CourtId == courtId && x.DayOfWeek == (int)date.DayOfWeek, ct);
         if (hours is null || start < hours.OpensAt || end > hours.ClosesAt) return (null, "PRICE_UNAVAILABLE");
-        if (await db.CourtAllocations.AnyAsync(x => x.CourtId == courtId && x.Status == "RESERVED" && x.StartsAt < utcEnd && x.EndsAt > utcStart, ct)) return (null, "SLOT_UNAVAILABLE");
+        if (checkAllocation && await QuoteReservations.Active(db, now).AnyAsync(x => x.CourtId == courtId && (ownReservationId == null || x.QuoteReservationId != ownReservationId) && x.StartsAt < utcEnd && x.EndsAt > utcStart, ct)) return (null, "SLOT_UNAVAILABLE");
         var rules = await db.PricingRules.AsNoTracking().Where(x => x.CourtId == courtId && x.DayOfWeek == (int)date.DayOfWeek && x.StartsOn <= date && x.EndsOn >= date).ToListAsync(ct);
         var slots = new List<PriceSlot>(); long total = 0;
         for (var cursor = start; cursor < end; cursor = cursor.AddMinutes(30))
@@ -191,10 +217,13 @@ public static class BookingEndpoints
             (query.ContainsKey("limit") && (!int.TryParse(query["limit"], out limit) || limit is < 1 or > 100)) ||
             (query.ContainsKey("before") && (!Guid.TryParse(query["before"], out var parsed) || (before = parsed) == Guid.Empty)))
             return Error(http, 400, "VALIDATION_FAILED");
-        var rows = db.Bookings.AsNoTracking().Where(x => x.CustomerId == user!.Id);
+        await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, ct);
+        var rows = db.Bookings.AsNoTracking().Where(x => x.CustomerId == user!.Id && db.BookingPayments.Any(p => p.BookingId == x.Id));
         if (before is Guid cursor) rows = rows.Where(x => x.Id.CompareTo(cursor) < 0);
         var bookings = await rows.OrderByDescending(x => x.Id).Take(limit + 1).ToListAsync(ct);
-        return Ok(http, new { items = bookings.Take(limit).Select(Summary), nextCursor = bookings.Count > limit ? bookings[limit - 1].Id.ToString() : null });
+        var items = new List<object>();
+        foreach (var b in bookings.Take(limit)) items.Add(await BookingReadModel.Summary(db, b, await db.BookingPayments.AsNoTracking().SingleAsync(p => p.BookingId == b.Id, ct), ct));
+        return Ok(http, new { items, nextCursor = bookings.Count > limit ? bookings[limit - 1].Id.ToString() : null });
     }
     private static object Summary(Booking b) => new { bookingId = b.Id, b.BookingNo, b.Status, b.VenueId, b.CourtId,
         b.VenueName, b.CourtName, b.Timezone, date = b.LocalDate.ToString("yyyy-MM-dd"), localStart = b.LocalStart.ToString("HH:mm"),
@@ -210,6 +239,7 @@ public static class BookingEndpoints
         var (user, error) = await Customer(http, db, ct); if (error is not null) return error;
         var booking = await db.Bookings.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id && x.CustomerId == user!.Id, ct);
         if (booking is null) return Error(http, 404, "NOT_FOUND");
+        id = await BookingGroup.AnchorId(db, id, ct) ?? throw new InvalidOperationException("Missing payment scope.");
         var payment = await db.BookingPayments.AsNoTracking().SingleAsync(x => x.BookingId == id, ct);
         var r = JsonSerializer.Deserialize<Recipient>(payment.RecipientSnapshot, Json)!;
         var upload = await db.MediaUploads.AsNoTracking().SingleOrDefaultAsync(x => x.Id == payment.QrUploadId && x.VenueId == booking.VenueId && x.Status == "READY" && x.Purpose == "QR", ct);

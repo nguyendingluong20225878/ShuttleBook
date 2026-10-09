@@ -35,6 +35,7 @@ builder.Services.AddScoped<ICustomerRegistrationService, CustomerRegistrationSer
 builder.Services.AddScoped<IContactVerificationDelivery, SmtpContactVerificationDelivery>();
 builder.Services.AddScoped<IPartnerRegistrationService, PartnerRegistrationService>();
 builder.Services.AddScoped<IAuthSessionService, AuthSessionService>();
+builder.Services.AddScoped<IBrowserAuthSessionService, AuthSessionService>();
 builder.Services.AddSingleton<ContactAttemptLimiter>();
 if (string.Equals(builder.Configuration["Media:Mode"], "S3", StringComparison.OrdinalIgnoreCase))
 {
@@ -71,9 +72,16 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
             var database = context.HttpContext.RequestServices.GetRequiredService<ShuttleBookDbContext>();
             var now = context.HttpContext.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow();
             var user = await database.Users.SingleOrDefaultAsync(item => item.Id == userId, context.HttpContext.RequestAborted);
+            if (user is null)
+            {
+                context.Fail("Inactive session.");
+                return;
+            }
             var familyActive = await database.RefreshSessions.AnyAsync(item =>
                 item.UserId == userId && item.FamilyId == familyId && item.RevokedAt == null &&
-                item.ExpiresAt > now, context.HttpContext.RequestAborted);
+                item.ConsumedAt == null && item.ExpiresAt > now &&
+                (user!.AccountType == AccountType.Admin || item.LastActivityAt == null || item.LastActivityAt > now.AddMinutes(-30)),
+                context.HttpContext.RequestAborted);
             if (user is null || !AuthSessionService.CanUseSession(user) || !familyActive ||
                 principal.FindFirst("accountType")?.Value != AuthSessionService.AccountTypeName(user.AccountType))
             {
@@ -147,6 +155,12 @@ builder.Services.AddCors(options => options.AddPolicy("WebPortals", policy =>
 }));
 
 var app = builder.Build();
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/api/v1/browser-auth"))
+        context.Response.Headers.CacheControl = "no-store";
+    await next(context);
+});
 app.UseMiddleware<ProblemDetailsMiddleware>();
 app.UseCors("WebPortals");
 app.UseAuthentication();
@@ -168,6 +182,7 @@ app.MapGet("/health/ready", async (IReadinessProbe readiness, HttpContext contex
 });
 app.MapCustomerRegistrationEndpoints();
 app.MapAuthSessionEndpoints();
+app.MapBrowserAuthEndpoints();
 app.MapAdminAuthEndpoints();
 app.MapPartnerRegistrationEndpoints();
 app.MapOnboardingEndpoints();
@@ -176,6 +191,7 @@ app.MapNotificationEndpoints();
 app.MapCourtOperationsEndpoints();
 app.MapPublicVenuesEndpoints();
 app.MapBookingEndpoints();
+app.MapSeriesEndpoints();
 app.MapPaymentEndpoints();
 
 app.Run();

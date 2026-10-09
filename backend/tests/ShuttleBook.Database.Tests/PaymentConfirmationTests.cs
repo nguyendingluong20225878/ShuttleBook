@@ -512,8 +512,6 @@ public sealed class PaymentConfirmationTests
     public async Task Optional_reference_migration_preserves_legacy_history_snapshots_and_idempotency()
     {
         await using var f = await Fixture.Create();
-        await using (var old = f.Context())
-            await old.GetService<IMigrator>().MigrateAsync("20261006223312_F06ExactPaymentAmount");
         using var customer = await f.Client("customer"); using var owner = await f.Client("owner");
         var created = await f.Book(customer); var id = created.GetProperty("bookingId").GetGuid();
         var reportBody = Evidence("LEGACY-BANK-REFERENCE"); var confirmation = Confirmation(created);
@@ -524,6 +522,18 @@ public sealed class PaymentConfirmationTests
         {
             recipientSnapshot = (await before.BookingPayments.SingleAsync()).RecipientSnapshot;
             reportHash = (await before.BookingIdempotency.SingleAsync(x => x.Key == "legacy-report")).RequestHash;
+            // Populate historical non-null references with the current API before downgrading only this test-owned DB.
+            // The F07 model cannot legitimately operate against a pre-F07 schema without payment_scope_id.
+            await before.GetService<IMigrator>().MigrateAsync("20261006223312_F06ExactPaymentAmount");
+            await using (var legacy = new NpgsqlConnection(f.Connection))
+            {
+                await legacy.OpenAsync();
+                await using var required = new NpgsqlCommand("SELECT is_nullable FROM information_schema.columns WHERE table_name='payment_evidence' AND column_name='bank_reference'", legacy);
+                Assert.Equal("NO", (string)(await required.ExecuteScalarAsync())!);
+                await using var reference = new NpgsqlCommand("SELECT bank_reference FROM payment_evidence WHERE booking_id=@booking", legacy);
+                reference.Parameters.AddWithValue("booking", id);
+                Assert.Equal("LEGACY-BANK-REFERENCE", (string)(await reference.ExecuteScalarAsync())!);
+            }
             await before.Database.MigrateAsync(); await before.Database.MigrateAsync();
         }
         var replay = await Data(await Send(customer, ReportRoute(id), "legacy-report", 1, reportBody));

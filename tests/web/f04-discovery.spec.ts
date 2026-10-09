@@ -1,4 +1,9 @@
 import { expect, test } from '@playwright/test';
+import { browserSessionRoute } from './helpers/browser-session';
+
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/v1/browser-auth/**', async route => { if (!(await browserSessionRoute(route, page))) await route.fallback(); });
+});
 
 const venueId = '0199f040-0000-7000-8000-000000000001';
 const courtA = '0199f040-0000-7000-8000-000000000002';
@@ -266,7 +271,7 @@ test('guest location searches the selected PostGIS radius', async ({ page, conte
   await page.getByLabel('Bán kính').selectOption('10000');
   await page.getByRole('button', { name: 'Dùng vị trí của tôi' }).click();
   await expect(page.getByRole('heading', { name: 'Sân gần khu vực đã chọn' })).toBeVisible();
-  await expect(page.getByText('Cách khoảng 0.0 km')).toBeVisible();
+  await expect(page.getByText('Cách vị trí của bạn khoảng 0 m')).toBeVisible();
   await expect.poll(() => nearbyUrl).toContain('/nearby?');
   const params = new URL(nearbyUrl).searchParams;
   expect(params.get('latitude')).toBe('21.0278');

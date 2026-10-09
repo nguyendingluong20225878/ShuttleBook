@@ -1,8 +1,9 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { CustomerNav, useCustomerSession } from '../auth/CustomerSession';
+import { useCustomerSession } from '../auth/CustomerSession';
 import { useVisiblePolling } from '../../hooks/useVisiblePolling';
 import { data, failure } from '../bookings/bookingApi';
 import { navigate } from '../../routes/navigation';
+import { CustomerShell } from '../../components/CustomerShell';
 
 type Notification = { id: string; title: string; body: string; readAt: string | null; createdAt?: string;
   bookingId?: string | null; action?: string | null };
@@ -65,18 +66,18 @@ export function CustomerNotificationsPage() {
   }
   async function read(id: string) { const readAt = await notifications.markRead(id); if (readAt) setOlder(previous => previous.map(item => item.id === id ? { ...item, readAt } : item)); }
   const items = [...notifications.items, ...older].filter((item, index, all) => all.findIndex(other => other.id === item.id) === index);
-  return <main className="customer-shell"><header className="site-header"><a className="brand" href="/venues">ShuttleBook</a>
-    <CustomerNav /></header>
-    <section className="booking-panel"><h1>Thông báo</h1><p>{notifications.unreadCount} thông báo chưa đọc</p>
-      {(notifications.error || pageError) && <p role="alert">{pageError || notifications.error}</p>}
-      {notifications.loading && <p role="status">Đang tải thông báo…</p>}
-      {!notifications.loading && !items.length && !notifications.error && <p>Chưa có thông báo.</p>}
+  return <CustomerShell className="customer-inbox">
+    <section className="booking-panel notification-panel"><div className="notification-page-heading"><div><p className="eyebrow">Cập nhật đặt sân</p><h1>Thông báo</h1><p>{notifications.unreadCount} thông báo chưa đọc</p></div>
+      <button type="button" onClick={notifications.refresh}>Làm mới thông báo</button></div>
+      {(notifications.error || pageError) && <p className="inline-feedback" role="alert">{pageError || notifications.error}</p>}
+      {notifications.loading && <p className="loading-label" role="status">Đang tải thông báo…</p>}
+      {!notifications.loading && !items.length && !notifications.error && <div className="empty-state"><h2>Bạn đã theo dõi mọi cập nhật</h2><p>Chưa có thông báo.</p><a className="secondary-link" href="/venues">Tìm sân &amp; xem lịch</a></div>}
       <ul className="customer-notifications">{items.map(item => <li key={item.id} className={item.readAt ? '' : 'is-unread'}>
-        <h2>{item.title}</h2><p>{item.body}</p>{item.createdAt && <time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString('vi-VN')}</time>}
-        <div>{bookingLink(item) && <a href={bookingLink(item)!} onClick={() => { void read(item.id); }}>Xem đơn đặt sân</a>}
+        <div className="notification-item-heading"><h2>{item.title}</h2><span className={`notification-read-state ${item.readAt ? 'is-read' : ''}`}>{item.readAt ? 'Đã đọc' : 'Chưa đọc'}</span></div>
+        <p>{item.body}</p>{item.createdAt && <time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString('vi-VN')}</time>}
+        <div className="notification-item-actions">{bookingLink(item) && <a href={bookingLink(item)!} onClick={() => { void read(item.id); }}>Xem đơn đặt sân</a>}
           {!item.readAt && <button type="button" onClick={() => { void read(item.id); }}>Đánh dấu đã đọc</button>}</div>
       </li>)}</ul>
-      <button type="button" onClick={notifications.refresh}>Làm mới thông báo</button>
       {(older.length ? cursor : notifications.nextCursor) && <button type="button" disabled={paging} onClick={() => { void more(); }}>{paging ? 'Đang tải…' : 'Xem thêm thông báo'}</button>}
-    </section></main>;
+    </section></CustomerShell>;
 }

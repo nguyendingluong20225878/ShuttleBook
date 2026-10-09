@@ -24,7 +24,10 @@ public sealed class ShuttleBookDbContext(DbContextOptions<ShuttleBookDbContext> 
     public DbSet<ApprovalRequest> ApprovalRequests => Set<ApprovalRequest>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<QuoteReservation> QuoteReservations => Set<QuoteReservation>();
     public DbSet<BookingQuote> BookingQuotes => Set<BookingQuote>();
+    public DbSet<BookingSeries> BookingSeries => Set<BookingSeries>();
+    public DbSet<BookingSeriesQuote> BookingSeriesQuotes => Set<BookingSeriesQuote>();
     public DbSet<Booking> Bookings => Set<Booking>();
     public DbSet<BookingPayment> BookingPayments => Set<BookingPayment>();
     public DbSet<BookingIdempotency> BookingIdempotency => Set<BookingIdempotency>();
@@ -205,10 +208,12 @@ public sealed class ShuttleBookDbContext(DbContextOptions<ShuttleBookDbContext> 
         });
         modelBuilder.Entity<CourtAllocation>(entity =>
         {
-            entity.ToTable("court_allocations"); entity.HasKey(x => x.Id);
+            entity.ToTable("court_allocations", t => t.HasCheckConstraint("ck_quote_allocation_scope", "(kind='QUOTE_HOLD' AND quote_reservation_id IS NOT NULL) OR kind='BOOKING' OR (kind='MAINTENANCE' AND quote_reservation_id IS NULL)")); entity.HasKey(x => x.Id);
             entity.Property(x => x.Id).HasColumnName("id");
             entity.Property(x => x.CourtId).HasColumnName("court_id");
             entity.Property(x => x.Kind).HasColumnName("kind").HasMaxLength(32);
+            entity.Property(x => x.QuoteReservationId).HasColumnName("quote_reservation_id");
+            entity.HasOne<QuoteReservation>().WithMany().HasForeignKey(x => new { x.QuoteReservationId, x.CourtId }).HasPrincipalKey(x => new { x.Id, x.CourtId }).OnDelete(DeleteBehavior.Restrict);
             entity.Property(x => x.StartsAt).HasColumnName("starts_at");
             entity.Property(x => x.EndsAt).HasColumnName("ends_at");
             entity.Property(x => x.Status).HasColumnName("status").HasMaxLength(32);

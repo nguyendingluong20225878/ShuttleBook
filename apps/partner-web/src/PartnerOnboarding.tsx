@@ -8,7 +8,6 @@ import { PartnerApiError, type RequestOptions } from './features/bookings/types'
 import { PartnerBookings } from './features/bookings/PartnerBookings';
 import { PartnerNotifications, usePartnerNotifications } from './features/notifications/PartnerNotifications';
 
-type Session = { accessToken: string; refreshToken: string };
 type Row = { id: string; name: string; status: string };
 type Court = { id: string; name: string; status: string; hours: object[]; prices: object[] };
 type Venue = { id: string; name: string; status: string; version: number; address: string; contact: string;
@@ -22,14 +21,10 @@ type ScheduleDraft = { dayOfWeek: number; startsAt: string; endsAt: string; pric
 const base = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5080';
 const days = ['Chủ nhật', 'Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy'];
 
-export function PartnerOnboarding({ session, onSession, onExpired, onLogout, logoutBusy }: {
-  session: Session; onSession: (next: Session) => void; onExpired: () => void;
+export function PartnerOnboarding({ sendRequest, onLogout, logoutBusy }: {
+  sendRequest: (path: string, options?: RequestInit) => Promise<Response>;
   onLogout: () => void; logoutBusy: boolean }) {
   const { page, bookingId, visited, navigate, openBooking } = usePartnerNavigation();
-  const tokens = useRef(session);
-  const refreshing = useRef<Promise<Session> | null>(null);
-  const mounted = useRef(true);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [businesses, setBusinesses] = useState<Row[]>([]);
   const [selected, setSelected] = useState('');
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -70,31 +65,12 @@ export function PartnerOnboarding({ session, onSession, onExpired, onLogout, log
   const [revisionTimezone, setRevisionTimezone] = useState('Asia/Ho_Chi_Minh');
 
   async function request<T>(path: string, method = 'GET', body?: object, version?: number, options?: RequestOptions): Promise<T> {
-    const send = (bearer: string) => fetch(`${base}/api/v1${path}`, { method,
+    const response = await sendRequest(`/api/v1${path}`, { method,
       signal: options?.signal,
-      headers: { Authorization: `Bearer ${bearer}`, ...(body || options?.bodyText ? { 'Content-Type': 'application/json' } : {}),
+      headers: { ...(body || options?.bodyText ? { 'Content-Type': 'application/json' } : {}),
         ...(version !== undefined ? { 'If-Match': `"${version}"` } : {}),
         ...(options?.idempotencyKey ? { 'Idempotency-Key': options.idempotencyKey } : {}) },
       ...(body || options?.bodyText ? { body: options?.bodyText ?? JSON.stringify(body) } : {}) });
-    const accessToken = tokens.current.accessToken;
-    let response = await send(accessToken);
-    if (response.status === 401) {
-      if (tokens.current.accessToken !== accessToken) response = await send(tokens.current.accessToken);
-      else {
-        if (!refreshing.current) refreshing.current = (async () => {
-          const refreshed = await fetch(`${base}/api/v1/auth/refresh`, { method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ refreshToken: tokens.current.refreshToken }) });
-          if (!refreshed.ok) throw new Error('Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.');
-          const next = (await refreshed.json() as Envelope<Session>).data;
-          if (!next?.accessToken || !next.refreshToken) throw new Error('Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.');
-          if (!mounted.current) throw new DOMException('Phiên trên trang đã đóng.', 'AbortError');
-          tokens.current = next; onSession(next);
-          return next;
-        })().catch(error => { if (mounted.current) onExpired(); throw error; }).finally(() => { refreshing.current = null; });
-        response = await send((await refreshing.current).accessToken);
-      }
-    }
     if (!response.ok) {
       const error = await response.json().catch(() => ({})) as { code?: string };
       const failure = new PartnerApiError(error.code ?? 'REQUEST_FAILED', response.status);

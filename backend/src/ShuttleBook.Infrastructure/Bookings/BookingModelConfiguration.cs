@@ -9,6 +9,41 @@ public static class BookingModelConfiguration
 {
     public static void Configure(ModelBuilder model)
     {
+        model.Entity<QuoteReservation>(e =>
+        {
+            e.ToTable("quote_reservations", t => t.HasCheckConstraint("ck_quote_reservation_valid",
+                "expires_at > created_at AND kind IN ('CASUAL','SERIES') AND NOT (consumed_at IS NOT NULL AND released_at IS NOT NULL)"));
+            e.Property(x => x.Kind).HasMaxLength(16);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Court>().WithMany().HasForeignKey(x => x.CourtId).OnDelete(DeleteBehavior.Restrict);
+            e.HasAlternateKey(x => new { x.Id, x.CourtId });
+            e.HasIndex(x => new { x.CustomerId, x.CourtId }).IsUnique().HasFilter("consumed_at IS NULL AND released_at IS NULL");
+            e.HasIndex(x => x.ExpiresAt);
+        });
+        model.Entity<BookingSeries>(e =>
+        {
+            e.ToTable("booking_series", t => t.HasCheckConstraint("ck_series_valid",
+                "ends_on >= (starts_on + INTERVAL '1 month')::date AND day_of_week BETWEEN 0 AND 6 AND duration_minutes >= 120 AND MOD(duration_minutes,30)=0 AND occurrence_count BETWEEN 1 AND 12 AND amount >= 0 AND payment_plan='FULL_SERIES'"));
+            e.Property(x => x.SeriesNo).HasMaxLength(40);
+            e.Property(x => x.Timezone).HasMaxLength(100);
+            e.Property(x => x.PaymentPlan).HasMaxLength(32);
+            e.Property(x => x.Amount).HasColumnType("numeric(18,0)");
+            e.HasIndex(x => x.SeriesNo).IsUnique();
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Court>().WithMany().HasForeignKey(x => new { x.CourtId, x.VenueId })
+                .HasPrincipalKey(x => new { x.Id, x.VenueId }).OnDelete(DeleteBehavior.Restrict);
+        });
+        model.Entity<BookingSeriesQuote>(e =>
+        {
+            e.ToTable("booking_series_quotes", t => t.HasCheckConstraint("ck_series_quote_valid",
+                "ends_on >= (starts_on + INTERVAL '1 month')::date AND day_of_week BETWEEN 0 AND 6 AND duration_minutes >= 120 AND MOD(duration_minutes,30)=0 AND amount >= 0 AND expires_at > created_at"));
+            e.Property(x => x.Fingerprint).HasMaxLength(64);
+            e.Property(x => x.Occurrences).HasColumnType("jsonb");
+            e.Property(x => x.Amount).HasColumnType("numeric(18,0)");
+            e.HasOne<Court>().WithMany().HasForeignKey(x => x.CourtId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Venue>().WithMany().HasForeignKey(x => x.VenueId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.ExpiresAt);
+        });
         model.Entity<BookingQuote>(e =>
         {
             e.ToTable("booking_quotes", t => t.HasCheckConstraint("ck_booking_quote_interval",
@@ -25,7 +60,8 @@ public static class BookingModelConfiguration
         {
             e.ToTable("bookings", t =>
             {
-                t.HasCheckConstraint("ck_booking_valid", "ends_at > starts_at AND amount >= 0 AND version > 0 AND hold_minutes BETWEEN 5 AND 60 AND booking_type = 'CASUAL' AND status IN ('AWAITING_TRANSFER','AWAITING_OWNER_CONFIRMATION','NEEDS_REVIEW','CONFIRMED','EXPIRED','PAYMENT_REJECTED')");
+                t.HasCheckConstraint("ck_booking_valid", "ends_at > starts_at AND amount >= 0 AND version > 0 AND hold_minutes BETWEEN 5 AND 60 AND ((booking_type='CASUAL' AND series_id IS NULL) OR (booking_type='RECURRING_OCCURRENCE' AND series_id IS NOT NULL)) AND status IN ('AWAITING_TRANSFER','AWAITING_OWNER_CONFIRMATION','NEEDS_REVIEW','CONFIRMED','EXPIRED','PAYMENT_REJECTED')");
+                t.HasCheckConstraint("ck_booking_payment_scope", "payment_scope_id = COALESCE(series_id,id)");
                 t.HasCheckConstraint("ck_booking_grid", "MOD(EXTRACT(EPOCH FROM (ends_at-starts_at))::bigint,1800)=0 AND EXTRACT(SECOND FROM starts_at)=0 AND EXTRACT(SECOND FROM ends_at)=0");
             });
             e.Property(x => x.Slots).HasColumnType("jsonb");
@@ -39,6 +75,10 @@ public static class BookingModelConfiguration
             e.HasIndex(x => new { x.CustomerId, x.Id });
             e.HasIndex(x => new { x.VenueId, x.Status, x.LocalDate, x.Id });
             e.HasIndex(x => new { x.Status, x.PaymentDeadline });
+            e.HasIndex(x => new { x.SeriesId, x.LocalDate }).IsUnique().HasFilter("series_id IS NOT NULL");
+            e.HasIndex(x => x.PaymentScopeId);
+            e.HasOne<BookingSeries>().WithMany().HasForeignKey(x => new { x.SeriesId, x.CustomerId, x.VenueId, x.CourtId })
+                .HasPrincipalKey(x => new { x.Id, x.CustomerId, x.VenueId, x.CourtId }).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<Court>().WithMany().HasForeignKey(x => new { x.CourtId, x.VenueId })
                 .HasPrincipalKey(x => new { x.Id, x.VenueId }).OnDelete(DeleteBehavior.Restrict);
@@ -58,8 +98,11 @@ public static class BookingModelConfiguration
             e.Property(x => x.ConfirmedAmount).HasColumnType("numeric(18,0)");
             e.Property(x => x.Status).HasMaxLength(32);
             e.HasOne<Booking>().WithMany().HasForeignKey(x => x.BookingId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Booking>().WithMany().HasForeignKey(x => new { x.BookingId, x.PaymentScopeId })
+                .HasPrincipalKey(x => new { x.Id, x.PaymentScopeId }).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<MediaUpload>().WithMany().HasForeignKey(x => x.QrUploadId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => x.BookingId).IsUnique();
+            e.HasIndex(x => x.PaymentScopeId).IsUnique();
             e.HasOne<User>().WithMany().HasForeignKey(x => x.ConfirmedBy).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => new { x.FirstReportedAt, x.ConfirmationAlertedAt });
         });
@@ -102,7 +145,7 @@ public static class BookingModelConfiguration
             e.HasOne<User>().WithMany().HasForeignKey(x => x.ActorUserId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => new { x.PaymentId, x.DecidedAt, x.Id });
         });
-        foreach (var type in new[] { typeof(BookingQuote), typeof(Booking), typeof(BookingPayment), typeof(BookingIdempotency), typeof(PaymentEvidence), typeof(PaymentDecision) })
+        foreach (var type in new[] { typeof(QuoteReservation), typeof(BookingQuote), typeof(Booking), typeof(BookingPayment), typeof(BookingIdempotency), typeof(PaymentEvidence), typeof(PaymentDecision), typeof(BookingSeries), typeof(BookingSeriesQuote) })
             foreach (var property in model.Entity(type).Metadata.GetProperties())
                 property.SetColumnName(Regex.Replace(property.Name, "([a-z0-9])([A-Z])", "$1_$2").ToLowerInvariant());
     }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { VenueSummary } from '../types';
+import { navigate } from '../../../routes/navigation';
 
 type MapInstance = { remove: () => void };
 type MarkerInstance = { setLngLat: (position: [number, number]) => MarkerInstance;
@@ -50,7 +51,7 @@ export function VenueMap({ items, center }: { items: VenueSummary[]; center: { l
         const button = document.createElement('button');
         button.className = 'map-marker'; button.type = 'button'; button.textContent = '●';
         button.title = `Xem ${venue.name}`; button.setAttribute('aria-label', `Xem ${venue.name}`);
-        button.addEventListener('click', () => { window.location.href = `/venues/${venue.id}`; });
+        button.addEventListener('click', () => navigate(`/venues/${encodeURIComponent(venue.id)}`));
         markers.push(new sdk.Marker({ element: button })
           .setLngLat([venue.longitude, venue.latitude]).addTo(map));
       }

@@ -84,7 +84,9 @@ Không nên lưu authoritative booking/order trong MongoDB. Việc tách booking
 | `BookingSeries.recurrence_rule` | jsonb | MVP chỉ cho schema weekly được kiểm soát |
 | `BookingSeries.duration_minutes` | integer | Tối thiểu 120 và chia hết cho 30 |
 | `BookingSeries.starts_on/ends_on` | date | `ends_on >= starts_on + 1 month`, đồng thời không vượt booking horizon |
-| `BookingSeries.payment_plan` | enum | `PER_OCCURRENCE`, `MONTHLY`, `FULL_SERIES` |
+| `BookingSeries.payment_plan` | enum | F07 đã duyệt chỉ `FULL_SERIES` (100% cả kỳ/một payment) |
+| `Booking.payment_scope_id` | uuid non-null | `COALESCE(series_id,id)`; casual giữ scope=id |
+| `Payment.payment_scope_id` | uuid non-null unique | Một payment mỗi scope; composite FK đến `(Booking.id,payment_scope_id)` bảo đảm anchor đúng nhóm |
 | `Payment.recipient_snapshot` | jsonb | Snapshot ngân hàng, tài khoản nhận tiền và object key/version của QR do chủ sân cung cấp tại lúc tạo booking; giữ ảnh gốc trong thời gian lưu booking, không lưu presigned URL có hạn vào snapshot |
 | `Payment.expected_amount` | numeric(18,0) | Bằng tổng tiền snapshot |
 | `Payment.confirmed_amount` | numeric(18,0) | Operator nhập/đối chiếu |

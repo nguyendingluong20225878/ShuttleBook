@@ -1,23 +1,31 @@
 import { expect, test } from '@playwright/test';
+import { browserSessionFields, browserSessionRoute } from './helpers/browser-session';
+
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/v1/browser-auth/**', async route => {
+    if (!(await browserSessionRoute(route, page))) await route.fallback();
+  });
+});
 
 test('partner onboarding shares one refresh across simultaneous protected reads', async ({ page }) => {
   let refreshCalls = 0;
   const successfulReads = new Set<string>();
   await page.route('http://localhost:5080/api/v1/**', async route => {
+    if (await browserSessionRoute(route, page, true)) return;
     const request = route.request();
     const path = new URL(request.url()).pathname;
-    const headers = { 'Access-Control-Allow-Origin': 'http://localhost:5174',
+    const headers = { 'Access-Control-Allow-Origin': 'http://localhost:5174', 'Access-Control-Allow-Credentials': 'true',
       'Access-Control-Allow-Headers': 'Authorization,Content-Type',
       'Access-Control-Allow-Methods': 'GET,POST,OPTIONS' };
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
-    if (path === '/api/v1/auth/login') return route.fulfill({ status: 200, headers, contentType: 'application/json',
-      body: JSON.stringify({ data: { accessToken: 'expired-access', refreshToken: 'first-refresh',
+    if (path === '/api/v1/browser-auth/partner/login') return route.fulfill({ status: 200, headers, contentType: 'application/json',
+      body: JSON.stringify({ data: { accessToken: 'expired-access', ...browserSessionFields(),
         user: { accountType: 'VENUE_OPERATOR', status: 'PENDING_ONBOARDING' } } }) });
-    if (path === '/api/v1/auth/refresh') {
+    if (path === '/api/v1/browser-auth/partner/restore') {
       refreshCalls++;
       await new Promise(resolve => setTimeout(resolve, 50));
       return route.fulfill({ status: 200, headers, contentType: 'application/json',
-        body: JSON.stringify({ data: { accessToken: 'new-access', refreshToken: 'new-refresh' } }) });
+        body: JSON.stringify({ data: { accessToken: 'new-access', ...browserSessionFields(), user: { accountType: 'VENUE_OPERATOR', status: 'PENDING_ONBOARDING' } } }) });
     }
     if (path === '/api/v1/partner-onboarding/businesses' || path === '/api/v1/me/notifications/') {
       if (request.headers().authorization !== 'Bearer new-access')
@@ -68,15 +76,16 @@ test('partner draft forms call the scoped onboarding API', async ({ page }) => {
       latitude: number; longitude: number; timezone: string; courts: Array<{ id: string; name: string;
         status: string; hours: object[]; prices: object[] }> }> } | null = null;
   await page.route('http://localhost:5080/api/v1/**', async route => {
+    if (await browserSessionRoute(route, page, true)) return;
     const request = route.request();
     const path = new URL(request.url()).pathname;
-    const headers = { 'Access-Control-Allow-Origin': 'http://localhost:5174',
+    const headers = { 'Access-Control-Allow-Origin': 'http://localhost:5174', 'Access-Control-Allow-Credentials': 'true',
       'Access-Control-Allow-Headers': 'Authorization,Content-Type,If-Match',
       'Access-Control-Allow-Methods': 'GET,POST,PUT,OPTIONS' };
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
     calls.push(`${request.method()} ${path}`);
-    if (path === '/api/v1/auth/login') return route.fulfill({ status: 200, headers, contentType: 'application/json',
-      body: JSON.stringify({ data: { accessToken: 'partner-access', refreshToken: 'partner-refresh',
+    if (path === '/api/v1/browser-auth/partner/login') return route.fulfill({ status: 200, headers, contentType: 'application/json',
+      body: JSON.stringify({ data: { accessToken: 'partner-access', ...browserSessionFields(),
         user: { accountType: 'VENUE_OPERATOR', status: 'PENDING_ONBOARDING' } } }) });
     if (path === '/api/v1/partner-onboarding/businesses' && request.method() === 'GET')
       return route.fulfill({ status: 200, headers, contentType: 'application/json',
@@ -132,6 +141,7 @@ test('Admin can review a submitted profile and send an approval decision', async
   const id = '0199fc70-0000-7000-8000-000000000003';
   let decided = false;
   await page.route('http://localhost:5080/api/v1/**', async route => {
+    if (await browserSessionRoute(route, page, true)) return;
     const request = route.request();
     const path = new URL(request.url()).pathname;
     const headers = { 'Access-Control-Allow-Origin': 'http://localhost:5175',
@@ -162,7 +172,8 @@ test('Admin can review a submitted profile and send an approval decision', async
   await page.getByRole('button', { name: 'Đăng nhập' }).click();
   await page.getByRole('button', { name: /Sân A/ }).click();
   await expect(page.getByRole('heading', { name: 'Sân A' })).toBeVisible();
-  await page.getByRole('button', { name: 'Phê duyệt' }).click();
+  await page.getByRole('button', { name: 'Phê duyệt', exact: true }).click();
+  await page.getByRole('button', { name: 'Xác nhận phê duyệt', exact: true }).click();
   await expect(page.getByText('Chưa có hồ sơ chờ duyệt.')).toBeVisible();
   expect(decided).toBe(true);
 });

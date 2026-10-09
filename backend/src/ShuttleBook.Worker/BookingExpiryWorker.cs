@@ -14,7 +14,11 @@ public sealed class BookingExpiryWorker(IServiceScopeFactory scopes, TimeProvide
                 for (var i = 0; i < 20; i++)
                 {
                     using var scope = scopes.CreateScope();
-                    if (!await BookingExpiry.ProcessOne(scope.ServiceProvider.GetRequiredService<ShuttleBookDbContext>(), clock.GetUtcNow(), ct)) break;
+                    var db = scope.ServiceProvider.GetRequiredService<ShuttleBookDbContext>();
+                    var now = clock.GetUtcNow();
+                    var quoteExpired = await QuoteReservations.ProcessOne(db, now, ct);
+                    var bookingExpired = await BookingExpiry.ProcessOne(db, now, ct);
+                    if (!quoteExpired && !bookingExpired) break;
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }

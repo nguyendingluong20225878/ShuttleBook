@@ -67,7 +67,7 @@ Customer không có endpoint cancel/reschedule.
 
 ## 3. Contract tạo booking vãng lai
 
-Contract F05 đã triển khai: public `POST /api/v1/availability/quote` nhận `{courtId,date,startsAt,endsAt}` với ngày `YYYY-MM-DD` và giờ địa phương `HH:mm`. Quote có hiệu lực 120 giây, horizon 60 ngày theo timezone venue và không giữ chỗ. Response có `quoteId`, expiry, interval UTC, từng ca/giá, tổng VND và policy block/minimum/hold. Tạo đơn cần Customer ACTIVE; operator scope ở bảng catalog thuộc F06, chưa được cấp trong F05.
+Contract F05 đã triển khai: authenticated Customer ACTIVE `POST /api/v1/availability/quote` nhận `{courtId,date,startsAt,endsAt}` với ngày `YYYY-MM-DD` và giờ địa phương `HH:mm`. Quote có hiệu lực 120 giây, horizon 60 ngày theo timezone venue và giữ chỗ tạm đến expiresAt. Response có `quoteId`, expiry, interval UTC, từng ca/giá, tổng VND và policy block/minimum/hold. Tạo đơn cần Customer ACTIVE; operator scope ở bảng catalog thuộc F06, chưa được cấp trong F05.
 
 ```http
 POST /api/v1/bookings
@@ -129,6 +129,8 @@ Content-Type: application/json
 ```
 
 `durationMinutes` tối thiểu `120` và chia hết cho `30`; `endsOn` phải bằng hoặc sau `startsOn` cộng một tháng. Quote trả toàn bộ occurrence, tổng tiền và danh sách xung đột. `POST /booking-series` nhận `quoteId`; khi thành công, tất cả occurrence được giữ trong cùng transaction.
+
+F07 duyệt 2026-10-07: FULL_SERIES100%, cửa sổ trong60ngày địa phương/max12buổi, quote120s/holdMinutes sân. Quote xung đột allocation trả200 preview+conflicts/canCreate=false/quoteId=null, không giữ chỗ một phần; quote hợp lệ giữ toàn kỳ đến expiresAt. Create xung đột trả409 SERIES_CONFLICT và rollback toàn kỳ. Response tạo đơn dùng `bookingId` payment anchor và DTO booking có `series`/occurrences; amount/payment.expectedAmount là tổng cả kỳ. List một dòng mỗi nhóm, datefilter owner match bất kỳ buổi. Chi tiết API/error/privacy/lock/migration ở `features/F07-designer-notes.md`.
 
 ## 4. Contract báo đã chuyển khoản
 

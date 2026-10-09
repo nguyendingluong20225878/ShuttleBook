@@ -1,4 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
+import { browserSessionFields, browserSessionRoute } from './helpers/browser-session';
+
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/v1/browser-auth/**', async route => {
+    if (!(await browserSessionRoute(route, page))) await route.fallback();
+  });
+});
 import { openPartnerPage } from './helpers/partner-navigation';
 
 const bookingA = '019a1234-1111-7111-8111-111111111111';
@@ -33,13 +40,14 @@ async function fixture(page: Page, businessStatus = 'ACTIVE', exactAmount = '320
       payment: { ...original.payment, ...changed.payment } } : original;
   };
   await page.route('http://localhost:5080/api/v1/**', async route => {
+    if (await browserSessionRoute(route, page)) return;
     const request = route.request(); const url = new URL(request.url()); const path = url.pathname;
-    const headers = { 'Access-Control-Allow-Origin': 'http://localhost:5174', 'Access-Control-Allow-Headers': 'Authorization,Content-Type,If-Match,Idempotency-Key',
+    const headers = { 'Access-Control-Allow-Origin': 'http://localhost:5174', 'Access-Control-Allow-Credentials': 'true', 'Access-Control-Allow-Headers': 'Authorization,Content-Type,If-Match,Idempotency-Key',
       'Access-Control-Allow-Methods': 'GET,POST,OPTIONS' };
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
     calls.push({ path, method: request.method(), query: url.search, headers: request.headers(), body: request.method() === 'GET' ? null : request.postDataJSON(), bodyText: request.postData() });
     const respond = (data: unknown, metadata = {}) => route.fulfill({ status: 200, contentType: 'application/json', headers, body: JSON.stringify({ data, ...metadata }) });
-    if (path === '/api/v1/auth/login') return respond({ accessToken: 'partner-test', refreshToken: 'partner-refresh', user: { accountType: 'VENUE_OPERATOR', status: 'ACTIVE' } });
+    if (path === '/api/v1/browser-auth/partner/login') return respond({ accessToken: 'partner-test', ...browserSessionFields(), user: { accountType: 'VENUE_OPERATOR', status: 'ACTIVE' } });
     if (path === '/api/v1/partner-onboarding/businesses') return respond(businesses);
     const business = businesses.find(item => path === `/api/v1/partner-onboarding/businesses/${item.id}`);
     if (business) return respond(business);
@@ -96,8 +104,14 @@ test('F06 partner list filters, scoped detail, history and bearer private proof'
   await page.getByLabel('Từ ngày', { exact: true }).fill('2026-10-01'); await page.getByLabel('Đến ngày', { exact: true }).fill('2026-10-31');
   await page.getByRole('button', { name: 'Lọc đơn', exact: true }).click();
   await expect.poll(() => api.calls.filter(call => call.path.endsWith('/v1/bookings')).at(-1)?.query).toContain('status=NEEDS_REVIEW');
-  await page.getByRole('button', { name: 'Xem đơn SB-A', exact: true }).click();
+  const row = page.locator('.booking-list > li').filter({ has: page.getByText('SB-A', { exact: true }) });
+  await expect(row.getByRole('button', { name: 'Xem đơn', exact: true })).toBeVisible();
+  await row.getByRole('button', { name: 'Xem đơn', exact: true }).click();
   const detail = page.getByRole('region', { name: 'Chi tiết đơn đặt sân' });
+  await expect(page).toHaveURL(new RegExp(`#/bookings/${bookingA}$`));
+  await expect(page.locator('.booking-list')).toHaveCount(0);
+  await expect(page.getByRole('combobox', { name: 'Trạng thái đơn', exact: true })).toHaveCount(0);
+  await expect(detail.getByRole('heading', { name: 'Chi tiết đơn đặt sân', exact: true })).toBeFocused();
   await expect(detail).toContainText('FT-TEST-001'); await expect(detail).toContainText('OWNER SNAPSHOT');
   await expect(detail).toContainText('****4321'); await expect(detail).toContainText('o***@example.test');
   await detail.getByRole('button', { name: 'Xem biên lai', exact: true }).click();
@@ -106,6 +120,18 @@ test('F06 partner list filters, scoped detail, history and bearer private proof'
   await page.screenshot({ path: info.outputPath('f06-partner-detail.png'), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(api.calls.filter(call => call.method === 'POST' && call.path.includes('/operator/'))).toHaveLength(0);
+  await page.goBack();
+  await expect(page).toHaveURL(/#\/bookings$/);
+  await expect(detail).toHaveCount(0);
+  await expect(page.getByRole('combobox', { name: 'Trạng thái đơn', exact: true })).toHaveValue('NEEDS_REVIEW');
+  await expect(page.getByLabel('Từ ngày', { exact: true })).toHaveValue('2026-10-01');
+  await page.goForward();
+  await expect(detail).toContainText('SB-A');
+  await expect(page.locator('.booking-list')).toHaveCount(0);
+  await detail.getByRole('button', { name: 'Quay lại danh sách đơn', exact: true }).click();
+  await expect(page).toHaveURL(/#\/bookings$/);
+  await expect(page.getByLabel('Đến ngày', { exact: true })).toHaveValue('2026-10-31');
+  await row.getByRole('button', { name: 'Xem đơn', exact: true }).click();
   await page.getByRole('combobox', { name: 'Doanh nghiệp', exact: true }).selectOption('b2');
   await expect(page.locator('.status-banner')).toContainText('Doanh nghiệp B'); await expect(detail).toHaveCount(0);
   await expect(page.locator('.booking-list')).toContainText('SB-B'); await expect(page.locator('.booking-list')).not.toContainText('SB-A');
@@ -119,15 +145,26 @@ test('F06 partner notification retry, total unread badge and deep link follows b
   await page.getByRole('button', { name: 'Xem đơn đặt sân', exact: true }).click();
   await expect(page.locator('.status-banner')).toContainText('Doanh nghiệp B');
   await expect(page.getByRole('region', { name: 'Chi tiết đơn đặt sân' })).toContainText('SB-B');
-  await expect(page).toHaveURL(new RegExp(`bookingId=${bookingB}`));
-  await page.reload(); await expect(page.getByRole('heading', { name: 'Tạo tài khoản chủ sân' })).toBeVisible();
-  await page.getByRole('button', { name: 'Đăng nhập', exact: true }).first().click();
-  await page.getByLabel('Email', { exact: true }).fill('owner@example.test'); await page.getByLabel('Mật khẩu', { exact: true }).fill('Test-password-2026!');
-  await page.getByRole('button', { name: 'Đăng nhập', exact: true }).last().click();
+  await expect(page).toHaveURL(new RegExp(`#/bookings/${bookingB}$`));
+  await page.reload();
   await expect(page.locator('.status-banner')).toContainText('Doanh nghiệp B');
   await expect(page.getByRole('region', { name: 'Chi tiết đơn đặt sân' })).toContainText('SB-B');
+  await expect(page.locator('.booking-list')).toHaveCount(0);
   expect(api.calls.filter(call => call.method === 'POST' && call.path.includes('/operator/'))).toHaveLength(0);
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
+});
+
+test('Partner legacy booking deep link becomes a child route and F5 restores only the detail page', async ({ page }) => {
+  const api = await fixture(page); await login(page, `#/bookings?bookingId=${bookingA}`);
+  await expect(page).toHaveURL(new RegExp(`#/bookings/${bookingA}$`));
+  await expect(page.getByRole('region', { name: 'Chi tiết đơn đặt sân' })).toContainText('SB-A');
+  await expect(page.locator('.booking-list')).toHaveCount(0);
+  await page.reload();
+  await expect(page).toHaveURL(new RegExp(`#/bookings/${bookingA}$`));
+  await expect(page.getByRole('region', { name: 'Chi tiết đơn đặt sân' })).toContainText('SB-A');
+  await expect(page.locator('.booking-filters')).toHaveCount(0);
+  await expect(page.locator('.booking-list')).toHaveCount(0);
+  expect(api.calls.filter(call => call.method === 'POST' && call.path.includes('/operator/'))).toHaveLength(0);
 });
 
 test('F06 pending partner cannot operate bookings and no scoped booking requests are made', async ({ page }) => {
@@ -141,6 +178,7 @@ test('F06 partner venue switch discards late list results and validates date ran
   let release!: () => void;
   const barrier = new Promise<void>(resolve => { release = resolve; });
   await page.route('http://localhost:5080/api/v1/operator/venues/v1/bookings?**', async route => {
+    if (await browserSessionRoute(route, page)) return;
     if (route.request().method() === 'OPTIONS') return route.fallback();
     await barrier;
     await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': 'http://localhost:5174' },
@@ -227,7 +265,9 @@ test('F06 owner preserves amounts beyond safe integer in display and numeric JSO
   const form = page.getByRole('form', { name: 'Quyết định thanh toán' });
   await expect(form.getByLabel('Số tiền thực nhận (đ)')).toHaveValue(exactAmount);
   await expect(form).toContainText('9.007.199.254.740.993đ');
+  await page.getByRole('button', { name: 'Quay lại danh sách đơn', exact: true }).click();
   await expect(page.locator('.booking-list')).toContainText('9.007.199.254.740.993đ');
+  await page.getByRole('button', { name: 'Xem đơn', exact: true }).click();
   await form.getByRole('button', { name: 'Xác nhận đã nhận đủ tiền' }).click();
   await expect(form.getByRole('alert')).toContainText('giữ nguyên mã yêu cầu');
   await form.getByRole('button', { name: 'Xác nhận đã nhận đủ tiền' }).click();
@@ -250,6 +290,7 @@ test('F06 revoked owner loses cached private detail and proof immediately after 
   await expect(detail.getByAltText('Biên lai chuyển khoản khách cung cấp')).toHaveCount(0);
   await expect(detail).not.toContainText('FT-TEST-001');
   await expect(page.getByRole('form', { name: 'Quyết định thanh toán' })).toHaveCount(0);
-  await expect(page.locator('.booking-list')).not.toContainText('SB-A');
+  await page.getByRole('button', { name: 'Quay lại danh sách đơn', exact: true }).click();
+  await expect(page.locator('.booking-list > li')).toHaveCount(0);
   expect(api.calls.filter(item => item.path.endsWith('/confirm-payment'))).toHaveLength(1);
 });

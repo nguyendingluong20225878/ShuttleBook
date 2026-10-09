@@ -47,9 +47,9 @@ public static partial class PaymentEndpoints
         if (from > to || (from is DateOnly f && to is DateOnly t && t.DayNumber - f.DayNumber > 366)) return Error(http, 400, "VALIDATION_FAILED");
         await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, ct);
         if (!await HasVenueScope(db, user!.Id, venueId, ct)) return Error(http, 404, "NOT_FOUND");
-        var rows = db.Bookings.AsNoTracking().Where(x => x.VenueId == venueId);
-        if (from is DateOnly first) rows = rows.Where(x => x.LocalDate >= first);
-        if (to is DateOnly last) rows = rows.Where(x => x.LocalDate <= last);
+        var rows = db.Bookings.AsNoTracking().Where(x => x.VenueId == venueId && db.BookingPayments.Any(p => p.BookingId == x.Id));
+        if (from is not null || to is not null) rows = rows.Where(x => db.Bookings.Any(member => member.PaymentScopeId == x.PaymentScopeId &&
+            (from == null || member.LocalDate >= from) && (to == null || member.LocalDate <= to)));
         var counts = new
         {
             awaitingOwnerConfirmation = await rows.CountAsync(x => x.Status == "AWAITING_OWNER_CONFIRMATION", ct),
@@ -57,17 +57,11 @@ public static partial class PaymentEndpoints
         };
         if (query.ContainsKey("status")) { var status = query["status"].ToString(); rows = rows.Where(x => x.Status == status); }
         if (before is Guid cursor) rows = rows.Where(x => x.Id.CompareTo(cursor) < 0);
-        var overdueCutoff = clock.GetUtcNow().AddMinutes(-ConfirmationAlerts.SlaMinutes);
-        var items = await (from b in rows join p in db.BookingPayments on b.Id equals p.BookingId
-                           orderby b.Id descending select new
-                           {
-                               bookingId = b.Id, b.BookingNo, b.Status, b.VenueId, b.CourtId, b.VenueName, b.CourtName,
-                               b.Timezone, amountExact = b.Amount.ToString(CultureInfo.InvariantCulture), date = b.LocalDate.ToString("yyyy-MM-dd"), localStart = b.LocalStart.ToString("HH:mm"),
-                               localEnd = b.LocalEnd.ToString("HH:mm"), b.StartsAt, b.EndsAt, b.Amount, currency = "VND",
-                               b.PaymentDeadline, b.Version, b.CreatedAt, firstReportedAt = p.FirstReportedAt,
-                               isOverdue = p.FirstReportedAt <= overdueCutoff && (b.Status == "AWAITING_OWNER_CONFIRMATION" || b.Status == "NEEDS_REVIEW")
-                           }).Take(limit + 1).ToListAsync(ct);
-        return Ok(http, new { items = items.Take(limit), nextCursor = items.Count > limit ? items[limit - 1].bookingId.ToString() : null, counts });
+        var bookings = await rows.OrderByDescending(b => b.Id).Take(limit + 1).ToListAsync(ct);
+        var items = new List<object>();
+        foreach (var b in bookings.Take(limit)) items.Add(await BookingReadModel.Summary(db, b,
+            await db.BookingPayments.AsNoTracking().SingleAsync(p => p.BookingId == b.Id, ct), ct, clock.GetUtcNow()));
+        return Ok(http, new { items, nextCursor = bookings.Count > limit ? bookings[limit - 1].Id.ToString() : null, counts });
     }
 
     private static async Task<IResult> OperatorDetail(HttpContext http, ShuttleBookDbContext db, TimeProvider clock, Guid id, CancellationToken ct)

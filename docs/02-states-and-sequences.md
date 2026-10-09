@@ -1,5 +1,8 @@
 # State Diagram và Sequence Diagram
 
+> Cập nhật2026-10-08: quote hợp lệ giữ chỗ tạm đến expiresAt; create chuyển allocation tạm sang BOOKING nguyên tử. Xem docs/features/F07-quote-reservations.md; chính sách mới thay mô tả quote không giữ chỗ trước đó.
+
+
 ## 1. Trạng thái Booking
 
 Customer không có transition hủy hoặc đổi lịch. `AWAITING_OWNER_CONFIRMATION` hiển thị **Chờ xác nhận**; `CONFIRMED` hiển thị **Đã xác nhận** trên cả cổng khách và cổng chủ sân.
@@ -206,7 +209,7 @@ sequenceDiagram
     API->>DB: Sinh toàn bộ occurrence và kiểm tra overlap
     alt Có ngày xung đột
       DB-->>API: Danh sách conflict dates
-      API-->>UI: 409 và các ngày không khả dụng
+      API-->>UI: 200 preview/conflicts, canCreate=false, quoteId=null
     else Tất cả đều trống
       DB-->>API: Giá và danh sách occurrence
       API-->>UI: Quote và danh sách occurrence
@@ -218,6 +221,8 @@ sequenceDiagram
       Note over UI,DB: Khách khác không thấy các ca giao với occurrence đã giữ
     end
 ```
+
+F07 đã duyệt: preview quote không giữ chỗ. Create phải kiểm lại toàn kỳ; nếu xung đột phát sinh sau quote, trả `409 SERIES_CONFLICT` và rollback mọi buổi. Một payment FULL_SERIES thu 100% tổng kỳ/một xác nhận; report/review/confirm/reject/expiry đều xử lý cả nhóm theo `features/F07-designer-notes.md`.
 
 ## 10. Booking hết hạn
 

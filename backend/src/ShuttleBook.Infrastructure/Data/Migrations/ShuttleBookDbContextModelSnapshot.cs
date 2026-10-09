@@ -104,6 +104,14 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("payment_deadline");
 
+                    b.Property<Guid>("PaymentScopeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("payment_scope_id");
+
+                    b.Property<Guid?>("SeriesId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("series_id");
+
                     b.Property<string>("Slots")
                         .IsRequired()
                         .HasColumnType("jsonb")
@@ -146,13 +154,21 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
                     b.HasIndex("BookingNo")
                         .IsUnique();
 
+                    b.HasIndex("PaymentScopeId");
+
                     b.HasIndex("AllocationId", "CourtId");
 
                     b.HasIndex("CourtId", "VenueId");
 
                     b.HasIndex("CustomerId", "Id");
 
+                    b.HasIndex("SeriesId", "LocalDate")
+                        .IsUnique()
+                        .HasFilter("series_id IS NOT NULL");
+
                     b.HasIndex("Status", "PaymentDeadline");
+
+                    b.HasIndex("SeriesId", "CustomerId", "VenueId", "CourtId");
 
                     b.HasIndex("VenueId", "Status", "LocalDate", "Id");
 
@@ -160,7 +176,9 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
                         {
                             t.HasCheckConstraint("ck_booking_grid", "MOD(EXTRACT(EPOCH FROM (ends_at-starts_at))::bigint,1800)=0 AND EXTRACT(SECOND FROM starts_at)=0 AND EXTRACT(SECOND FROM ends_at)=0");
 
-                            t.HasCheckConstraint("ck_booking_valid", "ends_at > starts_at AND amount >= 0 AND version > 0 AND hold_minutes BETWEEN 5 AND 60 AND booking_type = 'CASUAL' AND status IN ('AWAITING_TRANSFER','AWAITING_OWNER_CONFIRMATION','NEEDS_REVIEW','CONFIRMED','EXPIRED','PAYMENT_REJECTED')");
+                            t.HasCheckConstraint("ck_booking_payment_scope", "payment_scope_id = COALESCE(series_id,id)");
+
+                            t.HasCheckConstraint("ck_booking_valid", "ends_at > starts_at AND amount >= 0 AND version > 0 AND hold_minutes BETWEEN 5 AND 60 AND ((booking_type='CASUAL' AND series_id IS NULL) OR (booking_type='RECURRING_OCCURRENCE' AND series_id IS NOT NULL)) AND status IN ('AWAITING_TRANSFER','AWAITING_OWNER_CONFIRMATION','NEEDS_REVIEW','CONFIRMED','EXPIRED','PAYMENT_REJECTED')");
                         });
                 });
 
@@ -254,6 +272,10 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("last_reported_at");
 
+                    b.Property<Guid>("PaymentScopeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("payment_scope_id");
+
                     b.Property<Guid>("QrUploadId")
                         .HasColumnType("uuid")
                         .HasColumnName("qr_upload_id");
@@ -276,7 +298,12 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
 
                     b.HasIndex("ConfirmedBy");
 
+                    b.HasIndex("PaymentScopeId")
+                        .IsUnique();
+
                     b.HasIndex("QrUploadId");
+
+                    b.HasIndex("BookingId", "PaymentScopeId");
 
                     b.HasIndex("FirstReportedAt", "ConfirmationAlertedAt");
 
@@ -377,6 +404,162 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
                     b.ToTable("booking_quotes", null, t =>
                         {
                             t.HasCheckConstraint("ck_booking_quote_interval", "ends_at > starts_at AND amount >= 0 AND expires_at > created_at");
+                        });
+                });
+
+            modelBuilder.Entity("ShuttleBook.Infrastructure.Bookings.BookingSeries", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("numeric(18,0)")
+                        .HasColumnName("amount");
+
+                    b.Property<Guid>("CourtId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("court_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CustomerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("customer_id");
+
+                    b.Property<int>("DayOfWeek")
+                        .HasColumnType("integer")
+                        .HasColumnName("day_of_week");
+
+                    b.Property<int>("DurationMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("duration_minutes");
+
+                    b.Property<DateOnly>("EndsOn")
+                        .HasColumnType("date")
+                        .HasColumnName("ends_on");
+
+                    b.Property<TimeOnly>("LocalStart")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("local_start");
+
+                    b.Property<int>("OccurrenceCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("occurrence_count");
+
+                    b.Property<string>("PaymentPlan")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("payment_plan");
+
+                    b.Property<string>("SeriesNo")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("series_no");
+
+                    b.Property<DateOnly>("StartsOn")
+                        .HasColumnType("date")
+                        .HasColumnName("starts_on");
+
+                    b.Property<string>("Timezone")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("timezone");
+
+                    b.Property<Guid>("VenueId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("venue_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CustomerId");
+
+                    b.HasIndex("SeriesNo")
+                        .IsUnique();
+
+                    b.HasIndex("CourtId", "VenueId");
+
+                    b.ToTable("booking_series", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_series_valid", "ends_on >= (starts_on + INTERVAL '1 month')::date AND day_of_week BETWEEN 0 AND 6 AND duration_minutes >= 120 AND MOD(duration_minutes,30)=0 AND occurrence_count BETWEEN 1 AND 12 AND amount >= 0 AND payment_plan='FULL_SERIES'");
+                        });
+                });
+
+            modelBuilder.Entity("ShuttleBook.Infrastructure.Bookings.BookingSeriesQuote", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("numeric(18,0)")
+                        .HasColumnName("amount");
+
+                    b.Property<Guid>("CourtId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("court_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("DayOfWeek")
+                        .HasColumnType("integer")
+                        .HasColumnName("day_of_week");
+
+                    b.Property<int>("DurationMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("duration_minutes");
+
+                    b.Property<DateOnly>("EndsOn")
+                        .HasColumnType("date")
+                        .HasColumnName("ends_on");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("fingerprint");
+
+                    b.Property<TimeOnly>("LocalStart")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("local_start");
+
+                    b.Property<string>("Occurrences")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("occurrences");
+
+                    b.Property<DateOnly>("StartsOn")
+                        .HasColumnType("date")
+                        .HasColumnName("starts_on");
+
+                    b.Property<Guid>("VenueId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("venue_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CourtId");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("VenueId");
+
+                    b.ToTable("booking_series_quotes", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_series_quote_valid", "ends_on >= (starts_on + INTERVAL '1 month')::date AND day_of_week BETWEEN 0 AND 6 AND duration_minutes >= 120 AND MOD(duration_minutes,30)=0 AND amount >= 0 AND expires_at > created_at");
                         });
                 });
 
@@ -509,6 +692,59 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
                     b.ToTable("payment_evidence", null, t =>
                         {
                             t.HasCheckConstraint("ck_evidence_kind", "kind IN ('INITIAL','SUPPLEMENT')");
+                        });
+                });
+
+            modelBuilder.Entity("ShuttleBook.Infrastructure.Bookings.QuoteReservation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("ConsumedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("consumed_at");
+
+                    b.Property<Guid>("CourtId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("court_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CustomerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("customer_id");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTimeOffset?>("ReleasedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("released_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CourtId");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("CustomerId", "CourtId")
+                        .IsUnique()
+                        .HasFilter("consumed_at IS NULL AND released_at IS NULL");
+
+                    b.ToTable("quote_reservations", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_quote_reservation_valid", "expires_at > created_at AND kind IN ('CASUAL','SERIES') AND NOT (consumed_at IS NOT NULL AND released_at IS NOT NULL)");
                         });
                 });
 
@@ -981,6 +1217,10 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
                         .HasColumnType("character varying(32)")
                         .HasColumnName("kind");
 
+                    b.Property<Guid?>("QuoteReservationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("quote_reservation_id");
+
                     b.Property<DateTimeOffset?>("ReleasedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("released_at");
@@ -997,9 +1237,14 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("QuoteReservationId", "CourtId");
+
                     b.HasIndex("CourtId", "StartsAt", "EndsAt");
 
-                    b.ToTable("court_allocations", (string)null);
+                    b.ToTable("court_allocations", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_quote_allocation_scope", "(kind='QUOTE_HOLD' AND quote_reservation_id IS NOT NULL) OR kind='BOOKING' OR (kind='MAINTENANCE' AND quote_reservation_id IS NULL)");
+                        });
                 });
 
             modelBuilder.Entity("ShuttleBook.Infrastructure.Onboarding.CourtMaintenance", b =>
@@ -1453,6 +1698,12 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
                         .HasPrincipalKey("Id", "VenueId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("ShuttleBook.Infrastructure.Bookings.BookingSeries", null)
+                        .WithMany()
+                        .HasForeignKey("SeriesId", "CustomerId", "VenueId", "CourtId")
+                        .HasPrincipalKey("Id", "CustomerId", "VenueId", "CourtId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("ShuttleBook.Infrastructure.Bookings.BookingIdempotency", b =>
@@ -1488,9 +1739,47 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
                         .HasForeignKey("QrUploadId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("ShuttleBook.Infrastructure.Bookings.Booking", null)
+                        .WithMany()
+                        .HasForeignKey("BookingId", "PaymentScopeId")
+                        .HasPrincipalKey("Id", "PaymentScopeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("ShuttleBook.Infrastructure.Bookings.BookingQuote", b =>
+                {
+                    b.HasOne("ShuttleBook.Infrastructure.Onboarding.Court", null)
+                        .WithMany()
+                        .HasForeignKey("CourtId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ShuttleBook.Infrastructure.Onboarding.Venue", null)
+                        .WithMany()
+                        .HasForeignKey("VenueId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ShuttleBook.Infrastructure.Bookings.BookingSeries", b =>
+                {
+                    b.HasOne("ShuttleBook.Infrastructure.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ShuttleBook.Infrastructure.Onboarding.Court", null)
+                        .WithMany()
+                        .HasForeignKey("CourtId", "VenueId")
+                        .HasPrincipalKey("Id", "VenueId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ShuttleBook.Infrastructure.Bookings.BookingSeriesQuote", b =>
                 {
                     b.HasOne("ShuttleBook.Infrastructure.Onboarding.Court", null)
                         .WithMany()
@@ -1539,6 +1828,21 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
                         .WithMany()
                         .HasForeignKey("BookingId", "CustomerId", "VenueId")
                         .HasPrincipalKey("Id", "CustomerId", "VenueId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ShuttleBook.Infrastructure.Bookings.QuoteReservation", b =>
+                {
+                    b.HasOne("ShuttleBook.Infrastructure.Onboarding.Court", null)
+                        .WithMany()
+                        .HasForeignKey("CourtId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ShuttleBook.Infrastructure.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
@@ -1621,6 +1925,12 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
                         .HasForeignKey("CourtId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("ShuttleBook.Infrastructure.Bookings.QuoteReservation", null)
+                        .WithMany()
+                        .HasForeignKey("QuoteReservationId", "CourtId")
+                        .HasPrincipalKey("Id", "CourtId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("ShuttleBook.Infrastructure.Onboarding.CourtMaintenance", b =>

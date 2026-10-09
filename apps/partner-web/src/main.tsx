@@ -1,13 +1,13 @@
-import { FormEvent, StrictMode, useState } from 'react';
+import { FormEvent, StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { PartnerOnboarding } from './PartnerOnboarding';
 import { PartnerIcon } from './components/PartnerIcon';
+import { useBrowserSession } from '@shuttlebook/ui/browser-session';
 import './assets/partner.css';
 
 type ContactType = 'email' | 'phone';
 type View = 'register' | 'verify' | 'login' | 'session';
 type ApiError = { code?: string };
-type LoginResponse = { data?: { accessToken?: string; refreshToken?: string; user?: { accountType?: string; status?: string } } };
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5080';
 
@@ -35,9 +35,14 @@ function PartnerIdentity() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [code, setCode] = useState('');
-  const [session, setSession] = useState<{ accessToken: string; refreshToken: string } | null>(null);
+  const auth = useBrowserSession('partner', apiBaseUrl);
+  const { session } = auth;
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  useEffect(() => {
+    if (session && view !== 'session') setView('session');
+    else if (!session && view === 'session') { setView('login'); setMessage(''); }
+  }, [session, view]);
 
   const register = async (event: FormEvent) => {
     event.preventDefault();
@@ -90,45 +95,38 @@ function PartnerIdentity() {
   const login = async (event: FormEvent) => {
     event.preventDefault(); setSubmitting(true); setMessage('');
     try {
-      const response = await post('/auth/login', { contactType, contact, password });
+      const response = await auth.login({ contactType, contact, password });
       if (!response.ok) {
         const error = await errorCode(response);
         setMessage(error === 'RATE_LIMITED' ? retryMessage(response)
           : 'Đăng nhập không thành công. Kiểm tra thông tin hoặc xác minh tài khoản.');
         return;
       }
-      const data = (await response.json() as LoginResponse).data;
-      if (data?.user?.accountType !== 'VENUE_OPERATOR' || !['PENDING_ONBOARDING', 'ACTIVE'].includes(data.user.status ?? '')
-        || !data.accessToken || !data.refreshToken) {
+      const next = await auth.completeLogin(response);
+      if (!next) {
         setMessage('Tài khoản này không thuộc cổng chủ sân.');
         return;
       }
-      setSession({ accessToken: data.accessToken, refreshToken: data.refreshToken });
       setPassword(''); setView('session');
       setMessage('Đăng nhập thành công.');
-    } catch { setMessage('Không thể kết nối máy chủ. Vui lòng thử lại.'); }
+    } catch (error) { setMessage(error instanceof Error && error.message === 'SESSION_CHANGED'
+      ? 'Phiên đăng nhập đã thay đổi ở cửa sổ khác. Hãy thử lại.' : 'Không thể kết nối máy chủ. Vui lòng thử lại.'); }
     finally { setSubmitting(false); }
   };
 
   const logout = async () => {
-    const currentSession = session;
-    if (!currentSession) return;
     setSubmitting(true); setMessage('');
     try {
-      const response = await fetch(`${apiBaseUrl}/api/v1/auth/logout`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${currentSession.accessToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken: currentSession.refreshToken }),
-      });
-      setMessage(response.status === 204 ? 'Đã đăng xuất.' : 'Phiên đã đóng trên trình duyệt. Máy chủ chưa xác nhận đăng xuất.');
+      await auth.logout(); setMessage('Đã đăng xuất.');
     } catch { setMessage('Phiên đã đóng trên trình duyệt. Không thể kết nối máy chủ để đăng xuất.'); }
-    finally { setSession(null); setView('login'); setSubmitting(false); }
+    finally { setView('login'); setSubmitting(false); }
   };
 
-  if (view === 'session' && session) return <PartnerOnboarding session={session} onSession={setSession}
-    onLogout={() => void logout()} logoutBusy={submitting} onExpired={() => {
-      setSession(null); setView('login'); setMessage('Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.');
-    }} />;
+  if (auth.restoring) return <main className="auth-page" role="status">Đang khôi phục phiên đăng nhập…</main>;
+  if (auth.restoreError) return <main className="auth-page"><p role="alert">{auth.restoreError}</p>
+    <button type="button" onClick={() => void auth.retryRestore()}>Thử lại kết nối</button></main>;
+  if (session) return <PartnerOnboarding sendRequest={auth.request}
+    onLogout={() => void logout()} logoutBusy={submitting} />;
 
   return <main className="auth-page">
     <section className="auth-story">
@@ -188,7 +186,7 @@ function PartnerIdentity() {
       <button disabled={submitting} type="submit">{submitting ? 'Đang đăng nhập…' : 'Đăng nhập'}</button>
     </form>}
 
-    {message && <p className="feedback" role="status">{message}</p>}
+    {(message || auth.message) && <p className="feedback" role="status">{message || auth.message}</p>}
     </div></section>
   </main>;
 }

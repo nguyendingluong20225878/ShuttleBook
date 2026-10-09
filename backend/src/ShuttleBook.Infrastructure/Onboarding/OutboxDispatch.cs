@@ -63,7 +63,8 @@ public static class OutboxDispatch
                 customerLabel = !string.IsNullOrEmpty(customer.Phone) ? "Khách ****" + customer.Phone[^Math.Min(4, customer.Phone.Length)..] :
                     !string.IsNullOrEmpty(customer.Email) ? "Khách " + customer.Email[0] + "***@" + customer.Email.Split('@').Last() : "Khách đặt sân";
             }
-            var (title, body) = MessageText(message, booking, customerLabel);
+            var series = booking?.SeriesId is Guid seriesId ? await db.BookingSeries.AsNoTracking().SingleAsync(x => x.Id == seriesId, ct) : null;
+            var (title, body) = MessageText(message, booking, customerLabel, series);
             foreach (var recipient in recipients)
             {
                 if (!await db.Notifications.AnyAsync(n => n.OutboxMessageId == message.Id && n.UserId == recipient, ct))
@@ -89,12 +90,13 @@ public static class OutboxDispatch
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return message.Attempts;
     }
 
-    private static (string Title, string Body) MessageText(OutboxMessage message, Booking? booking, string? customerLabel)
+    private static (string Title, string Body) MessageText(OutboxMessage message, Booking? booking, string? customerLabel, BookingSeries? series)
     {
         using var payload = JsonDocument.Parse(message.Payload);
         var reason = payload.RootElement.TryGetProperty("reason", out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : "";
         if (reason.Length > 900) reason = reason[..900];
         var info = booking is null ? "" : $"{booking.BookingNo} · {booking.VenueName} · {booking.CourtName} · {booking.LocalDate:dd/MM/yyyy} {booking.LocalStart:HH:mm}–{booking.LocalEnd:HH:mm} · {booking.Amount:N0}đ";
+        if (booking is not null && series is not null) info = $"{series.SeriesNo} · {booking.VenueName} · {booking.CourtName} · {series.OccurrenceCount} buổi hàng tuần · {series.StartsOn:dd/MM/yyyy}–{series.EndsOn:dd/MM/yyyy} · {booking.LocalStart:HH:mm}–{booking.LocalEnd:HH:mm} · {series.Amount:N0}đ";
         if (info.Length > 700) info = info[..700];
         if (booking is not null && customerLabel is not null)
         {
@@ -107,8 +109,8 @@ public static class OutboxDispatch
             "APPROVAL_SUBMITTED" => ("Có hồ sơ chờ duyệt", "Mở cổng Admin để xem và quyết định hồ sơ."),
             "APPROVAL_APPROVED" => ("Hồ sơ đã được duyệt", "Cơ sở đã được công bố trên hệ thống."),
             "APPROVAL_CHANGES_REQUESTED" => ("Hồ sơ cần bổ sung", reason),
-            "BOOKING_CREATED" => ("Đơn đặt sân đang giữ chỗ", "Mở Đơn của tôi để xem QR và hạn chuyển khoản."),
-            "BOOKING_EXPIRED" => ("Đơn đặt sân đã hết hạn", "Khung giờ đã được giải phóng. Bạn có thể chọn lịch và tạo đơn mới."),
+            "BOOKING_CREATED" => (series is null ? "Đơn đặt sân đang giữ chỗ" : "Lịch cố định đang giữ toàn bộ kỳ", "Mở Đơn của tôi để xem QR và hạn chuyển khoản."),
+            "BOOKING_EXPIRED" => (series is null ? "Đơn đặt sân đã hết hạn" : "Lịch cố định đã hết hạn", series is null ? "Khung giờ đã được giải phóng. Bạn có thể chọn lịch và tạo đơn mới." : "Toàn bộ các buổi đã được giải phóng. Bạn có thể chọn lịch và tạo đơn mới."),
             "PAYMENT_TRANSFER_REPORTED" => ("Khách đã báo chuyển khoản", info + ". Mở đơn để đối chiếu và xác nhận."),
             "PAYMENT_EVIDENCE_SUPPLEMENTED" => ("Khách đã bổ sung bằng chứng", info + ". Mở đơn để tiếp tục đối chiếu."),
             "PAYMENT_NEEDS_REVIEW" => ("Đơn cần bổ sung hoặc đối chiếu", reason),

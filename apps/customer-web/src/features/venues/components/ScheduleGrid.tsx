@@ -8,7 +8,7 @@ const money = new Intl.NumberFormat('vi-VN');
 function minutes(time: string) { const [hour, minute] = time.split(':').map(Number); return hour * 60 + minute; }
 function label(total: number) { return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`; }
 
-export function ScheduleGrid({ schedule }: { schedule: VenueSchedule }) {
+export function ScheduleGrid({ schedule, bookingMode = 'casual' }: { schedule: VenueSchedule; bookingMode?: 'casual' | 'fixed' }) {
   const [selection, setSelection] = useState<Selection>(null);
   const courts = schedule.courts;
   const axis = useMemo(() => {
@@ -52,7 +52,8 @@ export function ScheduleGrid({ schedule }: { schedule: VenueSchedule }) {
   const selectedCourt = schedule.courts.find(court => court.courtId === selection?.courtId);
   const selectedSlots = selectedCourt?.slots.filter(slot => selection?.starts.includes(slot.startsAt)) ?? [];
   const duration = selectedSlots.length * 30;
-  const valid = Boolean(selectedCourt && duration >= selectedCourt.minimumBookingMinutes);
+  const minimum = selectedCourt ? Math.max(bookingMode === 'fixed' ? 120 : 0, selectedCourt.minimumBookingMinutes) : 0;
+  const valid = Boolean(selectedCourt && duration >= minimum);
   const total = selectedSlots.reduce((sum, slot) => sum + (slot.pricePerSlot ?? 0), 0);
 
   return <section className="schedule-section" aria-label="Lịch các sân">
@@ -77,7 +78,7 @@ export function ScheduleGrid({ schedule }: { schedule: VenueSchedule }) {
         <tbody>{courts.map(court => {
           const slots = new Map(court.slots.map(slot => [slot.startsAt, slot]));
           return <tr key={court.courtId}><th scope="row" className="court-heading">
-            <strong>{court.name}</strong><small>Tối thiểu {court.minimumBookingMinutes} phút · mỗi ô 30 phút</small>
+            <strong>{court.name}</strong><small>Tối thiểu {Math.max(bookingMode === 'fixed' ? 120 : 0, court.minimumBookingMinutes)} phút · mỗi ô 30 phút</small>
           </th>{axis.map(time => {
             const slot = slots.get(time);
             const selected = selection?.courtId === court.courtId && selection.starts.includes(time);
@@ -99,11 +100,12 @@ export function ScheduleGrid({ schedule }: { schedule: VenueSchedule }) {
       <strong>{selectedCourt.name}: {selectedSlots[0].startsAt}–{selectedSlots[selectedSlots.length - 1].endsAt}</strong>
       <span>{duration} phút · Giá tham khảo {money.format(total)}đ</span>
       <small>{valid ? 'Khung giờ hợp lệ theo thời lượng của sân.' :
-        `Hãy chọn ca liên tiếp, tối thiểu ${selectedCourt.minimumBookingMinutes} phút.`}</small>
-      <button type="button" disabled={!valid} onClick={() => navigate(`/booking-review?${new URLSearchParams({
+        `Hãy chọn ca liên tiếp, tối thiểu ${minimum} phút.`}</small>
+      {bookingMode === 'fixed' && <small>Giá đang hiển thị cho ngày này; báo giá toàn kỳ được tính theo giá từng buổi ở bước tiếp theo.</small>}
+      <button type="button" disabled={!valid} onClick={() => navigate(`/${bookingMode === 'fixed' ? 'series-review' : 'booking-review'}?${new URLSearchParams({
         venueId: schedule.venueId, courtId: selectedCourt.courtId, date: schedule.date,
         startsAt: selectedSlots[0].startsAt, endsAt: selectedSlots[selectedSlots.length - 1].endsAt,
-      })}`)}>Tiếp tục đặt vãng lai</button>
+      })}`)}>{bookingMode === 'fixed' ? 'Tiếp tục đặt cố định' : 'Tiếp tục đặt vãng lai'}</button>
     </div>}
     <p className="schedule-note">Lịch và giá có thể thay đổi. Hệ thống sẽ kiểm tra lại khi tạo đơn đặt sân.</p>
   </section>;

@@ -10,7 +10,12 @@ export const bookingStatusLabel = (status: string) => ({
 export const money = (amount: number | string) => `${new Intl.NumberFormat('vi-VN').format(typeof amount === 'string' ? BigInt(amount) : amount)}đ`;
 export const localDateTime = (value: string | null | undefined, timezone: string) => value
   ? new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short', timeZone: timezone }).format(new Date(value)) : '—';
-export type BookingSummary = { bookingId: string; bookingNo: string; venueId: string; venueName: string; courtName: string;
+export type BookingSeriesInfo = { seriesId: string; seriesNo: string; startsOn: string; endsOn: string;
+  dayOfWeek: string; localStartTime: string; durationMinutes: number; occurrenceCount: number; paymentPlan: 'FULL_SERIES';
+  occurrences?: Array<{ bookingId: string; date: string; localStart: string; localEnd: string; startsAt: string; endsAt: string;
+    amount: number; amountExact?: string; status: string }> };
+export type BookingSummary = { bookingId: string; bookingNo: string; bookingType?: string; series?: BookingSeriesInfo | null;
+  venueId: string; venueName: string; courtName: string;
   status: string; date: string; localStart: string; localEnd: string; timezone: string; amount: number; amountExact?: string; version: number;
   isOverdue?: boolean; confirmationDueAt?: string | null };
 export type BookingDetail = BookingSummary & { businessId?: string; customer?: { maskedContact: string };
