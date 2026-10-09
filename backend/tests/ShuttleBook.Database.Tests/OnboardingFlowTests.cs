@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -194,7 +195,9 @@ public sealed partial class OnboardingFlowTests
                 admin.PostAsJsonAsync($"/api/v1/admin/approval-requests/{approvalId}/request-changes",
                     new { reason = "Please correct the profile" }));
             Assert.Single(decisions, response => response.StatusCode == HttpStatusCode.OK);
-            Assert.Single(decisions, response => response.StatusCode == HttpStatusCode.Conflict);
+            Assert.True(decisions.Count(response => response.StatusCode == HttpStatusCode.Conflict) == 1,
+                $"Expected one 409; got {string.Join(",", decisions.Select(response => (int)response.StatusCode))}; " +
+                $"server diagnostics: {string.Join(" | ", factory.Diagnostics)}");
             await using var check = context();
             var approval = await check.ApprovalRequests.SingleAsync(a => a.Id == approvalId);
             var business = await check.Businesses.SingleAsync(b => b.Id == businessId);
@@ -350,7 +353,9 @@ public sealed partial class OnboardingFlowTests
                 ownerA.PostAsync($"{Root}/businesses/{businessId}/submit", null),
                 ownerA.PostAsync($"{Root}/businesses/{businessId}/submit", null));
             Assert.Single(submissions, response => response.StatusCode == HttpStatusCode.OK);
-            Assert.Single(submissions, response => response.StatusCode == HttpStatusCode.Conflict);
+            Assert.True(submissions.Count(response => response.StatusCode == HttpStatusCode.Conflict) == 1,
+                $"Expected one 409; got {string.Join(",", submissions.Select(response => (int)response.StatusCode))}; " +
+                $"server diagnostics: {string.Join(" | ", factory.Diagnostics)}");
             var submitted = await Data(submissions.Single(response => response.StatusCode == HttpStatusCode.OK));
             var approvalId = submitted.GetProperty("id").GetGuid();
             await Problem(await ownerA.PutAsJsonAsync($"{Root}/courts/{courtId}/schedule", ScheduleBody()),
@@ -545,6 +550,9 @@ public sealed partial class OnboardingFlowTests
     }
     private sealed class OnboardingApiFactory(string connection) : WebApplicationFactory<Program>
     {
+        private readonly DiagnosticLoggerProvider diagnostics = new();
+        public string[] Diagnostics => diagnostics.Messages;
+
         protected override IHost CreateHost(IHostBuilder builder)
         {
             builder.ConfigureHostConfiguration(config => config.AddInMemoryCollection(new Dictionary<string, string?>
@@ -554,9 +562,29 @@ public sealed partial class OnboardingFlowTests
                 ["Identity:OtpPepper"] = "f02-test-otp-pepper-more-than-32-bytes",
                 ["RateLimits:AuthVerifyPerIp"] = "1000"
             }));
-            builder.ConfigureLogging(log => log.ClearProviders());
+            builder.ConfigureLogging(log => { log.ClearProviders(); log.AddProvider(diagnostics); });
             return base.CreateHost(builder);
         }
         protected override void ConfigureWebHost(IWebHostBuilder builder) => builder.UseEnvironment("Testing");
+
+        private sealed class DiagnosticLoggerProvider : ILoggerProvider
+        {
+            private readonly ConcurrentQueue<string> messages = new();
+            public string[] Messages => messages.ToArray();
+            public ILogger CreateLogger(string categoryName) => new DiagnosticLogger(categoryName, messages);
+            public void Dispose() { }
+
+            private sealed class DiagnosticLogger(string category, ConcurrentQueue<string> messages) : ILogger
+            {
+                public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+                public bool IsEnabled(LogLevel level) => level >= LogLevel.Warning;
+                public void Log<TState>(LogLevel level, EventId eventId, TState state, Exception? exception,
+                    Func<TState, Exception?, string> formatter)
+                {
+                    if (level >= LogLevel.Warning && category.EndsWith("ProblemDetailsMiddleware", StringComparison.Ordinal))
+                        messages.Enqueue(formatter(state, exception));
+                }
+            }
+        }
     }
 }

@@ -33,8 +33,9 @@ public sealed class ProblemDetailsMiddleware(RequestDelegate next, ILogger<Probl
         }
         catch (Exception exception) when (!context.Response.HasStarted)
         {
-            logger.LogError("Unhandled request failure {ExceptionType}; trace {TraceId}.",
-                exception.GetType().Name, Activity.Current?.Id ?? context.TraceIdentifier);
+            logger.LogError("Unhandled request failure {ExceptionTypes} SQLSTATE {SqlState}; trace {TraceId}.",
+                ExceptionTypes(exception), DatabaseError(exception)?.SqlState ?? "none",
+                Activity.Current?.Id ?? context.TraceIdentifier);
             context.Response.Clear();
             await WriteProblemAsync(context, StatusCodes.Status500InternalServerError);
         }
@@ -42,8 +43,23 @@ public sealed class ProblemDetailsMiddleware(RequestDelegate next, ILogger<Probl
 
     private static bool IsDatabaseConflict(Exception exception)
     {
-        var databaseError = exception as PostgresException ?? (exception as DbUpdateException)?.InnerException as PostgresException;
-        return databaseError?.SqlState is "23505" or "23P01" or "40001" or "40P01";
+        if (exception is DbUpdateConcurrencyException) return true;
+        return DatabaseError(exception)?.SqlState is "23505" or "23P01" or "40001" or "40P01";
+    }
+
+    private static PostgresException? DatabaseError(Exception exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+            if (current is PostgresException databaseError) return databaseError;
+        return null;
+    }
+
+    private static string ExceptionTypes(Exception exception)
+    {
+        var types = new List<string>();
+        for (Exception? current = exception; current is not null && types.Count < 5; current = current.InnerException)
+            types.Add(current.GetType().Name);
+        return string.Join(" > ", types);
     }
 
     private static Task WriteProblemAsync(HttpContext context, int status)
