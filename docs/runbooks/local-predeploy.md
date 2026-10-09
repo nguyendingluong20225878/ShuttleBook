@@ -18,13 +18,24 @@ npm.cmd run test:db
 
 ## 2. Backup và restore drill
 
-Cài PostgreSQL CLI cùng major server (`pg_dump`, `pg_restore`, `createdb`, `psql`) và đưa vào PATH **của phiên PowerShell**. Đặt `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`, `PGPASSWORD` bằng môi trường tiến trình; không gõ mật khẩu trên dòng lệnh hoặc đưa vào repo/log. Script mặc định đọc media private tại `backend/src/ShuttleBook.Api/.media-local`. DB cần đã có migration mới nhất.
+Native mode: cài PostgreSQL CLI cùng major server (`pg_dump`, `pg_restore`, `createdb`, `psql`) và đưa vào PATH **của phiên PowerShell**. Đặt `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`, `PGPASSWORD` bằng môi trường tiến trình; không gõ mật khẩu trên dòng lệnh hoặc đưa vào repo/log. Script mặc định đọc media private tại `backend/src/ShuttleBook.Api/.media-local`. DB cần đã có migration mới nhất.
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-LocalBackupDrill.ps1 -Mode Backup
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-LocalBackupDrill.ps1 -Mode Verify -BackupDirectory .local/backups/<id-vừa-tạo>
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-LocalBackupDrill.ps1 -Mode RestoreDrill -BackupDirectory .local/backups/<id-vừa-tạo>
 ```
+
+Docker mode khi máy Windows chưa có PostgreSQL CLI nhưng Docker Desktop và container PostGIS local đang chạy (thay đường dẫn `docker.exe` cho đúng máy):
+
+```powershell
+$docker = 'C:\Users\luong\AppData\Local\Programs\DockerDesktop\resources\bin\docker.exe'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-LocalBackupDrill.ps1 -Mode Backup -Transport Docker -DockerExecutable $docker
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-LocalBackupDrill.ps1 -Mode Verify -BackupDirectory .local/backups/<id-vừa-tạo>
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Invoke-LocalBackupDrill.ps1 -Mode RestoreDrill -BackupDirectory .local/backups/<id-vừa-tạo> -Transport Docker -DockerExecutable $docker
+```
+
+Docker mode mặc định dùng container `shuttlebook-postgres-1`, role `shuttlebook` và DB nguồn `shuttlebook`. Có thể thay bằng `-DockerContainer`, `-DockerDatabaseUser`, `-SourceDatabase` cho môi trường thử tương ứng. Chỉ chạy trên container local tin cậy. Tạm dừng API/Worker ghi dữ liệu trước backup; Docker mode không tự quiesce ứng dụng. Script dùng `/tmp/sb_backup_*` và `/tmp/sb_restore_*` riêng trong container rồi dọn đúng file tạm.
 
 Backup tạo `.local/backups/<id>/database.dump`, `media/`, `manifest.json` với SHA-256. Restore kiểm file trước khi tạo **DB mới `sb_restore_*`** và media mới dưới `.local/restore-drill`; so số hàng bookings/payments/series/allocations/evidence/media. Script không xóa DB thử; sau nghiệm thu, người vận hành rà tên DB/path trước khi tự dọn. `.local/` bị Git ignore nhưng vẫn chứa dữ liệu riêng tư: chỉ giữ trên máy thử có quyền phù hợp. Chưa dùng script này như lịch backup vận hành.
 
