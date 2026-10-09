@@ -23,7 +23,7 @@ $env:SHUTTLEBOOK_TEST_API_URL = $testApiBase
 $env:Logging__EventLog__LogLevel__Default = 'None'
 $localDir = Join-Path $projectRoot '.local'
 [IO.Directory]::CreateDirectory($localDir) | Out-Null
-$env:DataProtection__KeysPath = Join-Path $localDir 'identity-live-keys'
+$env:DataProtection__KeysPath = Join-Path $localDir ('identity-live-keys-' + [guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($env:DataProtection__KeysPath) | Out-Null
 $apiProcess = $null
 $workerProcess = $null
