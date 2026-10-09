@@ -102,31 +102,28 @@ public sealed partial class FixedSeriesTests
     }
 
     [Fact]
-    public async Task Quote_hold_refresh_and_casual_fixed_replacement_preserve_original_deadline_and_failed_requote_keeps_old_hold()
+    public async Task Active_customer_quote_rejects_new_casual_and_fixed_quotes_and_preserves_original_hold()
     {
-        await using var f = await Fixture.Create(); using var customer = await f.Client("customer"); using var other = await f.Client("other");
+        await using var f = await Fixture.Create(); using var customer = await f.Client("customer");
         var first = await CasualQuote(f, customer); var deadline = first.GetProperty("expiresAt").GetDateTimeOffset();
-        f.Clock.Set(f.Clock.GetUtcNow().AddSeconds(25)); var refresh = await CasualQuote(f, customer);
-        Assert.Equal(deadline, refresh.GetProperty("expiresAt").GetDateTimeOffset());
-        await Code(await CasualCreate(customer, first, "old-refresh"), 409, "QUOTE_EXPIRED");
-        f.Clock.Set(f.Clock.GetUtcNow().AddSeconds(25)); var series = await QuoteSeries(f, customer);
-        Assert.Equal(deadline, series.GetProperty("expiresAt").GetDateTimeOffset());
-        await Code(await CasualCreate(customer, refresh, "old-casual"), 409, "QUOTE_EXPIRED");
-        var count = series.GetProperty("occurrenceCount").GetInt32();
-        await using (var db = f.Context()) Assert.Equal(count, await db.CourtAllocations.CountAsync(x => x.Status == "RESERVED"));
-        await Code(await customer.PostAsJsonAsync("/api/v1/booking-series/quote", Input(f, duration: 90)), 400, "VALIDATION_FAILED");
-        await CasualQuote(f, other, "20:00", "21:00");
-        var conflict = await QuoteSeries(f, customer, "19:00"); Assert.False(conflict.GetProperty("canCreate").GetBoolean());
+        f.Clock.Set(f.Clock.GetUtcNow().AddSeconds(25));
+        await Code(await CasualQuoteResponse(f, customer), 409, "ACTIVE_QUOTE_EXISTS");
+        await Code(await customer.PostAsJsonAsync("/api/v1/booking-series/quote", Input(f)), 409, "ACTIVE_QUOTE_EXISTS");
         await using (var db = f.Context())
         {
-            var old = await db.QuoteReservations.SingleAsync(x => x.Id == series.GetProperty("quoteId").GetGuid()); Assert.Null(old.ReleasedAt); Assert.Null(old.ConsumedAt);
-            Assert.Equal(count, await db.CourtAllocations.CountAsync(x => x.QuoteReservationId == old.Id && x.Status == "RESERVED"));
+            var old = await db.QuoteReservations.SingleAsync(); Assert.Equal(first.GetProperty("quoteId").GetGuid(), old.Id);
+            Assert.Equal(deadline, old.ExpiresAt); Assert.Null(old.ReleasedAt); Assert.Null(old.ConsumedAt);
+            Assert.Single(await db.CourtAllocations.Where(x => x.Status == "RESERVED").ToArrayAsync());
         }
-        f.Clock.Set(f.Clock.GetUtcNow().AddSeconds(25)); var final = await CasualQuote(f, customer, "17:00", "18:00");
-        Assert.Equal(deadline, final.GetProperty("expiresAt").GetDateTimeOffset());
-        await Code(await CreateResponse(customer, series, "old-series"), 409, "QUOTE_EXPIRED");
-        await using var check = f.Context(); Assert.Equal(2, await check.CourtAllocations.CountAsync(x => x.Status == "RESERVED"));
-        Assert.Single(await check.QuoteReservations.Where(x => x.CustomerId == f.CustomerId && x.ReleasedAt == null && x.ConsumedAt == null).ToArrayAsync());
+        var next = await QuoteAfterExpiry(f, customer, first);
+        await using var check = f.Context(); Assert.Equal(next.GetProperty("quoteId").GetGuid(),
+            Assert.Single(await check.QuoteReservations.Where(x => x.CustomerId == f.CustomerId && x.ReleasedAt == null && x.ConsumedAt == null && x.ExpiresAt > f.Clock.GetUtcNow()).ToArrayAsync()).Id);
+    }
+
+    private static async Task<JsonElement> QuoteAfterExpiry(Fixture f, HttpClient customer, JsonElement previous)
+    {
+        f.Clock.Set(previous.GetProperty("expiresAt").GetDateTimeOffset());
+        return await QuoteSeries(f, customer);
     }
 
     [Fact]

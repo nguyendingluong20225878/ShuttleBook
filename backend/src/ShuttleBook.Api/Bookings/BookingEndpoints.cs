@@ -47,12 +47,14 @@ public static class BookingEndpoints
         if (input!.CourtId == Guid.Empty || !DateOnly.TryParseExact(input.Date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date) ||
             !Time(input.StartsAt, out var start) || !Time(input.EndsAt, out var end)) return Error(http, 400, "VALIDATION_FAILED");
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await QuoteReservations.LockCustomerQuote(db, customer!.Id, ct);
         await QuoteReservations.LockCourt(db, input.CourtId, ct);
         var current = await db.Users.FromSqlInterpolated($"SELECT * FROM users WHERE id={customer!.Id} FOR SHARE").AsNoTracking().SingleAsync(ct);
         if (current.Status != UserStatus.Active) return Error(http, 401, "UNAUTHORIZED");
         if (current.AccountType != AccountType.Customer) return Error(http, 403, "FORBIDDEN");
         await QuoteReservations.CleanupCourt(db, input.CourtId, clock.GetUtcNow(), ct);
-        var priorDeadline = await QuoteReservations.ReplaceOwn(db, customer.Id, input.CourtId, clock.GetUtcNow(), ct);
+        if (await QuoteReservations.HasActiveCustomerQuote(db, customer.Id, clock.GetUtcNow(), ct))
+            return Error(http, 409, "ACTIVE_QUOTE_EXISTS");
         var (value, failure) = await Compute(db, input.CourtId, date, start, end, clock.GetUtcNow(), config, ct);
         if (failure is not null) return Error(http, failure == "NOT_FOUND" ? 404 : failure == "VALIDATION_FAILED" ? 400 : 409, failure);
         var now = clock.GetUtcNow();
@@ -61,7 +63,7 @@ public static class BookingEndpoints
             Amount = value.Amount, Slots = JsonSerializer.Serialize(value.Slots, Json), Fingerprint = value.Fingerprint,
             BookingBlockMinutes = value.Court.BookingBlockMinutes, MinimumBookingMinutes = value.Court.MinimumBookingMinutes,
             HoldMinutes = value.Court.HoldMinutes, CreatedAt = now,
-            ExpiresAt = priorDeadline ?? now.AddSeconds(Math.Clamp(config.GetValue("Booking:QuoteSeconds", 120), 30, 600)) };
+            ExpiresAt = now.AddSeconds(Math.Clamp(config.GetValue("Booking:QuoteSeconds", 120), 30, 600)) };
         if (q.ExpiresAt <= clock.GetUtcNow()) return Error(http, 409, "QUOTE_EXPIRED");
         db.BookingQuotes.Add(q);
         QuoteReservations.Reserve(db, q.Id, customer.Id, q.CourtId, "CASUAL", now, q.ExpiresAt, [(q.StartsAt, q.EndsAt)]);
@@ -70,7 +72,9 @@ public static class BookingEndpoints
         { await tx.RollbackAsync(ct); return Error(http, 409, "SLOT_UNAVAILABLE"); }
         return Ok(http, new { quoteId = q.Id, q.ExpiresAt, q.CourtId, q.VenueId, courtName = value.Court.Name,
             venueName = value.Venue.Name, q.Timezone, date = date.ToString("yyyy-MM-dd"), startsAt = q.StartsAt,
-            endsAt = q.EndsAt, slots = value.Slots, q.Amount, currency = "VND", q.BookingBlockMinutes,
+            endsAt = q.EndsAt, slots = value.Slots.Select(s => new { s.StartsAt, s.EndsAt, s.PricePerSlot,
+                pricePerSlotExact = s.PricePerSlot.ToString(CultureInfo.InvariantCulture) }),
+            q.Amount, amountExact = q.Amount.ToString(CultureInfo.InvariantCulture), currency = "VND", q.BookingBlockMinutes,
             q.MinimumBookingMinutes, q.HoldMinutes });
     }
 
@@ -127,6 +131,7 @@ public static class BookingEndpoints
         if (failure is not null) return Error(http, failure == "NOT_FOUND" ? 404 : failure == "VALIDATION_FAILED" ? 400 : 409, failure);
         if (value!.Fingerprint != q.Fingerprint || value.Start != q.StartsAt || value.End != q.EndsAt)
             return Error(http, 409, "QUOTE_CHANGED");
+        if (value.Amount > BookingAmountPolicy.MaximumPaymentVnd) return Error(http, 409, "AMOUNT_LIMIT_EXCEEDED");
         var now = clock.GetUtcNow();
         if (q.ExpiresAt <= now) return Error(http, 409, "QUOTE_EXPIRED");
         var allocation = held[0]; allocation.Kind = "BOOKING"; reservation.ConsumedAt = now;
@@ -188,6 +193,7 @@ public static class BookingEndpoints
             if (rule is null) return (null, "PRICE_UNAVAILABLE");
             if (rule.PricePerSlot <= 0 || rule.PricePerSlot > 999_999_999_999_999_999 - total) return (null, "PRICE_UNAVAILABLE");
             total += rule.PricePerSlot;
+            if (total > BookingAmountPolicy.MaximumPaymentVnd) return (null, "AMOUNT_LIMIT_EXCEEDED");
             slots.Add(new(cursor.ToString("HH:mm"), next.ToString("HH:mm"), rule.PricePerSlot));
         }
         var account = await db.VenuePaymentAccounts.AsNoTracking().SingleOrDefaultAsync(x => x.VenueId == venue.Id, ct);

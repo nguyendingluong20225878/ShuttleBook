@@ -1,8 +1,8 @@
 :root {
-  font-family: 'Segoe UI', system-ui, sans-serif; color: #172b2a; background: #f3f6f6;
+  font-family: 'Segoe UI', system-ui, sans-serif; color: var(--sb-color-text); background: var(--sb-color-page);
   font-synthesis: none; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased;
-  --primary: #0f766e; --primary-dark: #115e59; --surface: #fff; --muted: #536665;
-  --border: #d6e1df; --soft: #e8f4f0; --danger: #b42318; --radius: 16px;
+  --primary: var(--sb-color-primary); --primary-dark: var(--sb-color-primary-hover); --surface: var(--sb-color-surface); --muted: var(--sb-color-muted);
+  --border: var(--sb-color-border); --soft: #e8f4f0; --danger: var(--sb-color-danger); --radius: var(--sb-radius-panel);
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -19,7 +19,7 @@ button.icon-button { padding: 10px; display: inline-flex; align-items: center; j
 .button { display: inline-flex; align-items: center; justify-content: center; gap: 12px; text-decoration: none; }
 a { color: var(--primary-dark); text-underline-offset: 4px; }
 a:hover { color: var(--primary); }
-:focus-visible { outline: 3px solid var(--primary); outline-offset: 3px; }
+:focus-visible { outline: 3px solid var(--sb-color-focus); outline-offset: 3px; }
 h1:focus, main:focus { outline: none; }
 input, select { min-height: 44px; max-width: 100%; min-width: 0; width: 100%; padding: 10px 12px; color: #172b2a; background: #fff; border: 1px solid #a6bcb7; border-radius: 8px; }
 input::placeholder { color: var(--muted); opacity: 1; }

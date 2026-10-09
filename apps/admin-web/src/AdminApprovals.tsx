@@ -182,19 +182,19 @@ export function AdminApprovals({ accessToken, onSummary }: { accessToken: string
   const current = selected?.current;
   const imageButton = (id: string, label: string) => <button type="button" className="admin-button-secondary" disabled={!!imageBusy || busy}
     onClick={() => void viewImage(id)}>{imageBusy === id ? 'Đang tải ảnh…' : label}</button>;
-  return <section className="admin-panel admin-approvals" aria-labelledby="admin-approvals-title" aria-busy={loading || busy || detailLoading}>
+  return <section className="admin-panel admin-approvals sb-panel" aria-labelledby="admin-approvals-title" aria-busy={loading || busy || detailLoading}>
     <header className="admin-panel-heading"><div><h2 id="admin-approvals-title">Hồ sơ chờ duyệt</h2><p>Hồ sơ mới và các thay đổi thông tin cơ sở.</p></div>
       <button type="button" className="admin-button-secondary" disabled={busy || loading} onClick={() => void reload()}><AdminIcon name="refresh" />Tải lại danh sách</button></header>
     <form className="admin-approval-filters" onSubmit={event => { event.preventDefault(); setQuery({ q: search.trim(), kind }); }}>
-      <label>Tìm tên doanh nghiệp<input type="search" value={search} maxLength={120} disabled={busy} onChange={event => setSearch(event.target.value)} /></label>
-      <label>Loại hồ sơ<select aria-label="Loại hồ sơ" value={kind} disabled={busy} onChange={event => setKind(event.target.value)}>
+      <label>Tìm tên doanh nghiệp<input className="sb-field" type="search" value={search} maxLength={120} disabled={busy} onChange={event => setSearch(event.target.value)} /></label>
+      <label>Loại hồ sơ<select className="sb-field" aria-label="Loại hồ sơ" value={kind} disabled={busy} onChange={event => setKind(event.target.value)}>
         <option value="">Tất cả loại hồ sơ</option><option value="ONBOARDING">Hồ sơ mới</option><option value="VENUE_REVISION">Thay đổi cơ sở</option>
       </select></label>
-      <button type="submit" disabled={busy}>Tìm hồ sơ</button>
+      <button type="submit" className="sb-action" disabled={busy}>Tìm hồ sơ</button>
       {(query.q || query.kind) && <button type="button" className="admin-button-secondary" disabled={busy} onClick={() => { setSearch(''); setKind(''); setQuery({ q: '', kind: '' }); }}>Xóa bộ lọc</button>}
     </form>
     {loaded && <p className="admin-guidance" role="status">Hiển thị {rows.length}/{totalCount} hồ sơ phù hợp · {pendingCount} hồ sơ chờ xử lý toàn hệ thống.</p>}
-    {loadError && <p className="admin-error" role="alert">{loadError}</p>}
+    {loadError && <p className="admin-error sb-notice sb-notice--error" role="alert">{loadError}</p>}
     {loading && !loaded ? <p className="admin-state" role="status">Đang tải hồ sơ…</p> : loaded && rows.length === 0 && !loadError ?
       <div className="admin-state"><AdminIcon name="approvals" /><p>{query.q || query.kind ? 'Không có hồ sơ phù hợp bộ lọc.' : 'Chưa có hồ sơ chờ duyệt.'}</p></div> : null}
     <ul className="admin-approval-list">{rows.map(row => <li key={row.id}>

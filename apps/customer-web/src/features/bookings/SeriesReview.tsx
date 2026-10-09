@@ -110,7 +110,7 @@ export function SeriesReview() {
   }
   if (!session) return null;
   const seconds = quote?.expiresAt ? Math.max(0, Math.ceil((Date.parse(quote.expiresAt) - now) / 1000)) : 0;
-  return <CustomerShell><section className="booking-panel series-review-panel"><p className="eyebrow">Đặt lịch hàng tuần</p>
+  return <CustomerShell><section className="booking-panel series-review-panel sb-panel"><p className="eyebrow">Đặt lịch hàng tuần</p>
     <h1>Thiết lập lịch cố định</h1><a href={venueId ? backLink : '/venues'}>Quay lại lịch các sân</a>
     {loadingVenue && <p role="status">Đang tải thông tin sân…</p>}
     {venue && court && <><h2>{venue.name} · {court.name}</h2><p>Múi giờ: {venue.timezone}. Chọn một thứ và cùng khung giờ cho cả kỳ.</p>
@@ -123,9 +123,9 @@ export function SeriesReview() {
           <label>Ngày kết thúc kỳ<input type="date" min={calendarMonthAfter(form.startsOn)} max={addDays(today, 60)} value={form.endsOn} onChange={event => change({ endsOn: event.target.value })} /></label>
         </fieldset>
         <p className="form-note">{weekdayLabel(form.dayOfWeek)} hằng tuần · {form.localStartTime}–{endTime(form.localStartTime, form.durationMinutes)}. Mỗi buổi tối thiểu {minimum} phút, kỳ ít nhất một tháng lịch; tối đa 12 buổi trong 60 ngày đặt trước.</p>
-        <button type="submit" disabled={loading || submitting}>{loading ? 'Đang kiểm tra toàn kỳ…' : quote ? 'Lấy báo giá mới cho kỳ' : 'Xem báo giá toàn kỳ'}</button>
+        <button type="submit" className="sb-action" disabled={loading || submitting || Boolean(quote?.canCreate && !expired)}>{loading ? 'Đang kiểm tra toàn kỳ…' : quote ? 'Lấy báo giá mới cho kỳ' : 'Xem báo giá toàn kỳ'}</button>
       </form></>}
-    {(error || conflictDates.length > 0) && <div className="series-feedback" role="alert" ref={feedback} tabIndex={-1}>
+    {(error || conflictDates.length > 0) && <div className="series-feedback sb-notice sb-notice--error" role="alert" ref={feedback} tabIndex={-1}>
       {error && <p>{error}</p>}{conflictDates.length > 0 && <><strong>Các ngày xung đột</strong><ul>{[...new Set(conflictDates)].map(date => <li key={date}>{date}</li>)}</ul>
         <p>Chưa tạo lịch hoặc giữ chỗ. Hãy đổi kỳ, thứ hoặc khung giờ rồi kiểm tra lại; không tự bỏ buổi bị trùng.</p></>}
     </div>}
@@ -137,9 +137,9 @@ export function SeriesReview() {
       <p className="booking-total">Tổng tiền cả kỳ: {money(quote.amountExact ?? quote.amount)}</p>
       <p>Thanh toán 100% toàn kỳ bằng một QR. Chủ sân xác nhận một lần cho tất cả các buổi.</p>
       {quote.canCreate && quote.quoteId && <><div className="quote-hold-notice"><p>{expired ? 'Đã hết thời gian giữ chỗ tạm' : 'Đang giữ chỗ tạm toàn kỳ cho bạn'}: <strong>{Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}</strong></p>
-          <p>Toàn bộ các buổi trong báo giá được khóa đến hết thời gian trên. Nếu bạn chưa tạo lịch, các buổi sẽ tự trở về trống.</p></div>
+          <p>Toàn bộ các buổi trong báo giá được khóa đến hết thời gian trên. Nếu bạn chưa tạo lịch, các buổi sẽ tự trở về trống. Bạn chỉ có thể lấy báo giá khác sau khi thời gian giữ chỗ kết thúc.</p></div>
         <p>Tạo lịch thành công giữ toàn bộ các buổi {quote.holdMinutes} phút để bạn chuyển khoản.</p>
-        <button type="button" className="primary-action" disabled={submitting || (expired && !canRetry)} onClick={() => { void create(); }}>{submitting ? 'Đang tạo lịch…' : retried ? 'Thử lại tạo lịch cùng yêu cầu' : 'Xác nhận tạo lịch cố định'}</button>
+        <button type="button" className="primary-action sb-action" disabled={submitting || (expired && !canRetry)} onClick={() => { void create(); }}>{submitting ? 'Đang tạo lịch…' : retried ? 'Thử lại tạo lịch cùng yêu cầu' : 'Xác nhận tạo lịch cố định'}</button>
         {expired && <p role="status">{canRetry ? 'Báo giá đã hết hạn. Bạn có thể thử lại đúng yêu cầu đã gửi hoặc kiểm tra Đơn của tôi.' : 'Báo giá đã hết hạn và chỗ tạm đã được giải phóng. Hãy lấy và xác nhận báo giá mới.'}</p>}</>}
       {!quote.canCreate && <p className="series-conflict-note">Toàn kỳ chưa thể đặt do có ngày xung đột.</p>}
     </section>}

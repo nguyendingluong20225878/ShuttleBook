@@ -51,7 +51,7 @@ test('admin search and cursor pagination retain loaded queue and global summary'
   await page.getByRole('button', { name: 'Tải lại danh sách', exact: true }).click();
   await expect(page.getByRole('button', { name: /Trang một/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /Trang hai/ })).toBeVisible();
-  expect(requests.map(url => url.searchParams.get('before'))).toEqual([null, 'cursor-one', null, 'cursor-one']);
+  await expect.poll(() => requests.map(url => url.searchParams.get('before'))).toEqual([null, 'cursor-one', null, 'cursor-one']);
   await page.getByLabel('Tìm tên doanh nghiệp').fill('  Tìm đúng  ');
   await page.getByLabel('Loại hồ sơ', { exact: true }).selectOption('VENUE_REVISION');
   await page.getByRole('button', { name: 'Tìm hồ sơ', exact: true }).click();

@@ -39,12 +39,14 @@ public static class SeriesEndpoints
         if (bodyError is not null) return bodyError;
         if (!Parse(input!, out var from, out var to, out var weekday, out var start)) return Error(http, 400, "VALIDATION_FAILED");
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await QuoteReservations.LockCustomerQuote(db, user!.Id, ct);
         await QuoteReservations.LockCourt(db, input!.CourtId, ct);
         var current = await db.Users.FromSqlInterpolated($"SELECT * FROM users WHERE id={user!.Id} FOR SHARE").AsNoTracking().SingleAsync(ct);
         if (current.Status != UserStatus.Active) return Error(http, 401, "UNAUTHORIZED");
         if (current.AccountType != AccountType.Customer) return Error(http, 403, "FORBIDDEN");
         await QuoteReservations.CleanupCourt(db, input.CourtId, clock.GetUtcNow(), ct);
-        var priorDeadline = await QuoteReservations.ReplaceOwn(db, user.Id, input.CourtId, clock.GetUtcNow(), ct);
+        if (await QuoteReservations.HasActiveCustomerQuote(db, user.Id, clock.GetUtcNow(), ct))
+            return Error(http, 409, "ACTIVE_QUOTE_EXISTS");
         var (value, failure) = await Compute(db, input.CourtId, from, to, weekday, start, input.DurationMinutes, clock.GetUtcNow(), config, ct);
         if (failure is not null) return ComputeError(http, failure);
         var first = value!.Occurrences[0].Price; var now = clock.GetUtcNow();
@@ -54,7 +56,7 @@ public static class SeriesEndpoints
         {
             quote = new() { CourtId = first.Court.Id, VenueId = first.Venue.Id, StartsOn = from, EndsOn = to, DayOfWeek = weekday,
                 LocalStart = start, DurationMinutes = input.DurationMinutes, Amount = value.Amount, Fingerprint = value.Fingerprint,
-                Occurrences = JsonSerializer.Serialize(value.Occurrences.Select(Preview), Json), CreatedAt = now, ExpiresAt = priorDeadline ?? now.AddSeconds(120) };
+                Occurrences = JsonSerializer.Serialize(value.Occurrences.Select(Preview), Json), CreatedAt = now, ExpiresAt = now.AddSeconds(120) };
             if (quote.ExpiresAt <= clock.GetUtcNow()) return Error(http, 409, "QUOTE_EXPIRED");
             db.BookingSeriesQuotes.Add(quote);
             QuoteReservations.Reserve(db, quote.Id, user.Id, quote.CourtId, "SERIES", now, quote.ExpiresAt,
@@ -125,6 +127,7 @@ public static class SeriesEndpoints
         var (value, failure) = await Compute(db, q.CourtId, q.StartsOn, q.EndsOn, q.DayOfWeek, q.LocalStart, q.DurationMinutes, clock.GetUtcNow(), config, ct, q.Id);
         if (failure is not null) return ComputeError(http, failure);
         if (value!.Conflicts.Count > 0) return ConflictError(http, value.Conflicts);
+        if (value.Amount > BookingAmountPolicy.MaximumPaymentVnd) return Error(http, 409, "AMOUNT_LIMIT_EXCEEDED");
         if (value.Fingerprint != q.Fingerprint || value.Amount != q.Amount) return Error(http, 409, "QUOTE_CHANGED");
         if (held.Count != value.Occurrences.Count || value.Occurrences.Any(o => !held.Any(a => a.StartsAt == o.Time.StartsAt && a.EndsAt == o.Time.EndsAt))) return Error(http, 409, "QUOTE_EXPIRED");
         var first = value.Occurrences[0].Price; var now = clock.GetUtcNow();
@@ -189,6 +192,7 @@ public static class SeriesEndpoints
             if (failure is not null) return (null, new(failure, [time.Date.ToString("yyyy-MM-dd")]));
             if (price!.Amount > 999_999_999_999_999_999 - amount) return (null, new("PRICE_UNAVAILABLE", [time.Date.ToString("yyyy-MM-dd")]));
             amount += price.Amount; occurrences.Add(new(time, price));
+            if (amount > BookingAmountPolicy.MaximumPaymentVnd) return (null, new("AMOUNT_LIMIT_EXCEEDED"));
         }
         var conflicts = await Conflicts(db, courtId, times, ct, now, ownReservationId);
         var fingerprint = Hash(JsonSerializer.Serialize(new { courtId, from, to, weekday, start, duration,

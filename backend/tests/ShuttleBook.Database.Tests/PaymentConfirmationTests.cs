@@ -830,12 +830,19 @@ public sealed class PaymentConfirmationTests
     }
 
     [Fact]
-    public async Task Eighteen_digit_VND_confirmation_returns_exact_strings_and_persists_integer_amount_without_rounding()
+    public async Task Historical_eighteen_digit_VND_booking_remains_exact_after_new_quote_cap()
     {
         await using var f = await Fixture.Create(); using var customer = await f.Client("customer"); using var owner = await f.Client("owner");
         const long perSlot = 400_000_000_000_000_001; const long total = perSlot * 2;
-        await using (var prices = f.Context()) { foreach (var rule in await prices.PricingRules.ToArrayAsync()) rule.PricePerSlot = perSlot; await prices.SaveChangesAsync(); }
-        var created = await f.Book(customer); var id = created.GetProperty("bookingId").GetGuid();
+        await using (var prices = f.Context()) { foreach (var rule in await prices.PricingRules.ToArrayAsync()) rule.PricePerSlot = 5_000_000; await prices.SaveChangesAsync(); }
+        var initial = await f.Book(customer); var id = initial.GetProperty("bookingId").GetGuid();
+        await using (var historical = f.Context())
+        {
+            (await historical.Bookings.SingleAsync(x => x.Id == id)).Amount = total;
+            (await historical.BookingPayments.SingleAsync(x => x.BookingId == id)).ExpectedAmount = total;
+            await historical.SaveChangesAsync();
+        }
+        var created = await Data(await customer.GetAsync($"/api/v1/bookings/{id}"));
         Assert.Equal(total, created.GetProperty("amount").GetInt64());
         Assert.Equal("800000000000000002", created.GetProperty("amountExact").GetString());
         Assert.Equal("800000000000000002", created.GetProperty("payment").GetProperty("expectedAmountExact").GetString());

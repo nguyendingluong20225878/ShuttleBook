@@ -27,7 +27,9 @@ test('guest returns after login, retries one intent, reads QR and recovers booki
     const reply = (value: object, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ data: value }) });
     if (url.pathname.endsWith('/browser-auth/customer/login')) return reply({ tokenType: 'Bearer', accessToken: 'access-test', ...browserSessionFields(), expiresInSeconds: 600, user: { accountType: 'CUSTOMER', status: 'ACTIVE' } });
     if (url.pathname.endsWith('/availability/quote')) { expect(route.request().headers().authorization).toBe('Bearer access-test'); return reply({ quoteId: courtId, courtId, venueId, courtName: 'Sân 1', venueName: 'Hoàng Cầu', date: '2026-10-20',
-      timezone: 'Asia/Ho_Chi_Minh', startsAt: '2026-10-20T11:00:00Z', endsAt: '2026-10-20T12:00:00Z', slots, amount: 250000, holdMinutes: 20, expiresAt: new Date(Date.now() + 120000).toISOString() }); }
+      timezone: 'Asia/Ho_Chi_Minh', startsAt: '2026-10-20T11:00:00Z', endsAt: '2026-10-20T12:00:00Z',
+      slots: slots.map(slot => ({ ...slot, pricePerSlot: slot.pricePerSlot + 1, pricePerSlotExact: String(slot.pricePerSlot) })),
+      amount: 250001, amountExact: '250000', holdMinutes: 20, expiresAt: new Date(Date.now() + 120000).toISOString() }); }
     if (url.pathname === '/api/v1/bookings') { keys.push(route.request().headers()['idempotency-key']); createCount++;
       expect(route.request().headers().authorization).toBe('Bearer access-test');
       return createCount === 1 ? route.abort() : reply(booking(), 201); }
@@ -42,8 +44,12 @@ test('guest returns after login, retries one intent, reads QR and recovers booki
   await page.getByRole('button', { name: 'Đăng nhập', exact: true }).last().click();
   await expect(page.getByRole('heading', { name: 'Xác nhận đặt vãng lai' })).toBeVisible();
   await expect(page.getByText('Tổng tiền: 250.000đ')).toBeVisible();
+  await page.getByText('Chi tiết giá từng ca 30 phút').click();
+  await expect(page.getByText('100.000đ')).toBeVisible();
+  await expect(page.getByText('150.000đ')).toBeVisible();
   await expect(page.locator('.quote-hold-notice')).toContainText('Đang giữ chỗ tạm cho bạn');
   await expect(page.locator('.quote-hold-notice')).toContainText('các ca sẽ tự trở về trống');
+  await page.screenshot({ path: test.info().outputPath('f05-quote.png'), fullPage: true });
   await page.getByRole('button', { name: 'Xác nhận tạo đơn' }).click();
   await expect(page.getByRole('alert')).toContainText('Không thể kết nối');
   await page.getByRole('button', { name: 'Xác nhận tạo đơn' }).click();
@@ -58,6 +64,32 @@ test('guest returns after login, retries one intent, reads QR and recovers booki
   await page.getByRole('link', { name: 'BK-F05-DEMO' }).click(); await page.reload();
   await expect(page.getByRole('heading', { name: 'Mã đơn: BK-F05-DEMO' })).toBeVisible();
   expect(createCount).toBe(2); expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
+});
+
+test('quote limit and active quote errors explain the next step without creating a booking', async ({ page }) => {
+  let quotes = 0; let creates = 0;
+  await page.route('**/api/v1/**', async route => {
+    if (await browserSessionRoute(route, page)) return;
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/browser-auth/customer/login')) return route.fulfill({ status: 200, contentType: 'application/json',
+      body: JSON.stringify({ data: { tokenType: 'Bearer', accessToken: 'access-test', ...browserSessionFields(), expiresInSeconds: 600,
+        user: { accountType: 'CUSTOMER', status: 'ACTIVE' } } }) });
+    if (path.endsWith('/availability/quote')) {
+      quotes++;
+      const code = quotes === 1 ? 'ACTIVE_QUOTE_EXISTS' : 'AMOUNT_LIMIT_EXCEEDED';
+      return route.fulfill({ status: 409, contentType: 'application/problem+json', body: JSON.stringify({ code }) });
+    }
+    if (path === '/api/v1/bookings') creates++;
+    return route.abort();
+  });
+  await page.goto(`http://localhost:5173${review}`);
+  await page.getByLabel('Email', { exact: true }).fill('customer@example.test');
+  await page.getByLabel('Mật khẩu', { exact: true }).fill('Test-password-2026!');
+  await page.getByRole('button', { name: 'Đăng nhập', exact: true }).last().click();
+  await expect(page.getByRole('alert')).toContainText('đang giữ một báo giá còn hiệu lực');
+  await page.getByRole('button', { name: 'Lấy báo giá mới' }).click();
+  await expect(page.getByRole('alert')).toContainText('vượt 10.000.000 ₫');
+  expect(quotes).toBe(2); expect(creates).toBe(0);
 });
 
 test('expired quote and price change require a new quote', async ({ page }) => {

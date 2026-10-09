@@ -201,20 +201,30 @@ public sealed class CasualBookingTests
     public async Task Expired_changed_quotes_maintenance_half_open_policy_QR_and_missing_price_are_checked()
     {
         await using var f=await Fixture.Create(); using var client=f.Factory.CreateClient(); await f.Login(client,"customer");
+        async Task ReleaseCurrentHold()
+        {
+            await using var db = f.Context();
+            var active = await db.QuoteReservations.Where(x => x.CustomerId == f.CustomerId && x.ReleasedAt == null && x.ConsumedAt == null).ToArrayAsync();
+            foreach (var hold in active) await QuoteReservations.Release(db, hold, DateTimeOffset.UtcNow, CancellationToken.None);
+            await db.SaveChangesAsync();
+        }
         var q=await f.Quote(client,"18:00","19:00");
         await using(var db=f.Context()) { var quote=await db.BookingQuotes.SingleAsync(); quote.CreatedAt=DateTimeOffset.UtcNow.AddMinutes(-3); quote.ExpiresAt=DateTimeOffset.UtcNow.AddMinutes(-1); var hold=await db.QuoteReservations.SingleAsync();hold.CreatedAt=quote.CreatedAt;hold.ExpiresAt=quote.ExpiresAt; await db.SaveChangesAsync(); }
         await Code(await f.CreateBooking(client,q,"expired"),409,"QUOTE_EXPIRED");
         q=await f.Quote(client,"18:00","19:00");
         await using(var db=f.Context()) { (await db.PricingRules.SingleAsync(x=>x.Priority==1)).PricePerSlot=210000; await db.SaveChangesAsync(); }
         await Code(await f.CreateBooking(client,q,"price-changed"),409,"QUOTE_CHANGED");
+        await ReleaseCurrentHold();
         q=await f.Quote(client,"18:00","19:00");
         await using(var db=f.Context()) { var court=await db.Courts.SingleAsync(); court.HoldMinutes=25; await db.SaveChangesAsync(); }
         await Code(await f.CreateBooking(client,q,"changed"),409,"QUOTE_CHANGED");
+        await ReleaseCurrentHold();
         await using(var db=f.Context()) { var court=await db.Courts.SingleAsync(); court.BookingBlockMinutes=60; court.MinimumBookingMinutes=60; await db.SaveChangesAsync(); }
         await Code(await client.PostAsJsonAsync("/api/v1/availability/quote",new {courtId=f.CourtId,date=f.Date,startsAt="18:00",endsAt="18:30"}),400,"VALIDATION_FAILED");
         await f.Quote(client,"18:00","19:00");
         await using(var db=f.Context()) { var court=await db.Courts.SingleAsync(); court.BookingBlockMinutes=90; court.MinimumBookingMinutes=90; await db.SaveChangesAsync(); }
         await Code(await client.PostAsJsonAsync("/api/v1/availability/quote",new {courtId=f.CourtId,date=f.Date,startsAt="18:00",endsAt="19:00"}),400,"VALIDATION_FAILED");
+        await ReleaseCurrentHold();
         q=await f.Quote(client,"18:00","19:30");
         await using(var db=f.Context()) { var court=await db.Courts.SingleAsync(); court.BookingBlockMinutes=30; court.MinimumBookingMinutes=30;
             var hold=await db.QuoteReservations.SingleAsync(x=>x.Id==q.GetProperty("quoteId").GetGuid());hold.ExpiresAt=DateTimeOffset.UtcNow.AddMinutes(-1);hold.CreatedAt=hold.ExpiresAt.AddMinutes(-2);
@@ -223,6 +233,7 @@ public sealed class CasualBookingTests
         await Code(await f.CreateBooking(client,q,"maintenance-old-quote"),409,"QUOTE_EXPIRED");
         await Code(await client.PostAsJsonAsync("/api/v1/availability/quote",new {courtId=f.CourtId,date=f.Date,startsAt="18:00",endsAt="19:30"}),409,"SLOT_UNAVAILABLE");
         var free=await f.Quote(client,"18:30","19:00"); Assert.Equal(210000,free.GetProperty("amount").GetInt64());
+        await Data(await f.CreateBooking(client,free,"free-after-maintenance"),201);
         Guid otherCourt;
         await using(var db=f.Context()) {
             var court=new Court {VenueId=f.VenueId,Name="Independent court",Status="ACTIVE",CreatedAt=DateTimeOffset.UtcNow};db.Courts.Add(court);otherCourt=court.Id;

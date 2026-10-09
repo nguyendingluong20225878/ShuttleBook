@@ -1,0 +1,15 @@
+:root {
+  --sb-color-primary: #0f766e;
+  --sb-color-primary-hover: #115e59;
+  --sb-color-text: #172b2a;
+  --sb-color-muted: #536665;
+  --sb-color-border: #d6e1df;
+  --sb-color-surface: #fff;
+  --sb-color-page: #f3f6f6;
+  --sb-color-focus: #0f766e;
+  --sb-color-success-bg: #e7f4ef;
+  --sb-color-danger: #b42318;
+  --sb-radius-control: 9px;
+  --sb-radius-panel: 16px;
+  --sb-control-height: 44px;
+}

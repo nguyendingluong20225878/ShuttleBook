@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client';
 import { PartnerOnboarding } from './PartnerOnboarding';
 import { PartnerIcon } from './components/PartnerIcon';
 import { useBrowserSession } from '@shuttlebook/ui/browser-session';
+import '@shuttlebook/ui/tokens.css';
+import '@shuttlebook/ui/primitives.css';
 import './assets/partner.css';
 
 type ContactType = 'email' | 'phone';

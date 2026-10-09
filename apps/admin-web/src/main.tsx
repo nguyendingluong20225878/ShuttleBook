@@ -1,5 +1,7 @@
 import { FormEvent, StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import '@shuttlebook/ui/tokens.css';
+import '@shuttlebook/ui/primitives.css';
 import './admin.css';
 import { AdminWorkspace } from './features/workspace/AdminWorkspace';
 import { AdminIcon } from './components/AdminIcon';

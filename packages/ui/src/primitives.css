@@ -1,0 +1,28 @@
+.sb-panel {
+  min-width: 0;
+  border: 1px solid var(--sb-color-border);
+  border-radius: var(--sb-radius-panel);
+  background: var(--sb-color-surface);
+}
+.sb-action {
+  min-height: var(--sb-control-height);
+  border-radius: var(--sb-radius-control);
+  font: inherit;
+}
+.sb-field {
+  min-height: var(--sb-control-height);
+  max-width: 100%;
+  border-radius: var(--sb-radius-control);
+  font: inherit;
+}
+.sb-notice {
+  padding: 14px 16px;
+  border: 1px solid var(--sb-color-border);
+  border-radius: 10px;
+  overflow-wrap: anywhere;
+}
+.sb-notice--error {
+  color: #8d261e;
+  border-color: #efbfb8;
+  background: #fff2f0;
+}

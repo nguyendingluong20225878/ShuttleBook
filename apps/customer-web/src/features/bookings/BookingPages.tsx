@@ -14,7 +14,7 @@ import { weekdayLabel } from './seriesApi';
 import './bookings.css';
 
 type Quote = { quoteId: string; expiresAt: string; courtId: string; venueId: string; courtName: string; venueName: string;
-  date: string; timezone: string; startsAt: string; endsAt: string; amount: number; slots: Slot[]; holdMinutes: number };
+  date: string; timezone: string; startsAt: string; endsAt: string; amount: number; amountExact?: string; slots: Slot[]; holdMinutes: number };
 function useNow() { const [now, setNow] = useState(Date.now()); useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []); return now; }
 function remaining(deadline: string, now: number) { const seconds = Math.max(0, Math.ceil((Date.parse(deadline) - now) / 1000)); return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`; }
 function useRequiredSession() {
@@ -60,17 +60,17 @@ export function BookingReview() {
         'SCHEDULE_UNAVAILABLE', 'PRICE_UNAVAILABLE', 'PAYMENT_SETUP_UNAVAILABLE', 'VALIDATION_FAILED', 'UNSUPPORTED_FIELD', 'NOT_FOUND', 'FORBIDDEN'].includes(reason.message)) { setQuote(null); intent.current = null; }
     } finally { creating.current = false; setSubmitting(false); }
   }
-  return <Shell><section className="booking-panel"><h1>Xác nhận đặt vãng lai</h1><a href={`/venues/${venueId}?date=${date}`}>Quay lại lịch các sân</a>
-    {loading && <p role="status">Đang lấy báo giá…</p>}{error && <p role="alert">{error}</p>}
+  return <Shell><section className="booking-panel sb-panel"><h1>Xác nhận đặt vãng lai</h1><a href={`/venues/${venueId}?date=${date}`}>Quay lại lịch các sân</a>
+    {loading && <p role="status">Đang lấy báo giá…</p>}{error && <p className="sb-notice sb-notice--error" role="alert">{error}</p>}
     {quote && <><h2>{quote.venueName} · {quote.courtName}</h2><p>Ngày {quote.date} · Múi giờ {quote.timezone}</p>
       <PriceBreakdown slots={quote.slots} />
-      <p className="booking-total">Tổng tiền: {money(quote.amount)}</p><div className="quote-hold-notice"><p>{now < Date.parse(quote.expiresAt) ? 'Đang giữ chỗ tạm cho bạn' : 'Đã hết thời gian giữ chỗ tạm'}: <strong>{remaining(quote.expiresAt, now)}</strong></p>
-        <p>Các ca trong báo giá được khóa đến hết thời gian trên. Nếu bạn chưa tạo đơn, các ca sẽ tự trở về trống.</p></div>
+      <p className="booking-total">Tổng tiền: {money(quote.amountExact ?? quote.amount)}</p><div className="quote-hold-notice"><p>{now < Date.parse(quote.expiresAt) ? 'Đang giữ chỗ tạm cho bạn' : 'Đã hết thời gian giữ chỗ tạm'}: <strong>{remaining(quote.expiresAt, now)}</strong></p>
+        <p>Các ca trong báo giá được khóa đến hết thời gian trên. Nếu bạn chưa tạo đơn, các ca sẽ tự trở về trống. Bạn chỉ có thể lấy báo giá khác sau khi thời gian giữ chỗ kết thúc.</p></div>
       <p>Sau khi tạo đơn thành công, sân tiếp tục được giữ {quote.holdMinutes} phút để bạn chuyển khoản.</p>
-      <button type="button" className="primary-action" onClick={() => { void create(); }} disabled={submitting || (expired && !canRetry)}>{submitting ? 'Đang tạo đơn…' : 'Xác nhận tạo đơn'}</button>
+      <button type="button" className="primary-action sb-action" onClick={() => { void create(); }} disabled={submitting || (expired && !canRetry)}>{submitting ? 'Đang tạo đơn…' : 'Xác nhận tạo đơn'}</button>
       {canRetry && !submitting && <p role="status">Chưa xác định được kết quả tạo đơn. Bạn có thể xác nhận lại cùng yêu cầu đã gửi hoặc xem Đơn của tôi. Không lấy báo giá mới khi chưa kiểm tra đơn cũ.</p>}
       {expired && <p role="status">{canRetry ? 'Báo giá đã hết hạn. Việc gửi lại chỉ kiểm tra yêu cầu cũ; máy chủ sẽ trả đơn đã tạo hoặc xác nhận yêu cầu không còn hợp lệ.' : 'Báo giá đã hết hạn và chỗ tạm đã được giải phóng. Hãy lấy báo giá mới trước khi tiếp tục.'}</p>}</>}
-    <button type="button" disabled={loading || submitting || canRetry} onClick={() => { if (!intent.current?.attempted) setRetry(value => value + 1); }}>Lấy báo giá mới</button>
+    <button type="button" className="sb-action" disabled={loading || submitting || canRetry || Boolean(quote && !expired)} onClick={() => { if (!intent.current?.attempted) setRetry(value => value + 1); }}>Lấy báo giá mới</button>
     <p><a href="/me/bookings">Xem Đơn của tôi</a></p>
   </section></Shell>;
 }

@@ -1,14 +1,14 @@
 :root { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --customer-primary: #0f766e; --customer-primary-dark: #115e59; --customer-text: #172b2a;
-  --customer-muted: #536665; --customer-border: #d7e4e2; --customer-surface: #fff;
-  color: var(--customer-text); background: #f3f6f6; font-synthesis: none; line-height: 1.5; }
+  --customer-primary: var(--sb-color-primary); --customer-primary-dark: var(--sb-color-primary-hover); --customer-text: var(--sb-color-text);
+  --customer-muted: var(--sb-color-muted); --customer-border: var(--sb-color-border); --customer-surface: var(--sb-color-surface);
+  color: var(--customer-text); background: var(--sb-color-page); font-synthesis: none; line-height: 1.5; }
 * { box-sizing: border-box; }
 body { margin: 0; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 a { color: var(--customer-primary); }
 a:hover { color: var(--customer-primary-dark); }
-:focus-visible { outline: 3px solid #763dbd; outline-offset: 2px; }
+:focus-visible { outline: 3px solid var(--sb-color-focus); outline-offset: 3px; }
 .customer-shell { max-width: 1500px; min-height: 100vh; margin: 0 auto; padding: 0 24px 36px; }
 .site-header { display: flex; align-items: center; justify-content: space-between; gap: 20px;
   min-height: 74px; border-bottom: 1px solid #dbe7df; }

@@ -34,6 +34,8 @@ const messages: Record<string, string> = {
   QUOTE_CONSUMED: 'Báo giá này đã được dùng để tạo đơn. Hãy mở Đơn của tôi để kiểm tra đơn đã tạo; nếu muốn đặt lịch khác, quay lại lịch sân và lấy báo giá mới.',
   QUOTE_EXPIRED: 'Báo giá đã hết hạn. Hãy lấy báo giá mới.',
   QUOTE_CHANGED: 'Giá hoặc cấu hình sân đã thay đổi. Hãy lấy và xác nhận báo giá mới.',
+  ACTIVE_QUOTE_EXISTS: 'Bạn đang giữ một báo giá còn hiệu lực. Hãy quay lại màn báo giá đang mở để xác nhận, hoặc chờ hết thời gian giữ chỗ rồi thử lại.',
+  AMOUNT_LIMIT_EXCEEDED: 'Tổng tiền vượt 10.000.000 ₫ cho một lần chuyển khoản. Hãy chọn ít ca hơn hoặc rút ngắn kỳ đặt.',
   SLOT_UNAVAILABLE: 'Khung giờ vừa được giữ hoặc khóa. Hãy quay lại lịch để chọn ca khác.',
   SERIES_CONFLICT: 'Một hoặc nhiều buổi vừa bị trùng lịch. Chưa tạo lịch cố định; hãy kiểm tra các ngày xung đột và lấy báo giá mới.',
   SCHEDULE_UNAVAILABLE: 'Có buổi nằm ngoài giờ hoạt động hoặc giờ địa phương chưa hợp lệ. Hãy chọn lại lịch.',

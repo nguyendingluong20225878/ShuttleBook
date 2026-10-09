@@ -82,18 +82,18 @@ export function BookingDecisions({ booking, request, onUpdated, onBusy, onUnavai
       if (mounted.current) { setBusy(false); busyCallback.current(false); }
     }
   }
-  return <form className="payment-decision-form" onSubmit={submit} aria-label="Quyết định thanh toán">
+  return <form className="payment-decision-form sb-panel" onSubmit={submit} aria-label="Quyết định thanh toán">
     <h4>Quyết định thanh toán</h4><p>Tổng tiền cần đối chiếu: <strong>{money(expectedAmount)}</strong>. Chỉ xác nhận sau khi bạn đã kiểm tra giao dịch ngân hàng.</p>
     {booking.series && <p className="decision-guidance">Quyết định áp dụng cho toàn bộ {booking.series.occurrenceCount} buổi trong kỳ. Xác nhận một lần khi đã nhận đủ 100% tổng tiền cả kỳ.</p>}
-    {error && <p className="feedback error" role="alert">{error}</p>}
+    {error && <p className="feedback error sb-notice sb-notice--error" role="alert">{error}</p>}
     {stale && <p>Hãy tải lại đơn và xem trạng thái mới. Hệ thống sẽ không tự gửi lại quyết định.</p>}
     <fieldset disabled={busy || stale}>
-      <label>Quyết định <select value={action} onChange={event => {
+      <label>Quyết định <select className="sb-field" value={action} onChange={event => {
         setAction(event.target.value as Action); setError(''); setConfirmedRejection(false);
       }}><option value="CONFIRMED">Xác nhận thanh toán</option><option value="NEEDS_REVIEW" disabled={booking.status === 'NEEDS_REVIEW'}>Yêu cầu bổ sung</option>
         <option value="FINAL_REJECTION">Từ chối cuối cùng</option></select></label>
       {action === 'CONFIRMED' ? <>
-        <label>Số tiền thực nhận (đ) <input inputMode="numeric" required pattern="[0-9]{1,18}" maxLength={18} value={amount} onChange={e => setAmount(e.target.value)} /></label>
+        <label>Số tiền thực nhận (đ) <input className="sb-field" inputMode="numeric" required pattern="[0-9]{1,18}" maxLength={18} value={amount} onChange={e => setAmount(e.target.value)} /></label>
         <label>Ghi chú đối chiếu (không bắt buộc) <textarea maxLength={1000} value={note} onChange={e => setNote(e.target.value)} /></label>
       </> : <>
         <label>Lý do đối chiếu <select value={reasonCode} onChange={e => setReasonCode(e.target.value)}>
@@ -104,7 +104,7 @@ export function BookingDecisions({ booking, request, onUpdated, onBusy, onUnavai
             {booking.series ? `Tôi xác nhận không chấp nhận giao dịch và giải phóng toàn bộ ${booking.series.occurrenceCount} buổi trong kỳ. Quyết định là cuối cùng.`
               : 'Tôi xác nhận không chấp nhận giao dịch và giải phóng khung giờ của đơn này. Quyết định là cuối cùng.'}</label>}
       </>}
-      <button type="submit" className={action === 'FINAL_REJECTION' ? 'danger-action' : ''}>
+      <button type="submit" className={`sb-action${action === 'FINAL_REJECTION' ? ' danger-action' : ''}`}>
         {busy ? 'Đang gửi quyết định…' : action === 'CONFIRMED' ? 'Xác nhận đã nhận đủ tiền' : action === 'NEEDS_REVIEW' ? 'Gửi yêu cầu bổ sung' : 'Xác nhận từ chối cuối cùng'}
       </button>
     </fieldset>

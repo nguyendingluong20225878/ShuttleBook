@@ -41,21 +41,17 @@ public static class QuoteReservations
         await db.SaveChangesAsync(ct);
     }
 
-    // Replace a customer's prior intent atomically without extending its active deadline.
-    // Call inside the court transaction; any failed quote rolls this replacement back.
-    public static async Task<DateTimeOffset?> ReplaceOwn(ShuttleBookDbContext db, Guid customerId, Guid courtId, DateTimeOffset now, CancellationToken ct)
+    // Serialize quote requests for one customer across all courts and booking types.
+    // Take this before court locks so concurrent tabs cannot each observe zero holds.
+    public static async Task LockCustomerQuote(ShuttleBookDbContext db, Guid customerId, CancellationToken ct)
     {
-        var old = await db.QuoteReservations.Where(r => r.CustomerId == customerId && r.CourtId == courtId &&
-            r.ConsumedAt == null && r.ReleasedAt == null).OrderBy(r => r.Id).ToListAsync(ct);
-        DateTimeOffset? deadline = null;
-        foreach (var r in old)
-        {
-            if (r.ExpiresAt > now && (deadline is null || r.ExpiresAt < deadline)) deadline = r.ExpiresAt;
-            await Release(db, r, now, ct);
-        }
-        await db.SaveChangesAsync(ct);
-        return deadline;
+        var key = $"CUSTOMER_QUOTE:{customerId}";
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({key},0))", ct);
     }
+
+    public static Task<bool> HasActiveCustomerQuote(ShuttleBookDbContext db, Guid customerId, DateTimeOffset now, CancellationToken ct) =>
+        db.QuoteReservations.AnyAsync(r => r.CustomerId == customerId && r.ConsumedAt == null &&
+            r.ReleasedAt == null && r.ExpiresAt > now, ct);
 
     public static QuoteReservation Reserve(ShuttleBookDbContext db, Guid quoteId, Guid customerId, Guid courtId, string kind,
         DateTimeOffset now, DateTimeOffset deadline, IEnumerable<(DateTimeOffset Start, DateTimeOffset End)> times)
