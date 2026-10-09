@@ -150,6 +150,9 @@ public sealed partial class FixedSeriesTests
                 await db.SaveChangesAsync();
             }
             await Code(await CreateResponse(customer, q, $"changed-{change}"), 409, "QUOTE_CHANGED");
+            // A rejected create leaves its quote hold in place. Advance the test clock
+            // past the hold before asking for the next independent quote.
+            f.Clock.Set(q.GetProperty("expiresAt").GetDateTimeOffset());
         }
         await using (var db = f.Context()) { foreach (var rule in await db.PricingRules.ToArrayAsync()) rule.PricePerSlot = 100_000_000_000_000_000; await db.SaveChangesAsync(); }
         await Code(await customer.PostAsJsonAsync("/api/v1/booking-series/quote", Input(f)), 409, "PRICE_UNAVAILABLE");
