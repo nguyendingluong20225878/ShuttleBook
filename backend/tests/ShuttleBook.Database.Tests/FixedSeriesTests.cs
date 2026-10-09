@@ -155,7 +155,7 @@ public sealed partial class FixedSeriesTests
             f.Clock.Set(q.GetProperty("expiresAt").GetDateTimeOffset());
         }
         await using (var db = f.Context()) { foreach (var rule in await db.PricingRules.ToArrayAsync()) rule.PricePerSlot = 100_000_000_000_000_000; await db.SaveChangesAsync(); }
-        await Code(await customer.PostAsJsonAsync("/api/v1/booking-series/quote", Input(f)), 409, "PRICE_UNAVAILABLE");
+        await Code(await customer.PostAsJsonAsync("/api/v1/booking-series/quote", Input(f)), 409, "AMOUNT_LIMIT_EXCEEDED");
         await using var check = f.Context(); Assert.Empty(await check.Bookings.ToArrayAsync()); Assert.Empty(await check.BookingSeries.ToArrayAsync());
         Assert.All(await check.CourtAllocations.Where(x => x.Status == "RESERVED").ToArrayAsync(), x => Assert.Equal("QUOTE_HOLD", x.Kind)); Assert.Empty(await check.BookingIdempotency.ToArrayAsync()); Assert.Empty(await check.OutboxMessages.ToArrayAsync());
     }
