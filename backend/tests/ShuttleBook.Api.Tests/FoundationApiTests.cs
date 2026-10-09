@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
@@ -96,11 +97,20 @@ public sealed class FoundationApiTests
     [Fact]
     public async Task Unhandled_exception_never_exposes_exception_details()
     {
-        await using var factory = new ApiFactory(new ThrowingReadiness());
+        using var logs = new CapturingLoggerProvider();
+        await using var factory = new ApiFactory(new ThrowingReadiness(), logs);
         using var client = factory.CreateClient();
         using var response = await client.GetAsync("/health/ready");
         await AssertProblemAsync(response, HttpStatusCode.InternalServerError, "INTERNAL_ERROR");
-        Assert.DoesNotContain("secret-sentinel", await response.Content.ReadAsStringAsync());
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var traceId = body.RootElement.GetProperty("traceId").GetString();
+        Assert.DoesNotContain("secret-sentinel", body.RootElement.ToString());
+        var failure = Assert.Single(logs.Entries, entry => entry.Category.EndsWith("ProblemDetailsMiddleware", StringComparison.Ordinal));
+        Assert.Equal(LogLevel.Error, failure.Level);
+        Assert.Contains("InvalidOperationException", failure.Message);
+        Assert.Contains(traceId!, failure.Message);
+        Assert.DoesNotContain("secret-sentinel", failure.Message);
+        Assert.Null(failure.Exception);
     }
 
     [Theory]
@@ -176,7 +186,7 @@ public sealed class FoundationApiTests
         Assert.False(string.IsNullOrWhiteSpace(body.RootElement.GetProperty("traceId").GetString()));
     }
 
-    private sealed class ApiFactory(IReadinessProbe probe) : WebApplicationFactory<Program>
+    private sealed class ApiFactory(IReadinessProbe probe, ILoggerProvider? logProvider = null) : WebApplicationFactory<Program>
     {
         protected override IHost CreateHost(IHostBuilder builder)
         {
@@ -191,7 +201,11 @@ public sealed class FoundationApiTests
                     ["Cors:AllowedOrigins:2"] = "http://localhost:5175"
                 }));
             // TestHost must not write failures to Windows Event Log, which requires elevated OS permissions.
-            builder.ConfigureLogging(logging => logging.ClearProviders());
+            builder.ConfigureLogging(logging =>
+            {
+                logging.ClearProviders();
+                if (logProvider is not null) logging.AddProvider(logProvider);
+            });
             return base.CreateHost(builder);
         }
 
@@ -220,5 +234,27 @@ public sealed class FoundationApiTests
     {
         public Task<bool> IsReadyAsync(CancellationToken cancellationToken) =>
             throw new InvalidOperationException("secret-sentinel");
+    }
+
+    private sealed class CapturingLoggerProvider : ILoggerProvider
+    {
+        public ConcurrentQueue<(string Category, LogLevel Level, string Message, Exception? Exception)> Entries { get; } = new();
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(this, categoryName);
+        public void Dispose() { }
+
+        private sealed class CapturingLogger(CapturingLoggerProvider provider, string category) : ILogger
+        {
+            public IDisposable BeginScope<TState>(TState state) where TState : notnull => EmptyScope.Instance;
+            public bool IsEnabled(LogLevel logLevel) => true;
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+                Func<TState, Exception?, string> formatter) =>
+                provider.Entries.Enqueue((category, logLevel, formatter(state, exception), exception));
+        }
+
+        private sealed class EmptyScope : IDisposable
+        {
+            public static readonly EmptyScope Instance = new();
+            public void Dispose() { }
+        }
     }
 }
