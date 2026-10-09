@@ -124,17 +124,17 @@ public sealed class CasualBookingTests
         using var client = f.Factory.CreateClient();
         await Code(await client.PostAsJsonAsync("/api/v1/availability/quote", new { courtId=f.CourtId, date=f.Date, startsAt="18:00", endsAt="20:00" }), 401, "UNAUTHORIZED");
         await f.Login(client, "customer");
+        await Code(await client.PostAsJsonAsync("/api/v1/availability/quote", new { courtId=f.CourtId, date=f.Date, startsAt="16:00", endsAt="17:00" }), 409, "PRICE_UNAVAILABLE");
+        await Code(await client.PostAsJsonAsync("/api/v1/availability/quote", new { courtId=f.CourtId, date=f.Date, startsAt="18:10", endsAt="19:00" }), 400, "VALIDATION_FAILED");
+        await Code(await client.PostAsJsonAsync("/api/v1/availability/quote", new { courtId=f.CourtId, date=DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1).ToString("yyyy-MM-dd"), startsAt="18:00", endsAt="19:00" }), 400, "VALIDATION_FAILED");
+        await Code(await client.PostAsJsonAsync("/api/v1/availability/quote", new { courtId=f.CourtId, date=f.Date, startsAt="18:00", endsAt="19:00", amount=1 }), 400, "UNSUPPORTED_FIELD");
+        await Code(await client.PostAsJsonAsync("/api/v1/availability/quote", new { courtId=f.CourtId, date=DateOnly.FromDateTime(DateTime.UtcNow).AddDays(70).ToString("yyyy-MM-dd"), startsAt="18:00", endsAt="19:00" }), 400, "VALIDATION_FAILED");
         var q = await f.Quote(client, "18:00", "20:00");
         Assert.Equal(600000, q.GetProperty("amount").GetInt64());
         Assert.Equal(4, q.GetProperty("slots").GetArrayLength());
         Assert.Equal(11, q.GetProperty("startsAt").GetDateTimeOffset().Hour);
         Assert.DoesNotContain("accountNumber", q.GetRawText());
         await using (var db = f.Context()) Assert.Equal("QUOTE_HOLD", Assert.Single(await db.CourtAllocations.ToListAsync()).Kind);
-        await Code(await client.PostAsJsonAsync("/api/v1/availability/quote", new { courtId=f.CourtId, date=f.Date, startsAt="18:10", endsAt="19:00" }), 400, "VALIDATION_FAILED");
-        await Code(await client.PostAsJsonAsync("/api/v1/availability/quote", new { courtId=f.CourtId, date=f.Date, startsAt="16:00", endsAt="17:00" }), 409, "PRICE_UNAVAILABLE");
-        await Code(await client.PostAsJsonAsync("/api/v1/availability/quote", new { courtId=f.CourtId, date=DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1).ToString("yyyy-MM-dd"), startsAt="18:00", endsAt="19:00" }), 400, "VALIDATION_FAILED");
-        await Code(await client.PostAsJsonAsync("/api/v1/availability/quote", new { courtId=f.CourtId, date=f.Date, startsAt="18:00", endsAt="19:00", amount=1 }), 400, "UNSUPPORTED_FIELD");
-        await Code(await client.PostAsJsonAsync("/api/v1/availability/quote", new { courtId=f.CourtId, date=DateOnly.FromDateTime(DateTime.UtcNow).AddDays(70).ToString("yyyy-MM-dd"), startsAt="18:00", endsAt="19:00" }), 400, "VALIDATION_FAILED");
         using (var guest = f.Factory.CreateClient()) await Code(await f.CreateBooking(guest, q, "guest"), 401, "UNAUTHORIZED");
         var created = await Data(await f.CreateBooking(client, q, "first"), 201);
         var id = created.GetProperty("bookingId").GetGuid();
@@ -182,7 +182,13 @@ public sealed class CasualBookingTests
         var successful = new List<JsonElement>();
         for (var i=0;i<replies.Length;i++) {
             if (replies[i].StatusCode==HttpStatusCode.OK) successful.Add(await Data(replies[i]));
-            else await Code(replies[i],409,"SLOT_UNAVAILABLE");
+            else {
+                using (replies[i]) {
+                    Assert.Equal(HttpStatusCode.Conflict, replies[i].StatusCode);
+                    using var error = JsonDocument.Parse(await replies[i].Content.ReadAsStringAsync());
+                    Assert.Contains(error.RootElement.GetProperty("code").GetString(), new[] { "SLOT_UNAVAILABLE", "ACTIVE_QUOTE_EXISTS" });
+                }
+            }
         }
         Assert.NotEmpty(successful); Assert.True(successful.Count<20);
         Guid ownerId; Guid currentQuote;
@@ -223,8 +229,8 @@ public sealed class CasualBookingTests
         await Code(await client.PostAsJsonAsync("/api/v1/availability/quote",new {courtId=f.CourtId,date=f.Date,startsAt="18:00",endsAt="18:30"}),400,"VALIDATION_FAILED");
         await f.Quote(client,"18:00","19:00");
         await using(var db=f.Context()) { var court=await db.Courts.SingleAsync(); court.BookingBlockMinutes=90; court.MinimumBookingMinutes=90; await db.SaveChangesAsync(); }
-        await Code(await client.PostAsJsonAsync("/api/v1/availability/quote",new {courtId=f.CourtId,date=f.Date,startsAt="18:00",endsAt="19:00"}),400,"VALIDATION_FAILED");
         await ReleaseCurrentHold();
+        await Code(await client.PostAsJsonAsync("/api/v1/availability/quote",new {courtId=f.CourtId,date=f.Date,startsAt="18:00",endsAt="19:00"}),400,"VALIDATION_FAILED");
         q=await f.Quote(client,"18:00","19:30");
         await using(var db=f.Context()) { var court=await db.Courts.SingleAsync(); court.BookingBlockMinutes=30; court.MinimumBookingMinutes=30;
             var hold=await db.QuoteReservations.SingleAsync(x=>x.Id==q.GetProperty("quoteId").GetGuid());hold.ExpiresAt=DateTimeOffset.UtcNow.AddMinutes(-1);hold.CreatedAt=hold.ExpiresAt.AddMinutes(-2);
@@ -247,8 +253,11 @@ public sealed class CasualBookingTests
             await using var tx=await db.Database.BeginTransactionAsync();var id=independent.GetProperty("bookingId").GetGuid();
             var ex=await Assert.ThrowsAsync<PostgresException>(()=>db.Database.ExecuteSqlInterpolatedAsync($"UPDATE bookings SET court_id={f.CourtId} WHERE id={id}"));Assert.Equal("23503",ex.SqlState);await tx.RollbackAsync();
         }
-        await using(var db=f.Context()) { (await db.PricingRules.SingleAsync(x=>x.CourtId==f.CourtId && x.Priority==1)).PricePerSlot=long.MaxValue;await db.SaveChangesAsync(); }
-        await Code(await client.PostAsJsonAsync("/api/v1/availability/quote",new {courtId=f.CourtId,date=f.Date,startsAt="18:30",endsAt="19:00"}),409,"PRICE_UNAVAILABLE");
+        long originalPrice;
+        var quoteDay=(int)DateOnly.Parse(f.Date).DayOfWeek;
+        await using(var db=f.Context()) { var rule=await db.PricingRules.SingleAsync(x=>x.CourtId==f.CourtId && x.DayOfWeek==quoteDay && x.Priority==0);originalPrice=rule.PricePerSlot;rule.PricePerSlot=long.MaxValue;await db.SaveChangesAsync(); }
+        await Code(await client.PostAsJsonAsync("/api/v1/availability/quote",new {courtId=f.CourtId,date=f.Date,startsAt="20:00",endsAt="20:30"}),409,"PRICE_UNAVAILABLE");
+        await using(var db=f.Context()) { (await db.PricingRules.SingleAsync(x=>x.CourtId==f.CourtId && x.DayOfWeek==quoteDay && x.Priority==0)).PricePerSlot=originalPrice;await db.SaveChangesAsync(); }
         await using(var db=f.Context()) { var qr=await db.MediaUploads.SingleAsync(); qr.Status="PENDING"; await db.SaveChangesAsync(); }
         await Code(await client.PostAsJsonAsync("/api/v1/availability/quote",new {courtId=f.CourtId,date=f.Date,startsAt="20:00",endsAt="21:00"}),409,"PAYMENT_SETUP_UNAVAILABLE");
         await using(var db=f.Context()) { var qr=await db.MediaUploads.SingleAsync(); qr.Status="READY"; db.PricingRules.RemoveRange(db.PricingRules); await db.SaveChangesAsync(); }
