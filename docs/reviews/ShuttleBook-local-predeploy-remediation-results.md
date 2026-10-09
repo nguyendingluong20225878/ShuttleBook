@@ -13,8 +13,8 @@ Ngày 2026-10-09. **NO-GO / chưa đủ bằng chứng để xin deploy.** Báo 
 
 | Lát cắt | Thay đổi | Trạng thái |
 |---|---|---|
-| Tiền/quota | API trả `amountExact` và `pricePerSlotExact` cho casual, server tính nguyên VND, chặn tổng >10 triệu ở quote/create casual/fixed. PostgreSQL advisory transaction lock theo Customer + đọc hold active toàn tài khoản; HTTP 409 `AMOUNT_LIMIT_EXCEEDED`, `ACTIVE_QUOTE_EXISTS`. UI giải thích và không chủ động lấy quote mới trước TTL. | Focused PostGIS integration **PASS 6/6**; full DB local hiện tại **PASS 110/110**. Hosted CI backend còn FAIL, cần log cụ thể. |
-| CI | Workflow Ubuntu build workspace và gọi Playwright CLI, `workflow_dispatch`, MapTiler fixture key và Identity test keys; M03 timing dựa trên mốc sự kiện, Admin test đợi request async. | Hosted web **PASS**, backend **FAIL** ở database test step; chờ Error Message để sửa. |
+| Tiền/quota | API trả `amountExact` và `pricePerSlotExact` cho casual, server tính nguyên VND, chặn tổng >10 triệu ở quote/create casual/fixed. PostgreSQL advisory transaction lock theo Customer + đọc hold active toàn tài khoản; HTTP 409 `AMOUNT_LIMIT_EXCEEDED`, `ACTIVE_QUOTE_EXISTS`. UI giải thích và không chủ động lấy quote mới trước TTL. | Focused PostGIS integration **PASS 6/6**; full DB local **PASS 110/110**; hosted CI backend **PASS** trên `bfdc7c2`. |
+| CI | Workflow Ubuntu build workspace và gọi Playwright CLI, `workflow_dispatch`, MapTiler fixture key và Identity test keys; M03 timing dựa trên mốc sự kiện, Admin test đợi request async. Middleware nhận xung đột PostgreSQL lồng nhiều lớp và EF concurrency thành 409, test Onboarding ghi chẩn đoán an toàn. | Hosted web/backend **PASS** run `37964297871` trên `bfdc7c2`. |
 | Backup/monitoring | Script backup DB + media/manifest SHA-256, restore DB/media thử riêng; script snapshot health/outbox/owner SLA, runbook local. | Cú pháp PASS; drill runtime **BLOCKED**. |
 | UI | Token/primitive CSS chung cho ba cổng, áp dụng trước vào Customer quote, Partner quyết định tiền, Admin duyệt hồ sơ. Giữ cấu trúc trang; focus teal, tổng tiền exact và thông báo quota/cap. | Build/browser fixture PASS; manual matrix chưa đạt. |
 
@@ -30,6 +30,8 @@ Ngày 2026-10-09. **NO-GO / chưa đủ bằng chứng để xin deploy.** Báo 
 | `scripts/Test-Database.ps1` filtered tiền/quota/race và số tiền lịch sử | **PASS 6/6**, 1m27 sau khi PostGIS tại `127.0.0.1:54329` hoạt động lại. | `pg_dump`, `pg_restore`, `createdb`, `psql` vẫn chưa có trong PATH phiên này. |
 | `scripts/Test-Database.ps1 --logger 'console;verbosity=normal'` full trên commit ban đầu | **FAIL 106 PASS / 4 FAIL / 110 total**, 28m05. | Bốn test cũ kỳ vọng thay quote/lỗi khác khi Customer đang giữ quote; đã sửa test, từng ca affected **PASS** trên PostGIS Release. Chờ full CI trên commit sửa. |
 | `scripts/Test-Database.ps1 --configuration Release --logger 'console;verbosity=normal'` full trên source `2e0b886` | **PASS 110/110**, 27m41; log `.local/f09-db-current-full.log`. | Windows local/PostGIS thật; không thay cho hosted Ubuntu CI. |
+| Onboarding concurrency affected trên source `bfdc7c2` | **PASS 2/2** trên PostGIS Release; `npm.cmd run test:api` **PASS 96/96** sau middleware fix. | Hosted CI tương ứng PASS cả hai job. |
+| GitHub Actions run `37964297871`, SHA `bfdc7c21d53d70cacfb64b72eb017eadacd00214` | **PASS completed**, web và backend success. | Runner Ubuntu/PostGIS CI; browser live 8 ca vẫn SKIP theo chủ đích. |
 | PowerShell parser cho backup/health scripts | **PASS**. | Backup/restore thực tế **NOT RUN**. |
 | `Get-LocalOperationalStatus.ps1` | Ban đầu `liveHttp=0`, `readyHttp=0`, exit 1; sau khởi động API local, **PASS health 200/200**, exit 0. | API startup ghi lỗi giải mã DPAPI key cũ trong phiên sandbox; Worker chưa xác minh, API đã tắt sau smoke test. Health không chứng minh cookie flow. |
 | `git diff --check` | **PASS**, chỉ cảnh báo chuyển CRLF→LF. | Nhánh thử nghiệm sẽ chỉ chứa file F09 đã chọn. |
@@ -38,9 +40,9 @@ Lượt browser đầu trên build không có MapTiler fixture key: 239 PASS/5 F
 
 ## Gate còn mở
 
-1. Hosted CI full PostGIS DB suite trên commit `2e0b886` phải PASS; full local trên source này **PASS 110/110** và focused tiền/quota/race casual↔fixed trên hai sân **PASS 6/6**. CI Ubuntu backend vẫn FAIL, cần tên test và Error Message từ GitHub Actions để phân biệt config/platform với lỗi source.
+1. CI full trên `bfdc7c2` đã **PASS** web/backend; full local trên source trước middleware fix **PASS 110/110**, affected Onboarding sau fix **PASS 2/2**, API sau fix **PASS 96/96**. Không còn CI blocker đã biết trên nhánh này.
 2. PostgreSQL CLI + media thử: backup, checksum tamper, restore DB/media riêng; đối chiếu QR/proof quyền Customer/Owner, Worker restart/retry và booking đã báo chuyển không tự giải phóng.
-3. Hosted GitHub Actions trên nhánh `codex/f09-local-readiness`: run đầu `37926991743`, tiếp `37928024754` và `37928786200` backend FAIL do test cũ; web PASS mỗi lượt. Run `37929845468` trên `2e0b886` **web PASS, backend FAIL**; annotation chỉ cho exit code 1. Tải log bằng Git credential bị automatic approval review từ chối vì rủi ro token. Người dùng cần gửi tên test FAIL và Error Message từ trang job; không gửi secret.
+3. Hosted GitHub Actions trên nhánh `codex/f09-local-readiness`: các run trước FAIL backend do test cũ và race Onboarding 500 trên Ubuntu; sau middleware fix, run `37964297871` trên `bfdc7c2` **completed success** cả web/backend. Automatic approval review đã từ chối việc trích Git credential để tải log; người dùng cung cấp log qua giao diện, không có token nào được truy xuất.
 4. Manual UI từng nhóm Customer/Partner/Admin ở 375/768/1024/1440 và zoom 200%, keyboard/focus/NVDA, screenshot before/after và nghiệm thu cảm nhận. Fixture mobile quote đã được xem, chưa bao phủ toàn bộ.
 5. Backup destination/retention/RPO/RTO, người nhận/kênh cảnh báo, ngưỡng tải và pilot người vận hành phải được chốt trước vận hành thật. HTTPS/CORS/cookie/secrets, live browser→API→Worker→PostGIS/Mailpit và release/rollback cần test môi trường thử khi có quyền.
 
