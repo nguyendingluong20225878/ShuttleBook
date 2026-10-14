@@ -1,11 +1,12 @@
 # Tiến độ ShuttleBook
 
-## GitHub Actions Node 24 — 2026-10-14 (chờ run mới)
+## GitHub Actions Node 24 — 2026-10-14 (PASS hosted CI)
 
 - Người dùng gửi ảnh run **#25** (`ec74223`) của `Verify foundation`: **Success**, `web` và `backend` đều PASS trên GitHub Actions/PostGIS thật. Run này kiểm đúng commit tài liệu ghi full PostGIS 150/150; phần annotations có cảnh báo các Action `checkout@v4` và `setup-node@v4` dùng runtime Node 20 đã ngừng hỗ trợ.
 - Đã đổi các Action trong `.github/workflows/ci.yml` sang `checkout@v7`, `setup-node@v7`, `setup-dotnet@v6`, `upload-artifact@v7` dùng Node 24; giữ nguyên Node 22 của ứng dụng, lệnh kiểm thử và service PostGIS. Acceptance của thay đổi workflow: run mới trên commit chứa YAML này có `web`/`backend` PASS và không còn cảnh báo Node 20. Chưa coi run #25 là bằng chứng cho YAML mới. Không ảnh hưởng gate AWS/OTP/backup của F09 production (**NO-GO**).
+- Người dùng gửi ảnh run của commit **`64f0258`** trên nhánh `codex/f09-local-readiness`: trạng thái **Success**, `web` và `backend` đều xanh, tổng **5m56s**; Annotations ghi **2 notices**, không có warning. Như vậy acceptance workflow Node 24 đã đạt trên CI thật. Ảnh không cho thấy nội dung hai notices; không suy chúng là lỗi. F09 production vẫn **NO-GO** vì các gate AWS/OTP/backup và kiểm định tay độc lập.
 
-## Hoàn thiện sân và hồ sơ Customer — 2026-10-14 (PASS local; chờ xác minh hosted CI)
+## Hoàn thiện sân và hồ sơ Customer — 2026-10-14 (PASS local và hosted CI)
 
 - [Contract mới](features/Partner-court-profile-followup-2026-10-14.md): nút **Thêm sân** đặt cạnh **Lưu tất cả số sân** trong từng cơ sở, số mặc định bằng số lớn nhất + 1; bỏ xác nhận riêng từng sân. Owner lưu lịch/giá hợp lệ cho sân nháp của cơ sở đã công bố thì backend kiểm QR/quyền/version và tự công bố sân trong cùng transaction. Legacy pending court được thay bằng luồng này, approval cũ superseded. Hồ sơ Customer dùng card cùng mẫu Partner; tên đã lưu hiện ở tài khoản ngay và sau F5 qua GET có xác thực.
 - Backend Release build **PASS, 0 warning/error**; API tests **96/96 PASS**. PostGIS full lượt trước **149/150** trên build cũ; sau sửa ca migration OwnerMedia, ca đó **1/1 PASS** và full PostGIS trên build cuối **150/150 PASS, 0 skip, 36m44s** (`scripts/Test-Database.ps1 -c Release --no-build`, DB tạm). Typecheck bốn workspace và build ba cổng **PASS**; browser fixture **332 PASS, 8 SKIP live-only**; recheck Customer/Partner profile desktop/mobile **4/4 PASS** và khối sân desktop/mobile **2/2 PASS**. Live browser→API→Worker→PostGIS/Mailpit **8/8 PASS**, DB thử được drop.
