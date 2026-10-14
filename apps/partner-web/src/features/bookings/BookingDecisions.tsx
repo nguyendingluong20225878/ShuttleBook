@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { PartnerApiError, money, paymentError, type BookingDetail, type PartnerRequest } from './types';
+import { usePartnerToast } from '../../components/PartnerToast';
 
 type Action = 'CONFIRMED' | 'NEEDS_REVIEW' | 'FINAL_REJECTION';
 const reasonCodes = [
@@ -11,6 +12,7 @@ export function BookingDecisions({ booking, request, onUpdated, onBusy, onUnavai
   booking: BookingDetail; request: PartnerRequest; onUpdated: (next: BookingDetail) => void;
   onBusy: (busy: boolean) => void; onUnavailable: (error: PartnerApiError) => void; reload: () => void;
 }) {
+  const { showToast, clearToast } = usePartnerToast();
   const [action, setAction] = useState<Action>('CONFIRMED');
   const expectedAmount = booking.payment.expectedAmountExact ?? String(booking.payment.expectedAmount);
   const [amount, setAmount] = useState(expectedAmount);
@@ -35,25 +37,25 @@ export function BookingDecisions({ booking, request, onUpdated, onBusy, onUnavai
     let body: object; let bodyText: string;
     if (action === 'CONFIRMED') {
       if (!/^\d{1,18}$/.test(amount.trim()) || BigInt(amount.trim()) > 999999999999999999n) {
-        setError('Nhập số tiền thực nhận là số nguyên không âm, tối đa 18 chữ số.'); return;
+        showToast('Nhập số tiền thực nhận là số nguyên không âm, tối đa 18 chữ số.', 'error'); return;
       }
       const confirmedAmount = BigInt(amount.trim()).toString();
       if (BigInt(confirmedAmount) !== BigInt(expectedAmount)) {
-        setError(booking.status === 'NEEDS_REVIEW'
+        showToast(booking.status === 'NEEDS_REVIEW'
           ? 'Số tiền thực nhận chưa khớp. Giữ trạng thái Cần bổ sung và chờ khách cung cấp giao dịch để đối chiếu.'
-          : 'Số tiền thực nhận chưa khớp tổng tiền của đơn. Chọn Yêu cầu bổ sung để đối chiếu.'); return;
+          : 'Số tiền thực nhận chưa khớp tổng tiền của đơn. Chọn Yêu cầu bổ sung để đối chiếu.', 'error'); return;
       }
       const trimmedNote = note.trim();
       if (trimmedNote.length > 1000) {
-        setError('Ghi chú tối đa 1.000 ký tự.'); return;
+        showToast('Ghi chú tối đa 1.000 ký tự.', 'error'); return;
       }
       body = { confirmedAmount, ...(trimmedNote ? { note: trimmedNote } : {}) };
       // Only validated decimal digits become a JSON numeric literal; text fields are escaped by JSON.stringify.
       bodyText = `{"confirmedAmount":${confirmedAmount}${trimmedNote ? `,"note":${JSON.stringify(trimmedNote)}` : ''}}`;
     } else {
-      if (!reason.trim() || reason.trim().length > 1000) { setError('Nhập lý do rõ ràng, tối đa 1.000 ký tự.'); return; }
+      if (!reason.trim() || reason.trim().length > 1000) { showToast('Nhập lý do rõ ràng, tối đa 1.000 ký tự.', 'error'); return; }
       if (action === 'FINAL_REJECTION' && !confirmedRejection) {
-        setError('Xác nhận từ chối cuối cùng và giải phóng sân trước khi gửi.'); return;
+        showToast('Xác nhận từ chối cuối cùng và giải phóng sân trước khi gửi.', 'error'); return;
       }
       body = { resolution: action, reasonCode, reason: reason.trim() };
       bodyText = JSON.stringify(body);
@@ -63,20 +65,26 @@ export function BookingDecisions({ booking, request, onUpdated, onBusy, onUnavai
     if (intent.current?.signature !== signature) intent.current = { signature, path, body, bodyText, key: crypto.randomUUID(), version: booking.version };
     const current = intent.current;
     const abort = new AbortController(); controller.current = abort;
-    setBusy(true); busyCallback.current(true); setError('');
+    setBusy(true); busyCallback.current(true); setError(''); clearToast();
     try {
       const updated = await request<BookingDetail>(current.path, 'POST', current.body, current.version,
         { signal: abort.signal, idempotencyKey: current.key, bodyText: current.bodyText });
       if (!mounted.current || abort.signal.aborted) return;
       if (updated.bookingId !== booking.bookingId) throw new Error('WRONG_BOOKING');
-      intent.current = null; onUpdated(updated);
+      intent.current = null;
+      showToast(action === 'CONFIRMED' ? 'Đã xác nhận thanh toán.'
+        : action === 'NEEDS_REVIEW' ? 'Đã gửi yêu cầu bổ sung.' : 'Đã từ chối giao dịch và giải phóng sân.');
+      onUpdated(updated);
     } catch (failure) {
       if (!mounted.current || abort.signal.aborted) return;
       if (failure instanceof PartnerApiError && [403, 404].includes(failure.status)) {
+        showToast(paymentError(failure), 'error');
         onUnavailable(failure); return;
       }
-      if (failure instanceof PartnerApiError && ['PRECONDITION_FAILED', 'STATE_CONFLICT'].includes(failure.code)) setStale(true);
-      setError(paymentError(failure));
+      if (failure instanceof PartnerApiError && ['PRECONDITION_FAILED', 'STATE_CONFLICT'].includes(failure.code)) {
+        setStale(true); setError(paymentError(failure));
+      }
+      showToast(paymentError(failure), 'error');
     } finally {
       if (controller.current === abort) controller.current = null;
       if (mounted.current) { setBusy(false); busyCallback.current(false); }

@@ -367,6 +367,12 @@ a:hover { color: var(--customer-primary-dark); }
 .site-header nav button { border-color: var(--customer-border); margin-top: 16px; }
 .site-header .notification-badge { margin-left: auto; }
 .customer-sidebar-account { margin-top: auto; padding: 32px 8px 0; display: flex; gap: 10px; align-items: center; font-size: 13px; }
+.customer-sidebar-account[href] { color: inherit; text-decoration: none; border-radius: 10px; }
+.customer-sidebar-account[href]:hover, .customer-sidebar-account[href]:focus-visible { background: #e8f4f0; }
+.account-profile { max-width: 720px; margin: 0; padding: 24px; }
+.account-profile form { display: grid; gap: 16px; }
+.account-profile label { display: grid; gap: 7px; }
+.account-profile input { width: 100%; }
 .customer-sidebar-account strong, .customer-sidebar-account small { display: block; }
 .customer-sidebar-account small { color: var(--customer-muted); font-size: 11px; margin-top: 2px; }
 .customer-avatar { flex: 0 0 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; background: #e8f4f0; color: var(--customer-primary-dark); font-size: 11px; font-weight: 700; }

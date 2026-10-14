@@ -4,13 +4,14 @@ import type { AdminSummary } from './features/workspace/AdminWorkspace';
 
 type Row = { id: string; businessId: string; businessName: string; kind: string; status: string; submittedAt: string };
 type CurrentRevision = Revision & { venueName: string; version: number };
-type Approval = { id: string; kind: string; status: string; snapshot: string; reason?: string; current?: CurrentRevision | null };
+type BusinessRevision = { name: string; legalName: string; contact: string; version: number };
+type Approval = { id: string; kind: string; status: string; snapshot: string; reason?: string; current?: (CurrentRevision & Partial<BusinessRevision>) | null };
 type ApprovalPage = { items: Row[]; nextCursor: string | null; totalCount: number; pendingCount: number };
 type Revision = { address: string; contact: string; timezone: string; latitude: number; longitude: number;
-  bankCode: string; accountName: string; accountNumber: string; qrUploadId: string };
+  accountName: string; accountNumber: string; qrUploadId: string };
 type Snapshot = { name: string; legalName: string; contact: string; venues: Array<{
-  name: string; address: string; contact: string; latitude: number; longitude: number; timezone: string; imageUploadId: string;
-  bankCode: string; accountName: string; accountNumber: string; qrUploadId: string;
+  name: string; address: string; contact: string; latitude: number; longitude: number; timezone: string; imageUploadId?: string | null;
+  accountName: string; accountNumber: string; qrUploadId: string;
   courts: Array<{ name: string; hours: Array<{ dayOfWeek: number; opensAt: string; closesAt: string }>;
     prices: Array<{ dayOfWeek: number; startsAt: string; endsAt: string; pricePerSlot: number }> }> }> };
 type Envelope<T> = { data: T };
@@ -18,6 +19,8 @@ const base = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5080';
 const weekday = (day: number) => day === 0 ? 'Chủ nhật' : `Thứ ${day + 1}`;
 const formatTime = (time: string) => time.slice(0, 5);
 const formatDate = (value: string) => new Date(value).toLocaleString('vi-VN');
+const approvalKinds: Record<string, string> = { ONBOARDING: 'Hồ sơ mới', VENUE_REVISION: 'Thay đổi cơ sở',
+  VENUE_ADDITION: 'Cơ sở mới', BUSINESS_REVISION: 'Thay đổi doanh nghiệp' };
 
 export function AdminApprovals({ accessToken, onSummary }: { accessToken: string; onSummary?: (summary: AdminSummary) => void }) {
   const [rows, setRows] = useState<Row[]>([]);
@@ -169,26 +172,31 @@ export function AdminApprovals({ accessToken, onSummary }: { accessToken: string
   }
   let profile: Snapshot | null = null;
   let revision: Revision | null = null;
+  let businessRevision: BusinessRevision | null = null;
   try {
     if (selected?.kind === 'VENUE_REVISION') revision = JSON.parse(selected.snapshot) as Revision;
+    else if (selected?.kind === 'BUSINESS_REVISION') {
+      const parsed = JSON.parse(selected.snapshot) as BusinessRevision;
+      if (typeof parsed.name === 'string' && typeof parsed.legalName === 'string' && typeof parsed.contact === 'string') businessRevision = parsed;
+    }
     else if (selected) {
       const parsed = JSON.parse(selected.snapshot) as Snapshot;
       if (Array.isArray(parsed.venues) && parsed.venues.every(venue => Array.isArray(venue.courts) &&
         venue.courts.every(court => Array.isArray(court.hours) && Array.isArray(court.prices)))) profile = parsed;
     }
-  } catch { profile = null; revision = null; }
+  } catch { profile = null; revision = null; businessRevision = null; }
 
   const reasonLength = reason.trim().length;
   const current = selected?.current;
   const imageButton = (id: string, label: string) => <button type="button" className="admin-button-secondary" disabled={!!imageBusy || busy}
     onClick={() => void viewImage(id)}>{imageBusy === id ? 'Đang tải ảnh…' : label}</button>;
   return <section className="admin-panel admin-approvals sb-panel" aria-labelledby="admin-approvals-title" aria-busy={loading || busy || detailLoading}>
-    <header className="admin-panel-heading"><div><h2 id="admin-approvals-title">Hồ sơ chờ duyệt</h2><p>Hồ sơ mới và các thay đổi thông tin cơ sở.</p></div>
+    <header className="admin-panel-heading"><div><h2 id="admin-approvals-title">Hồ sơ chờ duyệt</h2><p>Hồ sơ ban đầu, cơ sở/sân mới và thay đổi thông tin quan trọng. Ảnh, lịch và giá vận hành do Partner tự quản lý.</p></div>
       <button type="button" className="admin-button-secondary" disabled={busy || loading} onClick={() => void reload()}><AdminIcon name="refresh" />Tải lại danh sách</button></header>
     <form className="admin-approval-filters" onSubmit={event => { event.preventDefault(); setQuery({ q: search.trim(), kind }); }}>
       <label>Tìm tên doanh nghiệp<input className="sb-field" type="search" value={search} maxLength={120} disabled={busy} onChange={event => setSearch(event.target.value)} /></label>
       <label>Loại hồ sơ<select className="sb-field" aria-label="Loại hồ sơ" value={kind} disabled={busy} onChange={event => setKind(event.target.value)}>
-        <option value="">Tất cả loại hồ sơ</option><option value="ONBOARDING">Hồ sơ mới</option><option value="VENUE_REVISION">Thay đổi cơ sở</option>
+        <option value="">Tất cả loại hồ sơ</option>{Object.entries(approvalKinds).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
       </select></label>
       <button type="submit" className="sb-action" disabled={busy}>Tìm hồ sơ</button>
       {(query.q || query.kind) && <button type="button" className="admin-button-secondary" disabled={busy} onClick={() => { setSearch(''); setKind(''); setQuery({ q: '', kind: '' }); }}>Xóa bộ lọc</button>}
@@ -201,15 +209,15 @@ export function AdminApprovals({ accessToken, onSummary }: { accessToken: string
       <button type="button" className={`admin-approval-row ${selected?.id === row.id ? 'is-selected' : ''}`} disabled={busy || detailLoading}
         onClick={() => void viewApproval(row.id)}>
         <span className="admin-approval-row-content"><strong>{row.businessName}</strong><span className="admin-row-meta">
-          <span className="admin-badge">{row.kind === 'VENUE_REVISION' ? 'Thay đổi cơ sở' : 'Hồ sơ mới'}</span><time dateTime={row.submittedAt}>{formatDate(row.submittedAt)}</time>
+          <span className="admin-badge">{approvalKinds[row.kind] ?? row.kind}</span><time dateTime={row.submittedAt}>{formatDate(row.submittedAt)}</time>
         </span></span><AdminIcon name="arrow" />
       </button>
     </li>)}</ul>
     {next && <button type="button" className="admin-button-secondary" disabled={loading || busy} onClick={() => void reload(next)}>Xem thêm hồ sơ</button>}
     {detailLoading && <p role="status" className="admin-state">Đang tải chi tiết hồ sơ…</p>}
-    {selected && !profile && !revision && <p role="alert" className="admin-error">Không đọc được thông tin hồ sơ. Vui lòng tải lại danh sách và chọn hồ sơ một lần nữa.</p>}
-    {selected && (profile || revision) && <div className="admin-approval-detail">
-      <header className="admin-detail-heading"><div><p className="admin-eyebrow">CHI TIẾT HỒ SƠ</p><h3>{profile?.name ?? 'Thông tin đề nghị thay đổi'}</h3></div>
+    {selected && !profile && !revision && !businessRevision && <p role="alert" className="admin-error">Không đọc được thông tin hồ sơ. Vui lòng tải lại danh sách và chọn hồ sơ một lần nữa.</p>}
+    {selected && (profile || revision || businessRevision) && <div className="admin-approval-detail">
+      <header className="admin-detail-heading"><div><p className="admin-eyebrow">{approvalKinds[selected.kind] ?? 'CHI TIẾT HỒ SƠ'}</p><h3>{profile?.name ?? 'Thông tin đề nghị thay đổi'}</h3></div>
         <button type="button" className="admin-button-secondary" disabled={busy} onClick={() => { setSelected(null); setReason(''); setConfirming(false); clearImages(); }}>Đóng chi tiết</button></header>
       {revision && <article className="admin-venue-card">
         <h4>{current?.venueName ?? 'Thông tin cơ sở'}{current && <small> · Phiên bản đang công bố {current.version}</small>}</h4>
@@ -221,7 +229,7 @@ export function AdminApprovals({ accessToken, onSummary }: { accessToken: string
               ['Địa chỉ', current?.address, revision.address], ['Liên hệ', current?.contact, revision.contact],
               ['Múi giờ', current?.timezone, revision.timezone],
               ['Tọa độ', current ? `${current.latitude}, ${current.longitude}` : undefined, `${revision.latitude}, ${revision.longitude}`],
-              ['Ngân hàng', current?.bankCode, revision.bankCode], ['Tên tài khoản', current?.accountName, revision.accountName],
+              ['Tên tài khoản', current?.accountName, revision.accountName],
               ['Số tài khoản', current?.accountNumber, revision.accountNumber],
             ] as Array<[string, string | undefined, string]>).map(([label, oldValue, proposed]) => <tr key={label} className={oldValue !== undefined && oldValue !== proposed ? 'is-changed' : ''}>
               <th scope="row">{label}{oldValue !== undefined && oldValue !== proposed && <small>Đã thay đổi</small>}</th><td>{oldValue ?? 'Chưa có dữ liệu'}</td><td>{proposed}</td>
@@ -235,18 +243,30 @@ export function AdminApprovals({ accessToken, onSummary }: { accessToken: string
             {images[revision.qrUploadId] && <img className="admin-private-image" src={images[revision.qrUploadId]} alt="QR mới" width="240" />}</section>
         </div>
       </article>}
+      {businessRevision && <article className="admin-venue-card">
+        <h4>Đối chiếu thông tin doanh nghiệp</h4>
+        {!current && <p className="admin-guidance">Chưa tải được thông tin đang công bố. Tải lại hồ sơ trước khi phê duyệt.</p>}
+        <div className="admin-revision-diff" role="region" tabIndex={0} aria-label="Đối chiếu thông tin doanh nghiệp">
+          <table><thead><tr><th scope="col">Thông tin</th><th scope="col">Đang công bố</th><th scope="col">Đề nghị thay đổi</th></tr></thead>
+            <tbody>{([['Tên hiển thị', current?.name, businessRevision.name], ['Tên pháp lý', current?.legalName, businessRevision.legalName],
+              ['Liên hệ', current?.contact, businessRevision.contact]] as Array<[string, string | undefined, string]>).map(([label, previous, proposed]) =>
+                <tr key={label} className={previous !== undefined && previous !== proposed ? 'is-changed' : ''}><th scope="row">{label}</th><td>{previous ?? 'Chưa có dữ liệu'}</td><td>{proposed}</td></tr>)}
+            </tbody></table>
+        </div>
+      </article>}
       {profile && <>
         <dl className="admin-facts"><div><dt>Tên pháp lý</dt><dd>{profile.legalName}</dd></div><div><dt>Liên hệ</dt><dd>{profile.contact}</dd></div></dl>
         {profile.venues.map((venue, index) => <article className="admin-venue-card" key={index}>
           <h4>{venue.name}</h4>
           <dl className="admin-facts"><div><dt>Địa chỉ</dt><dd>{venue.address}</dd></div><div><dt>Liên hệ</dt><dd>{venue.contact}</dd></div>
             <div><dt>Múi giờ</dt><dd>{venue.timezone}</dd></div><div><dt>Tọa độ</dt><dd>{venue.latitude}, {venue.longitude}</dd></div>
-            <div><dt>Ngân hàng</dt><dd>{venue.bankCode}</dd></div><div><dt>Tài khoản nhận tiền</dt><dd>{venue.accountName} · {venue.accountNumber}</dd></div></dl>
-          <div className="admin-actions">{imageButton(venue.imageUploadId, 'Xem ảnh cơ sở')}{imageButton(venue.qrUploadId, 'Xem QR')}</div>
-          <div className="admin-image-list">{images[venue.imageUploadId] && <img className="admin-private-image" src={images[venue.imageUploadId]} alt={`Ảnh ${venue.name}`} width="240" />}
+            <div><dt>Tài khoản nhận tiền</dt><dd>{venue.accountName} · {venue.accountNumber}</dd></div></dl>
+          <div className="admin-actions">{venue.imageUploadId ? imageButton(venue.imageUploadId, 'Xem ảnh cơ sở') : <p className="muted">Cơ sở chưa có ảnh (tùy chọn).</p>}{imageButton(venue.qrUploadId, 'Xem QR')}</div>
+          <div className="admin-image-list">{venue.imageUploadId && images[venue.imageUploadId] && <img className="admin-private-image" src={images[venue.imageUploadId]} alt={`Ảnh ${venue.name}`} width="240" />}
             {images[venue.qrUploadId] && <img className="admin-private-image" src={images[venue.qrUploadId]} alt={`QR ${venue.name}`} width="240" />}</div>
           {venue.courts.map((court, courtIndex) => <section className="admin-court-card" key={courtIndex}>
-            <h5>{court.name}</h5><div className="admin-court-config"><div><h6>Giờ hoạt động</h6>
+            <h5>{court.name}</h5>
+            <div className="admin-court-config"><div><h6>Giờ hoạt động</h6>
               <ul>{court.hours.map((hour, hourIndex) => <li key={hourIndex}>{weekday(hour.dayOfWeek)} <strong>{formatTime(hour.opensAt)}–{formatTime(hour.closesAt)}</strong></li>)}</ul>
             </div><div><h6>Bảng giá / 30 phút</h6>
               <ul>{court.prices.map((price, priceIndex) => <li key={priceIndex}>{weekday(price.dayOfWeek)} · {formatTime(price.startsAt)}–{formatTime(price.endsAt)}
@@ -257,10 +277,13 @@ export function AdminApprovals({ accessToken, onSummary }: { accessToken: string
       </>}
       {selected.status === 'PENDING' && <div className="admin-decision">
         <div><h4>Quyết định duyệt hồ sơ</h4><p>Phê duyệt khi thông tin cơ sở, lịch, giá và QR đã phù hợp.</p>
-          <button type="button" disabled={busy || (selected.kind === 'VENUE_REVISION' && !current)} onClick={() => { setConfirming(true); setError(''); }}>Phê duyệt</button>
+          <button type="button" disabled={busy || (['VENUE_REVISION', 'BUSINESS_REVISION'].includes(selected.kind) && !current)} onClick={() => { setConfirming(true); setError(''); }}>Phê duyệt</button>
           {confirming && <div className="admin-approve-confirm" role="group" aria-labelledby="admin-confirm-title">
             <h5 id="admin-confirm-title">Xác nhận phê duyệt hồ sơ</h5>
-            <p>{profile ? `Công bố doanh nghiệp ${profile.name} cùng ${profile.venues.length} cơ sở và cấu hình sân trong hồ sơ.` : `Áp dụng thông tin và tài khoản nhận tiền đề nghị cho ${current?.venueName ?? 'cơ sở này'}.`}</p>
+            <p>{businessRevision ? `Áp dụng thông tin doanh nghiệp ${businessRevision.name}.` : profile
+              ? selected.kind === 'VENUE_ADDITION' ? `Công bố cơ sở mới ${profile.venues.map(venue => venue.name).join(', ')}. Các cơ sở cũ tiếp tục hoạt động.`
+                : `Công bố doanh nghiệp ${profile.name} cùng ${profile.venues.length} cơ sở và cấu hình sân trong hồ sơ.`
+              : `Áp dụng thông tin và tài khoản nhận tiền đề nghị cho ${current?.venueName ?? 'cơ sở này'}.`}</p>
             <p>Hãy kiểm tra địa chỉ, lịch, giá và QR trước khi xác nhận. Quyết định được lưu ngay sau bước này.</p>
             <div className="admin-actions"><button type="button" disabled={busy} onClick={() => void decide('approve')}>{busy ? 'Đang lưu…' : 'Xác nhận phê duyệt'}</button>
               <button type="button" className="admin-button-secondary" disabled={busy} onClick={() => setConfirming(false)}>Hủy phê duyệt</button></div>

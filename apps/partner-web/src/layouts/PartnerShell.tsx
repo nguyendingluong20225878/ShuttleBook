@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useRef, useState } from 'react';
 import { PartnerIcon } from '../components/PartnerIcon';
-import { PartnerPage, partnerPages } from '../features/workspace/navigation';
+import { PartnerPage, partnerMenuPages, partnerPages } from '../features/workspace/navigation';
 
 export function PartnerShell({ page, navigate, businessControl, unread, onLogout, logoutBusy, children }: {
   page: PartnerPage; navigate: (page: PartnerPage) => void; businessControl: ReactNode; unread: number;
@@ -32,13 +32,14 @@ export function PartnerShell({ page, navigate, businessControl, unread, onLogout
     <aside className={`partner-sidebar ${open ? 'is-open' : ''}`} id="partner-navigation">
       <a className="brand desktop-brand" href="#/overview" onClick={() => go('overview')}><span className="brand-mark"><PartnerIcon name="courts" /></span><span>ShuttleBook<small>Dành cho đối tác</small></span></a>
       <p className="nav-caption">KHÔNG GIAN QUẢN LÝ</p>
-      <nav aria-label="Quản lý đối tác">{partnerPages.map(item => <a key={item.id} href={`#/${item.id}`}
+      <nav aria-label="Quản lý đối tác">{partnerMenuPages.map(item => <a key={item.id} href={`#/${item.id}`}
         aria-label={item.label}
         aria-current={page === item.id ? 'page' : undefined} onClick={() => go(item.id)}>
         <PartnerIcon name={item.id} /><span>{item.label}</span>
         {item.id === 'notifications' && unread > 0 && <span className="notice-count" aria-label={`${unread} chưa đọc`}>{unread}</span>}
       </a>)}</nav>
-      <div className="sidebar-footer"><span className="owner-avatar">CS</span><div><strong>Chủ sân</strong><small>Tài khoản đối tác</small></div>
+      <div className="sidebar-footer"><button type="button" className="owner-profile-link" onClick={() => go('account')}
+        aria-label="Mở thông tin cá nhân"><span className="owner-avatar">CS</span><span><strong>Chủ sân</strong><small>Tài khoản đối tác</small></span></button>
         <button type="button" className="icon-button" aria-label="Đăng xuất" disabled={logoutBusy} onClick={onLogout}><PartnerIcon name="logout" /></button>
       </div>
     </aside>

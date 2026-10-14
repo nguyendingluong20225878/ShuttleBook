@@ -14,7 +14,7 @@ export function AdminWorkspace({ accessToken, busy, onLogout }: { accessToken: s
   const page = useAdminNavigation();
   const [approvals, setApprovals] = useState<AdminSummary>(initial);
   const [notices, setNotices] = useState<AdminSummary>(initial);
-  return <AdminShell page={page} busy={busy} onLogout={onLogout}>
+  return <AdminShell page={page} busy={busy} onLogout={onLogout} unreadCount={notices.count}>
     {page === 'overview' && <section className="admin-overview" aria-label="Tổng quan vận hành">
       <div className="admin-metrics">
         <a href="#approvals" className="admin-metric"><span><AdminIcon name="approvals" />Hồ sơ chờ xử lý</span><strong>{countText(approvals)}</strong><small className="admin-metric-caption">Số hồ sơ đang chờ duyệt</small><small>Mở danh sách hồ sơ <AdminIcon name="arrow" /></small></a>

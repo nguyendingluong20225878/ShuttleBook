@@ -42,8 +42,34 @@ async function reloginPartner(page: Page, contact: string, password: string) {
   expect(loggedIn.status()).toBe(200);
 }
 
+async function selectScheduleScope(page: Page, field: 'Cơ sở' | 'Sân', name: string) {
+  const select = page.locator('.operations-page').getByRole('combobox', { name: field, exact: true });
+  const value = await select.locator('option').evaluateAll((options, target) =>
+    (options as HTMLOptionElement[]).find(option => option.textContent === target || option.textContent?.startsWith(`${target} · `))?.value, name);
+  expect(value).toBeTruthy(); await select.selectOption(value!);
+}
+
+async function loadLivePartnerCalendar(page: Page, date: string) {
+  await openPartnerPage(page, 'Lịch & giá');
+  await page.getByRole('tab', { name: 'Lịch sân', exact: true }).click();
+  const dateInput = page.getByLabel('Ngày xem lịch', { exact: true });
+  const sameDate = await dateInput.inputValue() === date;
+  if (sameDate) await expect(page.getByRole('button', { name: 'Tải lại lịch', exact: true })).toBeEnabled();
+  const [response] = await Promise.all([
+    page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/calendar')
+      && new URL(response.url()).searchParams.get('date') === date && response.request().method() === 'GET'),
+    sameDate ? page.getByRole('button', { name: 'Tải lại lịch', exact: true }).click() : dateInput.fill(date),
+  ]);
+  expect(response.status()).toBe(200); expect(response.headers()['cache-control']).toContain('no-store');
+  const data = (await response.json()).data;
+  expect(data.date).toBe(date);
+  expect(JSON.stringify(data)).not.toMatch(/accountNumber|proofUrl|customerContact|quoteToken/);
+  await expect(page.getByRole('region', { name: 'Lịch sân theo ngày' })).toBeVisible();
+  return data;
+}
+
 test('F02–F07 onboarding, casual and fixed-series payment through real browser, API, Worker and PostGIS', async ({ page, context }, testInfo) => {
-  test.setTimeout(240_000);
+  test.setTimeout(300_000);
   await mkdir('.local/m03/screenshots', { recursive: true });
   expect((await fetch(`${api}/health/ready`)).status).toBe(200);
   await context.route('**/*', route => {
@@ -108,47 +134,70 @@ test('F02–F07 onboarding, casual and fixed-series payment through real browser
   await page.getByRole('button', { name: '31 ngõ 16 Hoàng Cầu, Hà Nội' }).click();
   await venue.getByRole('button', { name: 'Xác nhận vị trí này' }).click();
   await venue.getByLabel('Liên hệ cơ sở').fill('Test venue contact');
-  await venue.getByRole('button', { name: 'Lưu cơ sở' }).click();
+  const venueCreateStarted = Date.now();
+  const [venueCreated] = await Promise.all([
+    page.waitForResponse(response => /\/partner-onboarding\/businesses\/[^/]+\/venues$/.test(response.url())
+      && response.request().method() === 'POST', { timeout: 20_000 }),
+    venue.getByRole('button', { name: 'Lưu cơ sở' }).click(),
+  ]);
+  console.info(JSON.stringify({ operation: 'partner-create-venue', elapsedMs: Date.now() - venueCreateStarted,
+    status: venueCreated.status() }));
+  expect(venueCreated.status()).toBe(201);
   await expect(page.getByRole('heading', { name: `${venueName} · Hồ sơ nháp` })).toBeVisible();
-  await openPartnerPage(page, 'Sân');
+  await openPartnerPage(page, 'Cơ sở & sân');
 
-  const court = page.getByRole('heading', { name: 'Thêm sân' }).locator('..');
-  await court.getByLabel('Cơ sở').selectOption({ label: venueName });
-  await court.getByLabel('Tên sân').fill('F02 Court');
-  await court.getByRole('button', { name: 'Lưu sân' }).click();
-  await expect(page.getByText('Sân F02 Court:')).toBeVisible();
+  await page.getByRole('region', { name: `Các sân tại ${venueName}` })
+    .getByRole('button', { name: `Thêm sân tại ${venueName}` }).click();
+  await expect(page.getByText('Sân 1:')).toBeVisible();
   await openPartnerPage(page, 'Lịch & giá');
-  const schedule = page.getByRole('heading', { name: 'Giờ và giá theo sân' }).locator('..');
-  await schedule.locator('select').first().selectOption({ label: `${venueName} / F02 Court` });
-  await schedule.getByRole('button', { name: 'Lưu giờ/giá' }).click();
-  await openPartnerPage(page, 'Sân');
-  await expect(page.getByText('Sân F02 Court: 1 ngày mở cửa, 1 khung giá')).toBeVisible();
+  const schedule = page.locator('.operations-page');
+  await selectScheduleScope(page, 'Cơ sở', venueName);
+  await selectScheduleScope(page, 'Sân', 'Sân 1');
+  const [initialScheduleSaved] = await Promise.all([
+    page.waitForResponse(response => response.url().endsWith('/schedule') && response.request().method() === 'PUT'),
+    schedule.getByRole('button', { name: 'Lưu lịch tuần' }).click(),
+  ]);
+  expect(initialScheduleSaved.status()).toBe(200);
+  await expect(page.locator('.partner-toast--success')).toContainText('Đã lưu.');
+  await expect(schedule.getByRole('button', { name: 'Lưu lịch tuần' })).toBeEnabled();
+  await openPartnerPage(page, 'Cơ sở & sân');
+  await expect(page.getByText('Sân 1: 1 ngày mở cửa, 1 khung giá')).toBeVisible();
   await page.getByRole('button', { name: 'Gửi hồ sơ duyệt' }).click();
-  await expect(page.getByText('Yêu cầu không thành công (INCOMPLETE_PROFILE).')).toBeVisible();
-  await openPartnerPage(page, 'Ảnh cơ sở');
+  await expect(page.getByText('Chưa đủ thông tin: kiểm tra cơ sở, QR và lịch/giá của sân trước khi xác nhận hoặc gửi duyệt.')).toBeVisible();
+  await openPartnerPage(page, 'Cơ sở & sân');
 
-  const image = page.getByRole('heading', { name: 'Ảnh cơ sở' }).locator('..');
-  await image.locator('select').selectOption({ label: venueName });
-  await image.getByLabel('Ảnh cơ sở').setInputFiles({ name: 'venue.png', mimeType: 'image/png', buffer: png });
-  await image.getByRole('button', { name: 'Tải ảnh' }).click();
-  await expect(page.getByText('Ảnh: Đã tải')).toBeVisible();
-  await openPartnerPage(page, 'Thanh toán & QR');
-  const payment = page.getByRole('heading', { name: 'Tài khoản nhận tiền' }).locator('..');
-  await payment.locator('select').selectOption({ label: venueName });
-  await payment.getByLabel('Mã ngân hàng').fill('TEST');
+  // Initial profile can be approved without the optional venue photo.
+  await expect(page.getByRole('img', { name: `Ảnh cơ sở ${venueName}` })).toHaveCount(0);
+  const payment = page.getByRole('form', { name: `Thiết lập QR cho ${venueName}`, exact: true });
+  await expect(page.getByLabel('Mã ngân hàng')).toHaveCount(0);
   await payment.getByLabel('Tên tài khoản').fill('F02 CLUB');
   await payment.getByLabel('Số tài khoản').fill('1234567890');
   await payment.getByLabel('Ảnh QR').setInputFiles({ name: 'qr.png', mimeType: 'image/png', buffer: png });
   await payment.getByRole('button', { name: 'Lưu QR và tài khoản' }).click();
   await expect(page.getByText('QR: Đã khai báo')).toBeVisible();
   await page.getByRole('button', { name: 'Gửi hồ sơ duyệt' }).click();
-  await expect(page.locator('.status-banner').getByText('Đang chờ duyệt', { exact: true })).toBeVisible();
+  await expect(page.locator('.status-banner').getByText('Đang chờ duyệt', { exact: true })).toBeVisible({ timeout: 15_000 });
 
   const admin = await context.newPage();
   await admin.goto('http://localhost:5175');
   await admin.getByLabel('Email', { exact: true }).fill(adminContact!);
   await admin.getByLabel('Mật khẩu').fill(adminPassword!);
   await admin.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
+  // Click the real outbox-delivered notice: read state/count is committed before opening approvals.
+  const adminNotices = admin.locator('.admin-notifications');
+  await expect.poll(async () => {
+    await adminNotices.getByRole('button', { name: 'Làm mới thông báo', exact: true }).click();
+    return adminNotices.getByRole('button', { name: 'Có hồ sơ chờ duyệt', exact: true }).count();
+  }, { timeout: 15_000 }).toBeGreaterThan(0);
+  const [adminRead] = await Promise.all([
+    admin.waitForResponse(response => /\/me\/notifications\/[^/]+\/read$/.test(new URL(response.url()).pathname)
+      && response.request().method() === 'POST'),
+    adminNotices.getByRole('button', { name: 'Có hồ sơ chờ duyệt', exact: true }).first().click(),
+  ]);
+  expect(adminRead.status()).toBe(200);
+  const adminReadData = (await adminRead.json()).data;
+  expect(adminReadData.readAt).toBeTruthy(); expect(adminReadData.unreadCount).toBeGreaterThanOrEqual(0);
+  await expect(admin).toHaveURL(/#approvals$/);
   await admin.getByRole('button', { name: new RegExp(clubName) }).click();
   await expect(admin.getByRole('heading', { name: clubName })).toBeVisible();
   await admin.getByLabel('Lý do cần chỉnh sửa').fill('Please correct the legal name');
@@ -161,8 +210,9 @@ test('F02–F07 onboarding, casual and fixed-series payment through real browser
   const edit = page.getByRole('heading', { name: 'Thông tin doanh nghiệp' }).locator('..');
   await edit.getByLabel('Tên pháp lý').fill('F02 Club Company Updated');
   await edit.getByRole('button', { name: 'Lưu thay đổi' }).click();
+  await openPartnerPage(page, 'Cơ sở & sân');
   await page.getByRole('button', { name: 'Gửi hồ sơ duyệt' }).click();
-  await expect(page.locator('.status-banner').getByText('Đang chờ duyệt', { exact: true })).toBeVisible();
+  await expect(page.locator('.status-banner').getByText('Đang chờ duyệt', { exact: true })).toBeVisible({ timeout: 15_000 });
   await admin.getByRole('button', { name: 'Tải lại danh sách' }).click();
   await admin.getByRole('button', { name: new RegExp(clubName) }).click();
   await admin.getByRole('button', { name: 'Phê duyệt', exact: true }).click();
@@ -171,29 +221,101 @@ test('F02–F07 onboarding, casual and fixed-series payment through real browser
 
   await reloginPartner(page, contact, password);
   await expect(page.locator('.status-banner').getByText('Đang hoạt động', { exact: true })).toBeVisible();
+  await openPartnerPage(page, 'Cơ sở & sân');
+  await expect(page.getByRole('img', { name: `Ảnh cơ sở ${venueName}` })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Thêm cơ sở hoặc sân sau khi duyệt' })).toBeVisible();
+
+  // Owner updates ordinary media directly; no approval request is created.
+  await expect(page.getByRole('heading', { name: 'Ảnh riêng từng sân' })).toHaveCount(0);
+  const venuePhoto = page.getByRole('heading', { name: 'Ảnh cơ sở', exact: true }).locator('..');
+  await venuePhoto.getByRole('combobox', { name: 'Cơ sở', exact: true }).selectOption({ label: venueName });
+  await venuePhoto.getByLabel('Ảnh cơ sở', { exact: true }).setInputFiles({ name: 'venue.png', mimeType: 'image/png', buffer: png });
+  const [photoSaved] = await Promise.all([
+    page.waitForResponse(response => /\/operator\/venues\/[^/]+\/image$/.test(response.url()) && response.request().method() === 'PUT'),
+    venuePhoto.getByRole('button', { name: 'Tải ảnh', exact: true }).click(),
+  ]);
+  expect(photoSaved.status()).toBe(200);
+  await expect.poll(() => page.getByRole('img', { name: `Ảnh cơ sở ${venueName}`, exact: true })
+    .evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
+  const [photoRemoved] = await Promise.all([
+    page.waitForResponse(response => /\/operator\/venues\/[^/]+\/image$/.test(response.url()) && response.request().method() === 'DELETE'),
+    page.getByRole('button', { name: `Gỡ ảnh cơ sở ${venueName}`, exact: true }).click(),
+  ]);
+  expect(photoRemoved.status()).toBe(200);
+  await expect(page.getByRole('img', { name: `Ảnh cơ sở ${venueName}` })).toHaveCount(0);
+  await venuePhoto.getByLabel('Ảnh cơ sở', { exact: true }).setInputFiles({ name: 'venue.png', mimeType: 'image/png', buffer: png });
+  await venuePhoto.getByRole('button', { name: 'Tải ảnh', exact: true }).click();
+  await expect.poll(() => page.getByRole('img', { name: `Ảnh cơ sở ${venueName}` })
+    .evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
+  await admin.getByRole('button', { name: 'Tải lại danh sách' }).click();
+  await expect(admin.getByRole('button', { name: new RegExp(clubName) })).toHaveCount(0);
+
+  // Saving a complete schedule publishes a new court in an approved venue.
+  const [extraCreated] = await Promise.all([
+    page.waitForResponse(response => /\/partner-onboarding\/venues\/[^/]+\/courts$/.test(response.url()) && response.request().method() === 'POST'),
+    page.getByRole('region', { name: `Các sân tại ${venueName}` }).getByRole('button', { name: `Thêm sân tại ${venueName}` }).click(),
+  ]);
+  expect(extraCreated.status()).toBe(201);
+  const publicVenueId = extraCreated.url().match(/\/venues\/([^/]+)\/courts$/)![1];
+  const publicCourts = async () => ((await (await fetch(`${api}/api/v1/venues/${publicVenueId}`)).json()).data.courts as Array<{ name: string }>).map(item => item.name);
+  expect(await publicCourts()).toEqual(['Sân 1']);
   await openPartnerPage(page, 'Lịch & giá');
+  const [originalOperations] = await Promise.all([
+    page.waitForResponse(response => response.url().endsWith('/operations') && response.request().method() === 'GET'),
+    page.getByRole('tab', { name: 'Giờ & giá', exact: true }).click(),
+  ]);
+  const previousOperationsVersion = (await originalOperations.json()).data.version as number;
+  const extraSchedule = page.locator('.operations-page');
+  await extraSchedule.getByRole('tab', { name: 'Giờ & giá', exact: true }).click();
+  await selectScheduleScope(page, 'Sân', 'Sân 2');
+  const [extraScheduleSaved] = await Promise.all([
+    page.waitForResponse(response => response.url().endsWith('/schedule') && response.request().method() === 'PUT'),
+    extraSchedule.getByRole('button', { name: 'Lưu lịch tuần', exact: true }).click(),
+  ]);
+  expect(extraScheduleSaved.status()).toBe(200);
+  await expect(page.getByRole('status').filter({ hasText: 'Đã lưu lịch và công bố sân.' })).toBeVisible();
+  await expect(extraSchedule.getByRole('button', { name: 'Lưu lịch tuần', exact: true })).toBeEnabled();
+  await openPartnerPage(page, 'Cơ sở & sân');
+  await expect(page.getByRole('button', { name: `Xác nhận Sân 2 tại ${venueName}` })).toHaveCount(0);
+  await expect(page.locator('.status-banner').getByText('Đang hoạt động', { exact: true })).toBeVisible();
+  await admin.getByRole('button', { name: 'Tải lại danh sách' }).click();
+  await expect(admin.getByRole('button', { name: new RegExp(clubName) })).toHaveCount(0);
+  await expect.poll(publicCourts).toEqual(['Sân 1', 'Sân 2']);
+  await page.getByRole('button', { name: 'Tải lại hồ sơ', exact: true }).click();
+
+  await openPartnerPage(page, 'Lịch & giá');
+  await page.getByRole('tab', { name: 'Giờ & giá', exact: true }).click();
+  await selectScheduleScope(page, 'Sân', 'Sân 1');
   await expect(page.getByRole('heading', { name: 'Vận hành sân' })).toBeVisible();
-  await expect(page.getByText('F02 Court · Đang hoạt động · múi giờ Asia/Ho_Chi_Minh')).toBeVisible();
-  const updatedSchedule = page.waitForResponse(response => response.url().endsWith('/operations') && response.request().method() === 'GET');
+  await expect(page.locator('.schedule-editor-heading p')).toHaveText('Sân 1 · Đang hoạt động', { timeout: 15_000 });
+  const updatedSchedule = page.waitForResponse(response => response.url().endsWith('/schedule') && response.request().method() === 'PUT');
   await page.getByRole('button', { name: 'Lưu lịch tuần' }).click();
-  expect((await (await updatedSchedule).json()).data.version).toBe(2);
-  await expect(page.locator('.operations-page').getByRole('status')).toHaveText('Đã lưu.');
+  const updatedScheduleReply = await updatedSchedule;
+  expect(updatedScheduleReply.status()).toBe(200);
+  expect((await updatedScheduleReply.json()).data.version).toBe(previousOperationsVersion + 1);
+  await expect(page.getByRole('status').filter({ hasText: 'Đã lưu.' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Lưu lịch tuần', exact: true })).toBeEnabled();
 
   const future = new Date();
   future.setUTCDate(future.getUTCDate() + 7 + ((8 - future.getUTCDay()) % 7));
   const nextMonday = future.toISOString().slice(0, 10);
-  const pricing = page.getByRole('heading', { name: 'Giá ưu tiên theo khoảng ngày' }).locator('..');
-  await pricing.getByRole('button', { name: 'Thêm quy tắc giá' }).click();
+  const pricing = page.locator('#operator-pricing');
+  await page.locator('details:has(#operator-pricing) > summary').click();
+  await pricing.getByRole('button', { name: 'Thiết lập giá đặc biệt' }).click();
   await pricing.getByLabel('Hiệu lực từ').fill(nextMonday);
   await pricing.getByLabel('Đến ngày').fill(nextMonday);
-  await pricing.getByLabel('Đến', { exact: true }).fill('09:00');
-  await pricing.getByLabel('Giá/30 phút').fill('200000');
-  const updatedPricing = page.waitForResponse(response => response.url().endsWith('/operations') && response.request().method() === 'GET');
-  await pricing.getByRole('button', { name: 'Lưu giá theo ngày' }).click();
-  expect((await (await updatedPricing).json()).data.version).toBe(3);
-  await expect(page.locator('.operations-page').getByRole('status')).toHaveText('Đã lưu.');
+  await pricing.getByLabel('Đến giờ').fill('09:00');
+  await pricing.getByLabel('VND / 30 phút').fill('200000');
+  const updatedPricing = page.waitForResponse(response => response.url().endsWith('/special-price') && response.request().method() === 'PUT');
+  await pricing.getByRole('button', { name: 'Lưu giá đặc biệt' }).click();
+  const updatedPricingReply = await updatedPricing;
+  expect(updatedPricingReply.status()).toBe(200);
+  expect((await updatedPricingReply.json()).data.version).toBe(previousOperationsVersion + 2);
+  await expect(page.getByRole('status').filter({ hasText: 'Đã lưu giá đặc biệt cho sân này.' })).toBeVisible();
+  await expect(pricing.getByRole('button', { name: 'Lưu giá đặc biệt', exact: true })).toBeEnabled();
 
   const policy = page.getByRole('heading', { name: 'Quy định đặt sân' }).locator('..');
+  await page.locator('details:has(#operator-policy) > summary').click();
   await policy.getByLabel('Block hiển thị').selectOption('60');
   await policy.getByLabel('Thời lượng đặt tối thiểu').fill('60');
   await policy.getByLabel('Giữ chỗ trước khi báo chuyển khoản').fill('20');
@@ -201,9 +323,10 @@ test('F02–F07 onboarding, casual and fixed-series payment through real browser
   await policy.getByRole('button', { name: 'Lưu quy định' }).click();
   const policyReply = await savedPolicy;
   expect(policyReply.status()).toBe(200);
-  expect(policyReply.request().headers()['if-match']).toBe('"3"');
+  expect(policyReply.request().headers()['if-match']).toBe(`"${previousOperationsVersion + 2}"`);
   expect(policyReply.request().postDataJSON()).toEqual({ bookingBlockMinutes: 60, minimumBookingMinutes: 60, holdMinutes: 20 });
-  await expect(page.locator('.operations-page').getByRole('status')).toHaveText('Đã lưu.');
+  await expect(page.getByRole('status').filter({ hasText: 'Đã lưu.' })).toBeVisible();
+  await expect(policy.getByRole('button', { name: 'Lưu quy định', exact: true })).toBeEnabled();
   await expect(policy.getByLabel('Block hiển thị')).toHaveValue('60');
 
   const preview = page.getByRole('heading', { name: 'Xem thử giá' }).locator('..');
@@ -211,7 +334,7 @@ test('F02–F07 onboarding, casual and fixed-series payment through real browser
   await preview.getByLabel('Từ').fill('08:00');
   await preview.getByLabel('Đến').fill('10:00');
   await preview.getByRole('button', { name: 'Xem giá' }).click();
-  await expect(page.getByText('Tổng giá: 600.000 VND · 4 ca')).toBeVisible();
+  await expect(preview).toContainText('Tổng giá: 600.000đ · 4 ca');
 
   const customer = await context.newPage();
   await customer.goto('http://localhost:5173/venues');
@@ -222,28 +345,43 @@ test('F02–F07 onboarding, casual and fixed-series payment through real browser
   await resultCard.getByRole('link', { name: 'Xem lịch các sân' }).click();
   await expect(customer.getByRole('heading', { name: venueName })).toBeVisible();
   await customer.getByLabel('Ngày chơi').fill(nextMonday);
-  await expect(customer.getByRole('rowheader', { name: /F02 Court/ })).toBeVisible();
-  await expect(customer.getByRole('button', { name: /F02 Court, 08:00 đến 08:30, Còn trống, 200.000đ/ })).toBeVisible();
+  await expect(customer.getByRole('rowheader', { name: /Sân 1/ })).toBeVisible();
+  await expect(customer.getByRole('button', { name: /Sân 1, 08:00 đến 08:30, Còn trống, 200.000đ/ })).toBeVisible();
 
-  await expect(customer.getByRole('button', { name: /F02 Court, 09:00 đến 09:30, Còn trống, 100.000đ/ })).toBeVisible();
+  await expect(customer.getByRole('button', { name: /Sân 1, 09:00 đến 09:30, Còn trống, 100.000đ/ })).toBeVisible();
   await expect(customer.getByRole('img', { name: `Ảnh ${venueName}` })).toBeVisible();
+  await expect(customer.getByRole('img', { name: /^Ảnh sân/ })).toHaveCount(0);
 
+  await page.getByRole('tab', { name: 'Bảo trì', exact: true }).click();
   const maintenance = page.getByRole('heading', { name: 'Bảo trì sân' }).locator('..');
   await maintenance.getByLabel('Ngày').fill(nextMonday);
+  await maintenance.getByLabel('Từ', { exact: true }).fill('08:00');
+  await maintenance.getByLabel('Đến', { exact: true }).fill('10:00');
   await maintenance.getByLabel('Lý do').fill('F03 live maintenance');
   await maintenance.getByRole('button', { name: 'Khóa ca bảo trì' }).click();
+  await expect(page.locator('.partner-toast--success')).toContainText('Đã khóa ca bảo trì.');
+  await expect(maintenance.getByRole('button', { name: 'Khóa ca bảo trì' })).toBeEnabled();
   await expect(page.getByText('F03 live maintenance')).toBeVisible();
   await customer.getByRole('button', { name: 'Làm mới lịch' }).click();
   await expect(customer.locator('.slot-label').filter({ hasText: 'Đã kín' }).first()).toBeVisible();
-  await expect(customer.getByRole('button', { name: /F02 Court, 08:00 đến 08:30/ })).toHaveCount(0);
+  await expect(customer.getByRole('button', { name: /Sân 1, 08:00 đến 08:30/ })).toHaveCount(0);
+  const maintenanceCalendar = await loadLivePartnerCalendar(page, nextMonday);
+  const maintenanceEvents = maintenanceCalendar.courts.flatMap((court: any) => court.events).filter((event: any) => event.kind === 'MAINTENANCE');
+  expect(maintenanceEvents.some((event: any) => event.reason === 'F03 live maintenance' && event.blocksBooking)).toBe(true);
+  await expect(page.locator('.calendar-event-list')).toContainText('F03 live maintenance');
+  await page.getByRole('tab', { name: 'Bảo trì', exact: true }).click();
   await page.getByRole('button', { name: 'Hủy bảo trì' }).click();
+  await expect(page.locator('.partner-toast--success')).toContainText('Đã hủy bảo trì.');
   await expect(page.getByText('Chưa có ca bảo trì.')).toBeVisible();
   await customer.getByRole('button', { name: 'Làm mới lịch' }).click();
-  await expect(customer.getByRole('button', { name: /F02 Court, 08:00 đến 08:30, Còn trống, 200.000đ/ })).toBeVisible();
+  await expect(customer.getByRole('button', { name: /Sân 1, 08:00 đến 08:30, Còn trống, 200.000đ/ })).toBeVisible();
+  const releasedCalendar = await loadLivePartnerCalendar(page, nextMonday);
+  expect(releasedCalendar.courts.flatMap((court: any) => court.events).filter((event: any) => event.kind === 'MAINTENANCE')
+    .every((event: any) => !event.blocksBooking)).toBe(true);
 
   // F05: guest preserves its court/time through customer registration and login.
-  await customer.getByRole('button', { name: /F02 Court, 08:00 đến 08:30/ }).click();
-  await customer.getByRole('button', { name: /F02 Court, 08:30 đến 09:00/ }).click();
+  await customer.getByRole('button', { name: /Sân 1, 08:00 đến 08:30/ }).click();
+  await customer.getByRole('button', { name: /Sân 1, 08:30 đến 09:00/ }).click();
   await customer.getByRole('button', { name: 'Tiếp tục đặt vãng lai' }).click();
   await expect(customer.getByRole('heading', { name: 'Đăng nhập khách hàng' })).toBeVisible();
   await customer.getByRole('button', { name: 'Đăng ký', exact: true }).click();
@@ -272,10 +410,14 @@ test('F02–F07 onboarding, casual and fixed-series payment through real browser
   const casualHeldSlots = casualHeld.slots.filter((slot: { startsAt: string }) => slot.startsAt === '08:00' || slot.startsAt === '08:30');
   expect(casualHeldSlots).toHaveLength(2);
   expect(casualHeldSlots.every((slot: { status: string }) => slot.status === 'RESERVED')).toBe(true);
+  const createdBooking = customer.waitForResponse(response => response.url().endsWith('/api/v1/bookings') &&
+    response.request().method() === 'POST', { timeout: 15_000 });
   await customer.getByRole('button', { name: 'Xác nhận tạo đơn' }).click();
-  await expect(customer.getByRole('heading', { name: 'Chi tiết đơn đặt sân' })).toBeVisible();
+  expect((await createdBooking).status()).toBe(201);
+  await expect(customer.getByRole('heading', { name: 'Chi tiết đơn đặt sân' })).toBeVisible({ timeout: 15_000 });
   await expect(customer.getByRole('img', { name: 'QR nhận tiền của cơ sở cho đơn đặt sân' })).toBeVisible();
-  await expect(customer.getByText('Ngân hàng: TEST · Chủ tài khoản: F02 CLUB', { exact: true })).toBeVisible();
+  await expect(customer.getByText('Chủ tài khoản: F02 CLUB', { exact: true })).toBeVisible();
+  await expect(customer.getByText('Ngân hàng:', { exact: false })).toHaveCount(0);
   expect(await customer.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   const bookingUrl = customer.url();
   await expect.poll(async () => {
@@ -284,14 +426,13 @@ test('F02–F07 onboarding, casual and fixed-series payment through real browser
   }, { timeout: 15_000 }).toContain('Đơn đặt sân đang giữ chỗ');
 
   await openPartnerPage(page, 'Thanh toán & QR');
-  const revision = page.getByRole('heading', { name: 'Đề nghị thay đổi thông tin quan trọng' }).locator('..');
+  const revision = page.getByRole('heading', { name: 'Đề nghị đổi tài khoản hoặc QR' }).locator('..');
   await revision.locator('select').selectOption({ label: venueName });
-  await revision.getByLabel('Mã ngân hàng').fill('TEST');
   await revision.getByLabel('Tên tài khoản').fill('F02 CLUB UPDATED');
   await revision.getByLabel('Số tài khoản').fill('9876543210');
   await revision.getByLabel('QR mới').setInputFiles({ name: 'qr-new.png', mimeType: 'image/png', buffer: png });
-  await revision.getByRole('button', { name: 'Gửi thay đổi để duyệt' }).click();
-  await expect(revision).toHaveCount(0);
+  await revision.getByRole('button', { name: 'Gửi Admin duyệt' }).click();
+  await expect(revision).toHaveCount(0, { timeout: 30_000 });
   await admin.getByRole('button', { name: 'Tải lại danh sách' }).click();
   await admin.getByRole('button', { name: new RegExp(clubName) }).click();
   await admin.getByRole('button', { name: 'Phê duyệt', exact: true }).click();
@@ -299,7 +440,8 @@ test('F02–F07 onboarding, casual and fixed-series payment through real browser
   await expect(admin.getByRole('button', { name: new RegExp(clubName) })).toHaveCount(0);
   await customer.reload();
   await expect(customer).toHaveURL(bookingUrl);
-  await expect(customer.getByText('Ngân hàng: TEST · Chủ tài khoản: F02 CLUB', { exact: true })).toBeVisible();
+  await expect(customer.getByText('Chủ tài khoản: F02 CLUB', { exact: true })).toBeVisible();
+  await expect(customer.getByText('Ngân hàng:', { exact: false })).toHaveCount(0);
   await expect(customer.getByRole('img', { name: 'QR nhận tiền của cơ sở cho đơn đặt sân' })).toBeVisible();
   await expect(customer.getByRole('heading', { name: 'Đăng nhập khách hàng' })).toHaveCount(0);
   await customer.screenshot({ path: `.local/m03/screenshots/customer-f5-${testInfo.project.name}.png`, fullPage: true });
@@ -326,9 +468,10 @@ test('F02–F07 onboarding, casual and fixed-series payment through real browser
 
   // Worker delivers the owner notice; the link opens the scoped booking detail.
   await openPartnerPage(page, 'Thông báo');
-  const ownerNotice = page.locator('.notice-list li').filter({ hasText: 'Khách đã báo chuyển khoản' }).filter({ hasText: reported.bookingNo });
+  const ownerNotice = page.locator('.notice-list li').filter({ hasText: 'Khách đã báo chuyển khoản' }).first();
   await expect(ownerNotice).toBeVisible({ timeout: 15_000 });
-  await ownerNotice.getByRole('button', { name: 'Xem đơn đặt sân' }).click();
+  await expect(ownerNotice).not.toContainText(reported.bookingNo);
+  await ownerNotice.getByRole('button', { name: 'Khách đã báo chuyển khoản', exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`#/bookings/${reported.bookingId}$`));
   await openPartnerPage(page, 'Đơn đặt sân');
   const reportedRow = page.locator('.booking-list > li').filter({ has: page.getByText(reported.bookingNo, { exact: true }) });
@@ -377,6 +520,13 @@ test('F02–F07 onboarding, casual and fixed-series payment through real browser
   await expect(customer).toHaveURL(bookingUrl);
   await expect(customer.locator('.booking-status')).toHaveText('Đã xác nhận');
   await expect(customer.getByRole('button', { name: 'Đã chuyển khoản', exact: true })).toHaveCount(0);
+  const confirmedCalendar = await loadLivePartnerCalendar(page, nextMonday);
+  const confirmedEvent = confirmedCalendar.courts.flatMap((court: any) => court.events)
+    .find((event: any) => event.occurrenceId === confirmed.bookingId);
+  expect(confirmedEvent).toMatchObject({ kind: 'BOOKING', paymentAnchorId: confirmed.bookingId, bookingType: 'CASUAL',
+    bookingStatus: 'CONFIRMED', paymentStatus: 'PAID', blocksBooking: true });
+  expect(Number(confirmedEvent.occurrenceAmount)).toBe(400000);
+  await expect(page.locator('.calendar-event-list')).toContainText('Đã thanh toán');
 
   // F07: the same public grid selects a weekly interval; one real payment confirms the whole period.
   await customer.getByRole('link', { name: 'Tìm sân', exact: true }).click();
@@ -387,7 +537,7 @@ test('F02–F07 onboarding, casual and fixed-series payment through real browser
   await customer.getByLabel('Ngày chơi').fill(nextMonday);
   await customer.getByRole('button', { name: 'Cố định hằng tuần', exact: true }).click();
   for (const [start, end] of [['09:00', '09:30'], ['09:30', '10:00'], ['10:00', '10:30'], ['10:30', '11:00']])
-    await customer.getByRole('button', { name: new RegExp(`F02 Court, ${start} đến ${end}, Còn trống`) }).click();
+    await customer.getByRole('button', { name: new RegExp(`Sân 1, ${start} đến ${end}, Còn trống`) }).click();
   await customer.getByRole('button', { name: 'Tiếp tục đặt cố định', exact: true }).click();
   await expect(customer.getByRole('heading', { name: 'Thiết lập lịch cố định', exact: true })).toBeVisible();
   const [seriesQuoted] = await Promise.all([
@@ -452,6 +602,18 @@ test('F02–F07 onboarding, casual and fixed-series payment through real browser
   expect(groupConfirmed.status).toBe('CONFIRMED'); expect(groupConfirmed.payment.status).toBe('PAID');
   expect(groupConfirmed.payment.confirmedAmount).toBe(seriesQuote.amount);
   expect(groupConfirmed.series.occurrences.every((item: { status: string }) => item.status === 'CONFIRMED')).toBe(true);
+  const secondOccurrence = groupConfirmed.series.occurrences[1];
+  const seriesCalendar = await loadLivePartnerCalendar(page, secondOccurrence.date);
+  const seriesEvent = seriesCalendar.courts.flatMap((court: any) => court.events)
+    .find((event: any) => event.occurrenceId === secondOccurrence.bookingId);
+  expect(seriesEvent).toMatchObject({ kind: 'BOOKING', paymentAnchorId: group.bookingId, bookingType: 'RECURRING_OCCURRENCE',
+    bookingStatus: 'CONFIRMED', paymentStatus: 'PAID', blocksBooking: true });
+  expect(Number(seriesEvent.occurrenceAmount)).toBe(400000); expect(Number(seriesEvent.paymentTotalAmount)).toBe(seriesQuote.amount);
+  await expect(page.locator('.calendar-event-list')).toContainText('Cố định');
+  await expect(page.locator('.calendar-event-list').getByRole('link', { name: `Xem đơn ${group.series.seriesNo}`, exact: true }))
+    .toHaveAttribute('href', `#/bookings/${group.bookingId}`);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: `.local/m03/screenshots/partner-live-calendar-${testInfo.project.name}.png`, fullPage: true });
   await expect(customer.getByRole('region', { name: 'Lịch các buổi trong kỳ', exact: true }).locator('.booking-status').first()).toHaveText('Đã xác nhận', { timeout: 15_000 });
   await customer.locator('.site-header').getByRole('link', { name: 'Đơn của tôi', exact: true }).click();
   await expect(customer.locator('.booking-list > li').filter({ hasText: group.bookingNo })).toHaveCount(1);
@@ -460,5 +622,17 @@ test('F02–F07 onboarding, casual and fixed-series payment through real browser
   await customer.reload();
   await expect(customer).toHaveURL(seriesUrl);
   await expect(customer.getByRole('region', { name: 'Lịch các buổi trong kỳ', exact: true }).locator('li')).toHaveCount(seriesQuote.occurrenceCount);
+  await customer.goto('http://localhost:5173/me/notifications');
+  const customerNotices = customer.locator('.customer-notifications');
+  await expect(customerNotices.getByRole('button', { name: 'Đơn đặt sân đã xác nhận', exact: true }).first()).toBeVisible({ timeout: 15_000 });
+  const [customerRead] = await Promise.all([
+    customer.waitForResponse(response => /\/me\/notifications\/[^/]+\/read$/.test(new URL(response.url()).pathname)
+      && response.request().method() === 'POST'),
+    customerNotices.getByRole('button', { name: 'Đơn đặt sân đã xác nhận', exact: true }).first().click(),
+  ]);
+  expect(customerRead.status()).toBe(200);
+  expect((await customerRead.json()).data.readAt).toBeTruthy();
+  await expect(customer.getByRole('region', { name: 'Chi tiết: Đơn đặt sân đã xác nhận', exact: true })).toBeVisible();
+  await expect(customer.getByRole('button', { name: 'Đánh dấu đã đọc', exact: true })).toHaveCount(0);
   expect(await customer.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });

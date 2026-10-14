@@ -1,220 +1,125 @@
-import { FormEvent, useEffect, useRef, useState } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import { statusLabel } from './features/workspace/navigation';
+import { PartnerRequest } from './features/bookings/types';
+import { PartnerScheduleEditor } from './features/schedule/PartnerScheduleEditor';
+import { PartnerCalendar } from './features/schedule/PartnerCalendar';
 
-type ApiRequest = <T>(path: string, method?: string, body?: object, version?: number) => Promise<T>;
-type CourtChoice = { id: string; name: string; status: string };
-type VenueChoice = { id: string; name: string; courts: CourtChoice[] };
-type Hour = { dayOfWeek: number; opensAt: string; closesAt: string };
-type Price = { dayOfWeek: number; startsAt: string; endsAt: string; pricePerSlot: number };
-type Rule = Price & { startsOn: string; endsOn: string; priority: number };
-type Operations = { id: string; name: string; status: string; version: number; timezone: string;
-  bookingBlockMinutes: number; minimumBookingMinutes: number; holdMinutes: number;
-  hours: Hour[]; basePrices: Price[]; rules: Rule[] };
-type Maintenance = { id: string; reason: string; status: string; startsAt: string; endsAt: string };
-type Preview = { totalPrice: number; slots: Array<{
-  startsAt: string; endsAt: string; pricePerSlot: number; priority: number }> };
-const days = ['Chủ nhật', 'Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy'];
-const today = () => new Date().toISOString().slice(0, 10);
-const hhmm = (value: string) => value.slice(0, 5);
+export type ScheduleCourt = { id: string; name: string; status: string; version: number };
+export type ScheduleVenue = { id: string; name: string; status: string; timezone: string; courts: ScheduleCourt[] };
+export type ScheduleTab = 'calendar' | 'pricing' | 'maintenance';
+export const venueToday = (timezone = 'Asia/Ho_Chi_Minh') => new Intl.DateTimeFormat('en-CA', {
+  timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit',
+}).format(new Date());
+const courtOrder = (a: ScheduleCourt, b: ScheduleCourt) => a.name.localeCompare(b.name, 'vi', { numeric: true });
+function locationState(venues: ScheduleVenue[], active: boolean) {
+  const params = new URLSearchParams(window.location.hash.split('?')[1] ?? '');
+  const venue = venues.find(v => v.id === params.get('venueId')) ?? venues[0];
+  const rawTab = params.get('tab');
+  const tab: ScheduleTab = rawTab === 'pricing' || rawTab === 'maintenance' || rawTab === 'calendar'
+    ? rawTab : active && venue?.status === 'PUBLISHED' ? 'calendar' : 'pricing';
+  const courtId = venue?.courts.some(c => c.id === params.get('courtId')) ? params.get('courtId')! :
+    tab === 'calendar' ? '' : [...(venue?.courts ?? [])].sort(courtOrder)[0]?.id ?? '';
+  const date = params.get('date');
+  const validDate = date && /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(Date.parse(`${date}T00:00:00Z`))
+    && new Date(`${date}T00:00:00Z`).toISOString().slice(0, 10) === date;
+  return { venueId: venue?.id ?? '', courtId, tab, date: validDate ? date! : venueToday(venue?.timezone) };
+}
 
-export function PartnerOperations({ venues, request }: { venues: VenueChoice[]; request: ApiRequest }) {
-  const choices = venues.flatMap(venue => venue.courts.map(court =>
-    ({ ...court, label: `${venue.name} / ${court.name}` })));
-  const [courtId, setCourtId] = useState(choices[0]?.id ?? '');
-  const selectedCourtId = useRef(courtId);
-  selectedCourtId.current = courtId;
-  const [operations, setOperations] = useState<Operations | null>(null);
-  const [maintenance, setMaintenance] = useState<Maintenance[]>([]);
-  const [hours, setHours] = useState<Hour[]>([]);
-  const [prices, setPrices] = useState<Price[]>([]);
-  const [rules, setRules] = useState<Rule[]>([]);
-  const [bookingBlockMinutes, setBookingBlockMinutes] = useState(30);
-  const [minimumBookingMinutes, setMinimumBookingMinutes] = useState(30);
-  const [holdMinutes, setHoldMinutes] = useState(20);
-  const [date, setDate] = useState(today());
-  const [startsAt, setStartsAt] = useState('08:00');
-  const [endsAt, setEndsAt] = useState('10:00');
-  const [reason, setReason] = useState('');
-  const [preview, setPreview] = useState<Preview | null>(null);
+export function PartnerOperations({ venues, request, active, canEditDraft, refresh, openBooking, onDirtyChange, onBusyChange }: {
+  venues: ScheduleVenue[]; request: PartnerRequest; active: boolean; canEditDraft: boolean; refresh: () => Promise<void>;
+  openBooking: (id: string) => void; onDirtyChange: (dirty: boolean) => void; onBusyChange: (busy: boolean) => void;
+}) {
+  const [selection, setSelection] = useState(() => locationState(venues, active));
+  const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
-  const [messageKind, setMessageKind] = useState<'success' | 'error'>('error');
-
-  async function load(id: string) {
-    const root = `/operator/courts/${id}`;
-    const [config, blocks] = await Promise.all([
-      request<Operations>(`${root}/operations`), request<Maintenance[]>(`${root}/maintenance`)
-    ]);
-    if (selectedCourtId.current !== id) return;
-    setOperations(config);
-    setHours(config.hours.map(row => ({ ...row, opensAt: hhmm(row.opensAt), closesAt: hhmm(row.closesAt) })));
-    setPrices(config.basePrices.map(row => ({ ...row, startsAt: hhmm(row.startsAt), endsAt: hhmm(row.endsAt) })));
-    setRules(config.rules.map(row => ({ ...row, startsAt: hhmm(row.startsAt), endsAt: hhmm(row.endsAt) })));
-    setBookingBlockMinutes(config.bookingBlockMinutes);
-    setMinimumBookingMinutes(config.minimumBookingMinutes);
-    setHoldMinutes(config.holdMinutes);
-    setMaintenance(blocks);
-  }
+  const acceptedHash = useRef(window.location.hash);
+  const dirtyRef = useRef(dirty); dirtyRef.current = dirty;
+  const busyRef = useRef(busy); busyRef.current = busy;
+  const [revision, setRevision] = useState(0);
+  const venue = venues.find(v => v.id === selection.venueId);
+  const courts = [...(venue?.courts ?? [])].sort(courtOrder);
+  const court = courts.find(c => c.id === selection.courtId);
+  const venuesRef = useRef(venues); venuesRef.current = venues;
+  const lastCourt = useRef(new Map<string, string>());
+  if (court) lastCourt.current.set(venue!.id, court.id);
+  useEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
+  useEffect(() => { onBusyChange(busy); }, [busy, onBusyChange]);
+  useEffect(() => () => { onDirtyChange(false); onBusyChange(false); }, []);
   useEffect(() => {
-    if (!courtId) return;
-    let current = true;
-    setLoading(true); setOperations(null); setMaintenance([]); setMessage(''); setMessageKind('error'); setPreview(null);
-    void load(courtId).catch(error => {
-      if (current) setMessage(error instanceof Error ? error.message : 'Không tải được cấu hình sân.');
-    }).finally(() => { if (current) setLoading(false); });
-    return () => { current = false; };
-  }, [courtId]);
-  async function run(work: () => Promise<void>, successMessage = 'Đã lưu.') {
-    setBusy(true); setMessage('');
-    try { await work(); setMessageKind('success'); setMessage(successMessage); }
-    catch (error) { setMessageKind('error'); setMessage(error instanceof Error ? error.message : 'Có lỗi xảy ra.'); }
-    finally { setBusy(false); }
+    const changed = () => {
+      if (!window.location.hash.startsWith('#/schedule')) return;
+      if (window.location.hash === acceptedHash.current) return;
+      if (window.location.hash !== acceptedHash.current && (busyRef.current || dirtyRef.current &&
+        !window.confirm('Bạn có thay đổi chưa lưu. Bỏ thay đổi để chuyển mục?'))) {
+        window.history.replaceState(null, '', acceptedHash.current); return;
+      }
+      acceptedHash.current = window.location.hash;
+      setDirty(false); setSelection(locationState(venuesRef.current, active));
+    };
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (dirtyRef.current || busyRef.current) { event.preventDefault(); event.returnValue = ''; }
+    };
+    window.addEventListener('hashchange', changed); window.addEventListener('beforeunload', beforeUnload);
+    return () => { window.removeEventListener('hashchange', changed); window.removeEventListener('beforeunload', beforeUnload); };
+  }, [active]);
+  useEffect(() => {
+    if (venue && (selection.tab === 'calendar' && !selection.courtId || court)) return;
+    if (busy) return;
+    if (dirty && !window.confirm('Sân đã thay đổi trong hệ thống. Bỏ bản đang sửa để tải lại?')) return;
+    setDirty(false); setSelection(locationState(venues, active));
+  }, [venues, active, venue, court, selection.tab, selection.courtId, dirty, busy]);
+  function choose(patch: Partial<typeof selection>) {
+    if (busy || dirty && !window.confirm('Bạn có thay đổi chưa lưu. Bỏ thay đổi để chuyển mục?')) return;
+    const next = { ...selection, ...patch };
+    const selectedVenue = venues.find(v => v.id === next.venueId);
+    if ('venueId' in patch) {
+      next.courtId = next.tab === 'calendar' ? '' : [...(selectedVenue?.courts ?? [])].sort(courtOrder)[0]?.id ?? '';
+      next.date = venueToday(selectedVenue?.timezone);
+    }
+    if (next.tab !== 'calendar' && !next.courtId) {
+      const remembered = lastCourt.current.get(next.venueId);
+      next.courtId = selectedVenue?.courts.some(c => c.id === remembered) ? remembered! :
+        [...(selectedVenue?.courts ?? [])].sort(courtOrder)[0]?.id ?? '';
+    }
+    setDirty(false); setSelection(next);
+    const params = new URLSearchParams({ tab: next.tab, venueId: next.venueId, date: next.date });
+    if (next.courtId) params.set('courtId', next.courtId);
+    acceptedHash.current = `#/schedule?${params}`;
+    window.location.hash = acceptedHash.current;
   }
-  function submit(event: FormEvent, work: () => Promise<void>, successMessage?: string) { event.preventDefault(); void run(work, successMessage); }
-  const root = `/operator/courts/${courtId}`;
-
   return <section className="operations-page" aria-label="Vận hành sân">
-    <h3>Vận hành sân</h3>
-    <p>Giờ và giá cơ bản áp dụng theo tuần. Quy tắc theo ngày có độ ưu tiên cao hơn. Thay đổi QR ở mục Thanh toán & QR để gửi Admin duyệt.</p>
-    <label>Sân vận hành <select value={courtId} disabled={busy} onChange={event => setCourtId(event.target.value)}>
-      {choices.map(choice => <option key={choice.id} value={choice.id}>{choice.label}</option>)}
-    </select></label>
-    {message && <p className={`feedback ${messageKind}`} role="status">{message}</p>}
-    {busy && <p className="feedback" role="status">Đang xử lý…</p>}
-    {!loading && !operations && courtId && <button type="button" onClick={() => void run(() => load(courtId), 'Đã tải cấu hình.')}>Thử tải lại cấu hình</button>}
-    {loading && <p>Đang tải cấu hình sân…</p>}
-    {!loading && operations && <>
-      <p>{operations.name} · {statusLabel(operations.status)} · múi giờ {operations.timezone}</p>
-      <nav className="section-links" aria-label="Các phần cấu hình sân">{[
-        ['policy', 'Quy định đặt'], ['weekly', 'Lịch tuần'], ['pricing', 'Giá theo ngày'], ['preview', 'Xem thử giá'], ['maintenance', 'Bảo trì'],
-      ].map(([id, label]) => <a key={id} href="#/schedule" onClick={event => {
-        event.preventDefault(); const section = document.getElementById(`operator-${id}`);
-        section?.scrollIntoView({ block: 'start' }); section?.focus();
-      }}>{label}</a>)}</nav>
-      <fieldset disabled={busy}>
-      <form id="operator-policy" tabIndex={-1} onSubmit={event => submit(event, async () => {
-        await request(`${root}/booking-policy`, 'PUT',
-          { bookingBlockMinutes, minimumBookingMinutes, holdMinutes }, operations.version);
-        await load(courtId);
-      })}>
-        <h4>Quy định đặt sân</h4>
-        <p>Mỗi block gồm các ca 30 phút liên tiếp. Giữ chỗ chỉ có hiệu lực trước khi khách báo đã chuyển khoản.</p>
-        <label>Block hiển thị <select value={bookingBlockMinutes} onChange={event => {
-          const block = Number(event.target.value);
-          setBookingBlockMinutes(block); setMinimumBookingMinutes(Math.max(block, minimumBookingMinutes));
-        }}><option value={30}>30 phút</option><option value={60}>60 phút</option>
-          <option value={90}>90 phút</option></select></label>
-        <label>Thời lượng đặt tối thiểu <input type="number" min={bookingBlockMinutes}
-          max={480} step={bookingBlockMinutes} required value={minimumBookingMinutes}
-          onChange={event => setMinimumBookingMinutes(Number(event.target.value))} /> phút</label>
-        <label>Giữ chỗ trước khi báo chuyển khoản <input type="number" min={5} max={60} required
-          value={holdMinutes} onChange={event => setHoldMinutes(Number(event.target.value))} /> phút</label>
-        <button disabled={busy}>Lưu quy định</button>
-      </form>
-      <form id="operator-weekly" tabIndex={-1} onSubmit={event => submit(event, async () => {
-        await request(`${root}/schedule`, 'PUT', { hours, prices }, operations.version);
-        await load(courtId);
-      })}>
-        <h4>Giờ mở cửa hàng tuần</h4>
-        {hours.map((row, index) => <div key={`hour-${index}`}>
-          <label>Ngày <select value={row.dayOfWeek} onChange={event => setHours(hours.map((item, n) =>
-            n === index ? { ...item, dayOfWeek: Number(event.target.value) } : item))}>
-            {days.map((day, n) => <option key={day} value={n}>{day}</option>)}</select></label>
-          <label>Mở <input type="time" step="1800" required value={row.opensAt} onChange={event => setHours(hours.map((item, n) =>
-            n === index ? { ...item, opensAt: event.target.value } : item))} /></label>
-          <label>Đóng <input type="time" step="1800" required value={row.closesAt} onChange={event => setHours(hours.map((item, n) =>
-            n === index ? { ...item, closesAt: event.target.value } : item))} /></label>
-          <button type="button" onClick={() => setHours(hours.filter((_, n) => n !== index))}>Xóa ngày</button>
-        </div>)}
-        <button type="button" onClick={() => setHours([...hours,
-          { dayOfWeek: 1, opensAt: '08:00', closesAt: '10:00' }])}>Thêm ngày mở</button>
-        <h4>Giá cơ bản theo ca 30 phút</h4>
-        {prices.map((row, index) => <div key={`price-${index}`}>
-          <label>Ngày <select value={row.dayOfWeek} onChange={event => setPrices(prices.map((item, n) =>
-            n === index ? { ...item, dayOfWeek: Number(event.target.value) } : item))}>
-            {days.map((day, n) => <option key={day} value={n}>{day}</option>)}</select></label>
-          <label>Từ <input type="time" step="1800" required value={row.startsAt} onChange={event => setPrices(prices.map((item, n) =>
-            n === index ? { ...item, startsAt: event.target.value } : item))} /></label>
-          <label>Đến <input type="time" step="1800" required value={row.endsAt} onChange={event => setPrices(prices.map((item, n) =>
-            n === index ? { ...item, endsAt: event.target.value } : item))} /></label>
-          <label>Giá/30 phút <input type="number" min="1" required value={row.pricePerSlot} onChange={event => setPrices(prices.map((item, n) =>
-            n === index ? { ...item, pricePerSlot: Number(event.target.value) } : item))} /></label>
-          <span>≈ {(row.pricePerSlot * 2).toLocaleString('vi-VN')} VND/giờ</span>
-          <button type="button" onClick={() => setPrices(prices.filter((_, n) => n !== index))}>Xóa giá</button>
-        </div>)}
-        <button type="button" onClick={() => setPrices([...prices,
-          { dayOfWeek: 1, startsAt: '08:00', endsAt: '10:00', pricePerSlot: 100000 }])}>Thêm khung giá</button>
-        <button disabled={busy}>Lưu lịch tuần</button>
-      </form>
-
-      <form id="operator-pricing" tabIndex={-1} onSubmit={event => submit(event, async () => {
-        await request(`${root}/pricing-rules`, 'PUT', { rules }, operations.version);
-        await load(courtId);
-      })}>
-        <h4>Giá ưu tiên theo khoảng ngày</h4>
-        {rules.map((row, index) => <div key={`rule-${index}`}>
-          <label>Hiệu lực từ <input type="date" required value={row.startsOn} onChange={event => setRules(rules.map((item, n) =>
-            n === index ? { ...item, startsOn: event.target.value } : item))} /></label>
-          <label>Đến ngày <input type="date" required value={row.endsOn} onChange={event => setRules(rules.map((item, n) =>
-            n === index ? { ...item, endsOn: event.target.value } : item))} /></label>
-          <label>Thứ <select value={row.dayOfWeek} onChange={event => setRules(rules.map((item, n) =>
-            n === index ? { ...item, dayOfWeek: Number(event.target.value) } : item))}>
-            {days.map((day, n) => <option key={day} value={n}>{day}</option>)}</select></label>
-          <label>Từ <input type="time" step="1800" required value={row.startsAt} onChange={event => setRules(rules.map((item, n) =>
-            n === index ? { ...item, startsAt: event.target.value } : item))} /></label>
-          <label>Đến <input type="time" step="1800" required value={row.endsAt} onChange={event => setRules(rules.map((item, n) =>
-            n === index ? { ...item, endsAt: event.target.value } : item))} /></label>
-          <label>Giá/30 phút <input type="number" min="1" required value={row.pricePerSlot} onChange={event => setRules(rules.map((item, n) =>
-            n === index ? { ...item, pricePerSlot: Number(event.target.value) } : item))} /></label>
-          <span>≈ {(row.pricePerSlot * 2).toLocaleString('vi-VN')} VND/giờ</span>
-          <label>Ưu tiên <input type="number" min="1" max="1000" required value={row.priority} onChange={event => setRules(rules.map((item, n) =>
-            n === index ? { ...item, priority: Number(event.target.value) } : item))} /></label>
-          <button type="button" onClick={() => setRules(rules.filter((_, n) => n !== index))}>Xóa quy tắc</button>
-        </div>)}
-        <button type="button" onClick={() => setRules([...rules, { startsOn: today(), endsOn: today(),
-          dayOfWeek: 1, startsAt: '08:00', endsAt: '10:00', pricePerSlot: 120000, priority: 1 }])}>
-          Thêm quy tắc giá</button>
-        <p>Ngày lễ có thể đặt khoảng hiệu lực một ngày và chọn đúng thứ của ngày đó. Quy tắc ưu tiên cao hơn giá tuần.</p>
-        <button disabled={busy}>Lưu giá theo ngày</button>
-      </form>
-
-      <form id="operator-preview" tabIndex={-1} onSubmit={event => submit(event, async () => {
-        setPreview(null);
-        const result = await request<Preview>(`${root}/price-preview?date=${encodeURIComponent(date)}&startsAt=${encodeURIComponent(startsAt)}&endsAt=${encodeURIComponent(endsAt)}`);
-        setPreview(result);
-      }, 'Đã tính giá.')}>
-        <h4>Xem thử giá</h4>
-        <label>Ngày <input type="date" required value={date} onChange={event => setDate(event.target.value)} /></label>
-        <label>Từ <input type="time" step="1800" required value={startsAt} onChange={event => setStartsAt(event.target.value)} /></label>
-        <label>Đến <input type="time" step="1800" required value={endsAt} onChange={event => setEndsAt(event.target.value)} /></label>
-        <button disabled={busy}>Xem giá</button>
-        {preview && <p>Tổng giá: {preview.totalPrice.toLocaleString('vi-VN')} VND · {preview.slots.length} ca</p>}
-      </form>
-
-      <form id="operator-maintenance" tabIndex={-1} onSubmit={event => submit(event, async () => {
-        await request(`${root}/maintenance`, 'POST', { date, startsAt, endsAt, reason });
-        setReason(''); await load(courtId);
-      })}>
-        <h4>Bảo trì sân</h4>
-        <p>Ngày và giờ dùng múi giờ của cơ sở. Bảo trì sẽ khóa ca tương ứng cho booking sau này.</p>
-        <label>Ngày <input type="date" required value={date} onChange={event => setDate(event.target.value)} /></label>
-        <label>Từ <input type="time" step="1800" required value={startsAt} onChange={event => setStartsAt(event.target.value)} /></label>
-        <label>Đến <input type="time" step="1800" required value={endsAt} onChange={event => setEndsAt(event.target.value)} /></label>
-        <label>Lý do <input required minLength={5} maxLength={500} value={reason} onChange={event => setReason(event.target.value)} /></label>
-        <button disabled={busy}>Khóa ca bảo trì</button>
-      </form>
-      <h4>Ca bảo trì đang giữ</h4>
-      {maintenance.length === 0 ? <p>Chưa có ca bảo trì.</p> : <ul className="maintenance-list">{maintenance.map(item =>
-        <li key={item.id}>{new Date(item.startsAt).toLocaleString('vi-VN', { timeZone: operations.timezone })}
-          {' – '}{new Date(item.endsAt).toLocaleString('vi-VN', { timeZone: operations.timezone })}
-          {' · '}{item.reason}{' '}
-          <button type="button" disabled={busy} onClick={() => void run(async () => {
-            await request(`${root}/maintenance/${item.id}/cancel`, 'POST'); await load(courtId);
-          })}>Hủy bảo trì</button>
-        </li>)}</ul>}
-      </fieldset>
-    </>}
-    {choices.length === 0 && <p>Chưa có sân đã duyệt để vận hành.</p>}
+    <div className="schedule-editor-heading"><h3>Vận hành sân</h3><a className="button secondary" href={`#/venues?${new URLSearchParams({ venueId: selection.venueId })}`}>
+      Quay lại cơ sở & sân</a></div><p>Xem lịch thực tế hoặc thiết lập giờ và giá theo từng sân. QR nhận tiền dùng chung theo cơ sở.</p>
+    <div className="schedule-scope">
+      <label>Cơ sở <select value={venue?.id ?? ''} disabled={busy} onChange={event => choose({ venueId: event.target.value })}>
+        {!venues.length && <option value="">Chưa có cơ sở</option>}
+        {venues.map(v => <option key={v.id} value={v.id}>{v.name} · {statusLabel(v.status)}</option>)}
+      </select></label>
+      <label>Sân <select value={court?.id ?? ''} disabled={busy || !venue} onChange={event => choose({ courtId: event.target.value })}>
+        {selection.tab === 'calendar' && <option value="">Tất cả sân</option>}
+        {!courts.length && selection.tab !== 'calendar' && <option value="">Chưa có sân</option>}
+        {courts.map(c => <option key={c.id} value={c.id}>{c.name} · {statusLabel(c.status)}</option>)}
+      </select></label>
+    </div>
+    <div className="schedule-tabs" role="tablist" aria-label="Lịch và cấu hình sân">{[
+      ['calendar', 'Lịch sân'], ['pricing', 'Giờ & giá'], ['maintenance', 'Bảo trì'],
+    ].map(([id, label], index) => <button key={id} type="button" role="tab" id={`schedule-tab-${id}`}
+      aria-controls={`schedule-panel-${id}`} aria-selected={selection.tab === id} tabIndex={selection.tab === id ? 0 : -1}
+      disabled={busy} onClick={() => choose({ tab: id as ScheduleTab })} onKeyDown={event => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault(); const ids: ScheduleTab[] = ['calendar', 'pricing', 'maintenance'];
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? 2 : (index + (event.key === 'ArrowRight' ? 1 : 2)) % 3;
+        choose({ tab: ids[next] }); document.getElementById(`schedule-tab-${ids[next]}`)?.focus();
+      }}>{label}</button>)}</div>
+    <div id={`schedule-panel-${selection.tab}`} role="tabpanel" aria-labelledby={`schedule-tab-${selection.tab}`}>
+      {selection.tab === 'calendar' ? active && venue ? <PartnerCalendar key={venue.id} venue={venue} courtId={court?.id ?? ''}
+        date={selection.date} chooseDate={date => choose({ date })} request={request} openBooking={openBooking} revision={revision} />
+        : <div className="panel"><p>Hồ sơ chưa hoạt động. Thiết lập giờ và giá để hoàn thiện cơ sở trước khi nhận đặt sân.</p>
+          <button type="button" onClick={() => choose({ tab: 'pricing' })}>Thiết lập giờ & giá</button></div>
+        : venue && court ? <PartnerScheduleEditor key={`${venue.id}/${court.id}/${court.status}/${selection.tab}`}
+          venue={venue} court={court} request={request} tab={selection.tab} active={active} canEditDraft={canEditDraft}
+          onDirtyChange={setDirty} onBusyChange={setBusy} onSaved={() => setRevision(value => value + 1)} refresh={refresh} />
+        : <div className="panel"><p>Chưa có sân trong cơ sở này. Thêm sân tại Cơ sở & sân rồi quay lại thiết lập.</p><a href="#/venues">Đến Cơ sở & sân</a></div>}
+    </div>
   </section>;
 }

@@ -142,7 +142,7 @@ test('F06 partner notification retry, total unread badge and deep link follows b
   await openPartnerPage(page, 'Thông báo'); await expect(page.getByText('Không tải được thông báo. Vui lòng thử lại.')).toBeVisible();
   api.failNotices(false); await page.getByRole('button', { name: 'Tải lại thông báo' }).click();
   await expect(page.locator('.notice-count')).toHaveText('8');
-  await page.getByRole('button', { name: 'Xem đơn đặt sân', exact: true }).click();
+  await page.getByRole('button', { name: 'Khách báo chuyển khoản', exact: true }).click();
   await expect(page.locator('.status-banner')).toContainText('Doanh nghiệp B');
   await expect(page.getByRole('region', { name: 'Chi tiết đơn đặt sân' })).toContainText('SB-B');
   await expect(page).toHaveURL(new RegExp(`#/bookings/${bookingB}$`));
@@ -201,10 +201,11 @@ test('F06 owner confirm retries same intent and ends with confirmed detail', asy
   await expect(form.getByLabel('Mã giao dịch đối chiếu')).toHaveCount(0);
   await form.getByLabel('Ghi chú đối chiếu').fill('Đã kiểm tra ngân hàng test.');
   await form.getByRole('button', { name: 'Xác nhận đã nhận đủ tiền' }).click();
-  await expect(form.getByRole('alert')).toContainText('giữ nguyên mã yêu cầu');
+  await expect(page.locator('.partner-toast--error')).toContainText('giữ nguyên mã yêu cầu');
   await form.getByRole('button', { name: 'Xác nhận đã nhận đủ tiền' }).click();
   await expect(page.getByRole('region', { name: 'Chi tiết đơn đặt sân' })).toContainText('Đã xác nhận thanh toán lúc');
   await expect(form).toHaveCount(0);
+  await expect(page.locator('.partner-toast--success')).toContainText('Đã xác nhận thanh toán.');
   const commands = api.calls.filter(item => item.path.endsWith('/confirm-payment'));
   expect(commands).toHaveLength(2);
   expect(commands[0].headers['idempotency-key']).toBe(commands[1].headers['idempotency-key']);
@@ -217,7 +218,7 @@ test('F06 owner amount mismatch leads to review; final rejection needs explicit 
   const api = await fixture(page); await login(page, `#/bookings?bookingId=${bookingA}`);
   const form = page.getByRole('form', { name: 'Quyết định thanh toán' });
   await form.getByLabel('Số tiền thực nhận (đ)').fill('319000'); await form.getByRole('button', { name: 'Xác nhận đã nhận đủ tiền' }).click();
-  await expect(form.getByRole('alert')).toContainText('chưa khớp');
+  await expect(page.locator('.partner-toast--error')).toContainText('chưa khớp');
   expect(api.calls.filter(item => item.path.endsWith('/confirm-payment'))).toHaveLength(0);
   await form.getByRole('combobox', { name: 'Quyết định', exact: true }).selectOption('NEEDS_REVIEW');
   await expect(form.getByRole('option', { name: 'Mã giao dịch không khớp', exact: true })).toHaveCount(0);
@@ -229,7 +230,7 @@ test('F06 owner amount mismatch leads to review; final rejection needs explicit 
   await form.getByRole('combobox', { name: 'Lý do đối chiếu', exact: true }).selectOption('TRANSACTION_NOT_FOUND');
   await form.getByLabel('Nội dung gửi khách').fill('Không tìm thấy giao dịch sau khi đối chiếu.');
   await form.getByRole('button', { name: 'Xác nhận từ chối cuối cùng' }).click();
-  await expect(form.getByRole('alert')).toContainText('Xác nhận từ chối cuối cùng và giải phóng sân');
+  await expect(page.locator('.partner-toast--error')).toContainText('Xác nhận từ chối cuối cùng và giải phóng sân');
   expect(api.calls.filter(item => item.path.endsWith('/reject-payment'))).toHaveLength(1);
   await form.getByRole('checkbox').check(); await page.screenshot({ path: info.outputPath('f06-partner-reject.png'), fullPage: true });
   await form.getByRole('button', { name: 'Xác nhận từ chối cuối cùng' }).click();
@@ -251,7 +252,7 @@ test('F06 stale decision blocks resend until explicit reload and server mismatch
   await form.getByRole('button', { name: 'Tải lại chi tiết', exact: true }).click();
   await expect(form.getByRole('button', { name: 'Xác nhận đã nhận đủ tiền' })).toBeEnabled();
   await form.getByRole('button', { name: 'Xác nhận đã nhận đủ tiền' }).click();
-  await expect(form.getByRole('alert')).toContainText('Số tiền chưa khớp');
+  await expect(page.locator('.partner-toast--error')).toContainText('Số tiền chưa khớp');
   await expect(page.getByRole('region', { name: 'Chi tiết đơn đặt sân' })).not.toContainText('Đã xác nhận thanh toán lúc');
   const commands = api.calls.filter(item => item.path.endsWith('/confirm-payment'));
   expect(commands).toHaveLength(2); expect(commands[1].headers['if-match']).toBe('"3"');
@@ -269,7 +270,7 @@ test('F06 owner preserves amounts beyond safe integer in display and numeric JSO
   await expect(page.locator('.booking-list')).toContainText('9.007.199.254.740.993đ');
   await page.getByRole('button', { name: 'Xem đơn', exact: true }).click();
   await form.getByRole('button', { name: 'Xác nhận đã nhận đủ tiền' }).click();
-  await expect(form.getByRole('alert')).toContainText('giữ nguyên mã yêu cầu');
+  await expect(page.locator('.partner-toast--error')).toContainText('giữ nguyên mã yêu cầu');
   await form.getByRole('button', { name: 'Xác nhận đã nhận đủ tiền' }).click();
   await expect(page.getByRole('region', { name: 'Chi tiết đơn đặt sân' })).toContainText('Đã xác nhận thanh toán lúc');
   await expect(page.locator('.booking-facts')).toContainText('9.007.199.254.740.993đ');

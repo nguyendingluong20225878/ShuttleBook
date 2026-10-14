@@ -6,5 +6,5 @@ export function VenuePhoto({ imageUrl, name }: { imageUrl: string | null; name: 
   useEffect(() => setFailed(false), [imageUrl]);
   const src = publicImageUrl(imageUrl);
   return src && !failed ? <img src={src} alt={`Ảnh ${name}`} loading="lazy" onError={() => setFailed(true)} />
-    : <div className="image-placeholder" aria-label={`Chưa có ảnh ${name}`}>Sân cầu lông</div>;
+    : <div className="image-placeholder" aria-label={`Chưa có ảnh ${name}`}>Chưa có ảnh cơ sở</div>;
 }

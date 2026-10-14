@@ -6,7 +6,7 @@ type Props = { children: ReactNode; title?: string; eyebrow?: string; descriptio
 /** Shared public/customer chrome; authentication and routing remain in their existing providers. */
 export function CustomerShell({ children, title, eyebrow, description, className = '', layout = 'workspace' }: Props) {
   const header = useRef<HTMLElement>(null);
-  const { session } = useCustomerSession();
+  const { session, displayName } = useCustomerSession();
   const path = location.pathname;
   useEffect(() => {
     const nav = header.current?.querySelector('nav');
@@ -19,7 +19,8 @@ export function CustomerShell({ children, title, eyebrow, description, className
     });
   }, [path, session]);
   const pageLabel = path === '/venues' ? 'Tìm sân' : path.startsWith('/venues/') ? 'Lịch sân'
-    : path === '/series-review' ? 'Đặt lịch cố định' : path === '/booking-review' ? 'Đặt vãng lai'
+      : path === '/series-review' ? 'Đặt lịch cố định' : path === '/booking-review' ? 'Đặt vãng lai'
+      : path === '/me/profile' ? 'Thông tin cá nhân'
       : path === '/me/notifications' ? 'Thông báo' : path === '/me/bookings' || path.startsWith('/bookings/') ? 'Đơn của tôi' : 'Tài khoản';
   return <div className={`customer-shell ${layout === 'account' ? 'customer-account-shell' : ''} ${className}`}>
     <a className="skip-link" href="#customer-content" onClick={event => {
@@ -33,8 +34,11 @@ export function CustomerShell({ children, title, eyebrow, description, className
       </a>
       {layout !== 'account' && <p className="customer-nav-caption">KHÔNG GIAN ĐẶT SÂN</p>}
       <CustomerNav />
-      {layout !== 'account' && <div className="customer-sidebar-account"><span className="customer-avatar" aria-hidden="true">KH</span>
-        <div><strong>{session ? 'Khách đặt sân' : 'Chào mừng bạn'}</strong><small>{session ? 'Tài khoản khách hàng' : 'Tìm sân và chọn lịch trống'}</small></div></div>}
+      {layout !== 'account' && (session ? <a className="customer-sidebar-account" href="/me/profile" aria-label="Mở thông tin cá nhân">
+        <span className="customer-avatar" aria-hidden="true">{displayName ? displayName.trim().charAt(0).toLocaleUpperCase('vi-VN') : 'KH'}</span>
+        <span><strong>{displayName || 'Khách đặt sân'}</strong><small>Thông tin cá nhân</small></span></a>
+        : <div className="customer-sidebar-account"><span className="customer-avatar" aria-hidden="true">KH</span>
+          <div><strong>Chào mừng bạn</strong><small>Tìm sân và chọn lịch trống</small></div></div>)}
     </header>
     <div className="customer-workspace">
     {layout !== 'account' && <div className="customer-toolbar"><div><span className="customer-toolbar-caption">ShuttleBook / Khách đặt sân</span><strong>{pageLabel}</strong></div>

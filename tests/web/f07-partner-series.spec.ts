@@ -80,7 +80,7 @@ test('F07 partner shows one series, all occurrences and confirms the aggregate a
   await expect(form.getByLabel('Số tiền thực nhận (đ)', { exact: true })).toHaveValue('2000000');
   await form.getByLabel('Số tiền thực nhận (đ)', { exact: true }).fill('400000');
   await form.getByRole('button', { name: 'Xác nhận đã nhận đủ tiền' }).click();
-  await expect(form.getByRole('alert')).toContainText('chưa khớp'); expect(api.commands).toHaveLength(0);
+  await expect(page.locator('.partner-toast--error')).toContainText('chưa khớp'); expect(api.commands).toHaveLength(0);
   await form.getByLabel('Số tiền thực nhận (đ)', { exact: true }).fill('2000000');
   await form.getByRole('button', { name: 'Xác nhận đã nhận đủ tiền' }).click();
   await expect(schedule.locator('tbody')).toContainText('Đã xác nhận');

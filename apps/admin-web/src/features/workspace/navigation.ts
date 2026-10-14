@@ -4,7 +4,7 @@ export type AdminPage = 'overview' | 'approvals' | 'notifications';
 export const adminPages = [
   { id: 'overview', title: 'Tổng quan', description: 'Theo dõi hồ sơ đối tác và các thông báo cần xử lý.' },
   { id: 'approvals', title: 'Duyệt hồ sơ', description: 'Kiểm tra thông tin đối tác trước khi phê duyệt hoặc yêu cầu chỉnh sửa.' },
-  { id: 'notifications', title: 'Thông báo', description: 'Theo dõi cảnh báo vận hành và đánh dấu các thông báo đã đọc.' },
+  { id: 'notifications', title: 'Thông báo', description: 'Mở thông báo để xem nội dung và đi đến phần cần xử lý.' },
 ] as const;
 
 function readPage(): AdminPage {

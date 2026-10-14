@@ -30,6 +30,14 @@ function rememberDate(date: string) {
   window.history.pushState(null, '', url);
 }
 
+function contactPhone(contact: string) {
+  // A contact may contain free text. Only create a call link for a phone number;
+  // never treat owner-provided text as an arbitrary URL.
+  if (!/^\+?[\d\s().-]+$/.test(contact.trim())) return null;
+  const number = contact.replace(/[\s().-]/g, '');
+  return /^\+?\d{7,15}$/.test(number) ? number : null;
+}
+
 export function VenueDetailPage({ venueId }: { venueId: string }) {
   const [venue, setVenue] = useState<VenueDetail | null>(null);
   const [date, setDate] = useState('');
@@ -91,9 +99,11 @@ export function VenueDetailPage({ venueId }: { venueId: string }) {
     {error && <p role="alert">{error} <a href="/venues">Quay lại danh sách</a></p>}
     {venue && <><section className="venue-hero">
       <VenuePhoto imageUrl={venue.imageUrl} name={venue.name} />
-      <div><p className="eyebrow">Cơ sở ShuttleBook</p><h1>{venue.name}</h1>
-        <p>{venue.address}</p><p>Liên hệ cơ sở: {venue.contact}</p>
-        <p>Múi giờ lịch: {venue.timezone} · {venue.courts.length} sân đang hoạt động</p></div>
+      <div><p className="eyebrow">Thông tin cơ sở</p><h1>{venue.name}</h1>
+        <p>{venue.address}</p><p>Liên hệ cơ sở: {contactPhone(venue.contact)
+          ? <a href={`tel:${contactPhone(venue.contact)}`}>{venue.contact}</a>
+          : venue.contact.trim() || 'Chưa có thông tin liên hệ'}</p>
+        <p>{venue.courts.length} sân đang hoạt động</p></div>
     </section><div className="booking-mode" role="group" aria-label="Hình thức đặt sân"><span>Hình thức đặt</span>
       <button type="button" aria-pressed={bookingMode === 'casual'} onClick={() => { setBookingMode('casual');
         const url = new URL(location.href); url.searchParams.set('mode', 'casual'); history.pushState(null, '', url); }}>Vãng lai</button>

@@ -120,7 +120,7 @@ test('customer inbox displays real unread status, marks read and restores privat
   await expect(page.getByText('1 thông báo chưa đọc', { exact: true })).toBeVisible();
   await expect(page.getByText('Chưa đọc', { exact: true })).toBeVisible();
   await expect(page.locator('.site-header nav a[href="/me/notifications"]')).toHaveAttribute('aria-current', 'page');
-  await page.getByRole('button', { name: 'Đánh dấu đã đọc', exact: true }).click();
+  await page.getByRole('button', { name: 'Chủ sân đã xác nhận thanh toán', exact: true }).click();
   await expect(page.getByText('0 thông báo chưa đọc', { exact: true })).toBeVisible();
   await expect(page.getByText('Đã đọc', { exact: true })).toBeVisible();
   for (const width of [375, 768, 1024, 1440]) { await page.setViewportSize({ width, height: 900 }); await noViewportOverflow(page); }

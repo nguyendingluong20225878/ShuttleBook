@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { noticeText } from '@shuttlebook/ui/notice-text';
 import { AdminIcon } from './components/AdminIcon';
 import type { AdminSummary } from './features/workspace/AdminWorkspace';
 
@@ -14,6 +15,7 @@ export function AdminNotifications({ accessToken, onSummary }: { accessToken: st
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [reading, setReading] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
   const controller = useRef<AbortController | null>(null);
   const mounted = useRef(true);
   const generation = useRef(0);
@@ -22,7 +24,8 @@ export function AdminNotifications({ accessToken, onSummary }: { accessToken: st
   const readController = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    mounted.current = true; generation.current++; setReading(null);
+    mounted.current = true; generation.current++; setReading(null); setSelected(null);
+    cachedItems.current = []; loadedPages.current = 1; setItems([]); setUnread(0); setLoaded(false); setNext(null);
     void load();
     // Admin API requests update server activity: only explicit user refreshes may load again.
     return () => { mounted.current = false; generation.current++; controller.current?.abort(); readController.current?.abort(); };
@@ -32,7 +35,7 @@ export function AdminNotifications({ accessToken, onSummary }: { accessToken: st
   function denyAccess() {
     generation.current++; controller.current?.abort(); readController.current?.abort();
     cachedItems.current = []; loadedPages.current = 1;
-    setItems([]); setUnread(0); setNext(null); setLoaded(false); setBusy(false); setReading(null);
+    setItems([]); setUnread(0); setNext(null); setLoaded(false); setBusy(false); setReading(null); setSelected(null);
     setError('Phiên hoặc quyền truy cập không còn hợp lệ. Vui lòng đăng nhập lại.');
   }
 
@@ -72,8 +75,10 @@ export function AdminNotifications({ accessToken, onSummary }: { accessToken: st
     } finally { if (!active.signal.aborted && mounted.current && scope === generation.current) setBusy(false); }
   }
 
-  async function markRead(id: string) {
+  async function openNotice(item: Notice) {
     if (reading || busy) return;
+    const id = item.id; setSelected(id);
+    if (item.readAt) { if (item.action === 'ADMIN_APPROVAL') window.location.hash = '#approvals'; return; }
     setReading(id); setError('');
     const scope = generation.current;
     const active = new AbortController(); readController.current = active;
@@ -85,7 +90,15 @@ export function AdminNotifications({ accessToken, onSummary }: { accessToken: st
         if (response.status === 401 || response.status === 403 || response.status === 404) { denyAccess(); return; }
         throw new Error('Chưa đánh dấu được thông báo. Vui lòng thử lại.');
       }
+      const payload = await response.json() as { data: { readAt?: string; unreadCount?: number } };
+      if (!mounted.current || active.signal.aborted || scope !== generation.current) return;
+      if (payload.data.readAt) {
+        cachedItems.current = cachedItems.current.map(notice => notice.id === id ? { ...notice, readAt: payload.data.readAt! } : notice);
+        setItems(cachedItems.current);
+      }
+      if (typeof payload.data.unreadCount === 'number') setUnread(payload.data.unreadCount);
       await load();
+      if (mounted.current && !active.signal.aborted && scope === generation.current && item.action === 'ADMIN_APPROVAL') window.location.hash = '#approvals';
     } catch (reason) { if (mounted.current && !active.signal.aborted && scope === generation.current) setError(reason instanceof Error ? reason.message : 'Không thể cập nhật thông báo.'); }
     finally { if (mounted.current && scope === generation.current) setReading(null); }
   }
@@ -98,10 +111,16 @@ export function AdminNotifications({ accessToken, onSummary }: { accessToken: st
     {busy && !loaded ? <p className="admin-state" role="status">Đang tải thông báo…</p> : loaded && !items.length && !error ?
       <div className="admin-state"><AdminIcon name="notifications" /><p>Chưa có thông báo.</p></div> :
       <ul>{items.map(item => <li key={item.id} className={item.readAt ? '' : 'unread'}>
-        <div className="admin-notice-heading"><strong>{item.title}</strong><span className={`admin-badge ${item.readAt ? 'is-muted' : ''}`}>{item.readAt ? 'Đã đọc' : 'Chưa đọc'}</span></div><p>{item.body}</p>
-        <time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString('vi-VN')}</time>
-        {item.action === 'ADMIN_PAYMENT_ALERT' && <small>Liên hệ chủ sân để xử lý đối chiếu. Cổng Admin không xác nhận tiền thay chủ sân.</small>}
-        {!item.readAt && <button type="button" className="admin-button-secondary" disabled={!!reading || busy} onClick={() => void markRead(item.id)}>{reading === item.id ? 'Đang cập nhật…' : 'Đánh dấu đã đọc'}</button>}
+        <button type="button" className="admin-notice-open" aria-label={noticeText(item.title)} aria-expanded={selected === item.id}
+          disabled={!!reading || busy} onClick={() => void openNotice(item)}>
+          <span className="admin-notice-heading"><strong>{noticeText(item.title)}</strong><span className={`admin-badge ${item.readAt ? 'is-muted' : ''}`}>{item.readAt ? 'Đã đọc' : 'Chưa đọc'}</span></span><span className="admin-notice-body">{noticeText(item.body)}</span>
+          <time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString('vi-VN')}</time>
+        </button>
+        {selected === item.id && <div className="admin-notice-detail" role="region" aria-label={`Chi tiết: ${noticeText(item.title)}`}>
+          {item.action === 'ADMIN_PAYMENT_ALERT' ? <small>Liên hệ chủ sân để xử lý đối chiếu. Cổng Admin không xác nhận tiền thay chủ sân.</small> :
+            <small>{item.action === 'ADMIN_APPROVAL' ? 'Mở Duyệt hồ sơ để kiểm tra thông tin và xử lý.' : noticeText(item.body)}</small>}
+          {reading === item.id && <small role="status">Đang mở thông báo…</small>}
+        </div>}
       </li>)}</ul>}
     {next && <button type="button" className="admin-button-secondary" disabled={busy || !!reading} onClick={() => void load(next)}>Xem thêm thông báo</button>}
   </section>;

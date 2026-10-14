@@ -2,8 +2,8 @@ import { ReactNode, useEffect, useRef, useState } from 'react';
 import { AdminIcon } from '../components/AdminIcon';
 import { AdminPage, adminPages } from '../features/workspace/navigation';
 
-export function AdminShell({ page, busy, onLogout, children }: {
-  page: AdminPage; busy: boolean; onLogout: () => void; children: ReactNode;
+export function AdminShell({ page, busy, onLogout, children, unreadCount }: {
+  page: AdminPage; busy: boolean; onLogout: () => void; children: ReactNode; unreadCount?: number | null;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuButton = useRef<HTMLButtonElement>(null);
@@ -35,7 +35,8 @@ export function AdminShell({ page, busy, onLogout, children }: {
       <p className="admin-nav-label">VẬN HÀNH NỀN TẢNG</p>
       <nav id="admin-navigation" aria-label="Điều hướng quản trị">
         {adminPages.map(item => <a key={item.id} href={`#${item.id}`} aria-current={page === item.id ? 'page' : undefined}
-          onClick={() => setMenuOpen(false)}><AdminIcon name={item.id} /><span>{item.title}</span></a>)}
+          onClick={() => setMenuOpen(false)}><AdminIcon name={item.id} /><span>{item.title}</span>
+          {item.id === 'notifications' && typeof unreadCount === 'number' && unreadCount > 0 && <span className="admin-notice-count" aria-label={`${unreadCount} thông báo chưa đọc`}>{unreadCount > 99 ? '99+' : unreadCount}</span>}</a>)}
       </nav>
       <div className="admin-sidebar-footer">
         <div className="admin-account"><span className="admin-avatar" aria-hidden="true">AD</span><div><strong>Quản trị viên</strong><small>Cổng quản trị nền tảng</small></div></div>

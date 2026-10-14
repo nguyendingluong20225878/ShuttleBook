@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { noticeText } from '@shuttlebook/ui/notice-text';
 import { PartnerApiError, type PartnerRequest } from '../bookings/types';
+import { usePartnerToast } from '../../components/PartnerToast';
 
-type Notice = { id: string; title: string; body: string; readAt?: string | null; bookingId?: string | null; action?: string | null };
+type Notice = { id: string; title: string; body: string; readAt?: string | null; bookingId?: string | null; action?: string | null; profileBusinessId?: string | null };
 type NoticesEnvelope = { data: Notice[]; unreadCount?: number; nextCursor?: string | null };
 export function usePartnerNotifications(request: PartnerRequest) {
+  const { showToast } = usePartnerToast();
   const latest = useRef(request); latest.current = request;
   const [notices, setNotices] = useState<Notice[]>([]);
   const [unread, setUnread] = useState(0);
@@ -18,7 +21,7 @@ export function usePartnerNotifications(request: PartnerRequest) {
   const reading = useRef(new Map<string, AbortController>());
   const readDirty = useRef(false);
   function denied(failure: unknown) {
-    if (!(failure instanceof PartnerApiError) || ![403, 404].includes(failure.status)) return;
+    if (!(failure instanceof PartnerApiError) || ![401, 403, 404].includes(failure.status)) return;
     generation.current++; current.current?.abort(); current.current = null;
     for (const controller of reading.current.values()) controller.abort();
     reading.current.clear(); readDirty.current = false; loadedPages.current = 1;
@@ -67,17 +70,19 @@ export function usePartnerNotifications(request: PartnerRequest) {
       window.clearInterval(timer); window.removeEventListener('focus', update); document.removeEventListener('visibilitychange', update); };
   }, [refresh]);
   async function read(id: string) {
-    if (reading.current.has(id)) return;
+    if (reading.current.has(id)) return false;
     current.current?.abort(); current.current = null; setLoading(false);
     const controller = new AbortController(); reading.current.set(id, controller);
     const epoch = generation.current; setReadingCount(reading.current.size); setError('');
     try {
-      await latest.current('/me/notifications/' + encodeURIComponent(id) + '/read', 'POST', undefined, undefined, { signal: controller.signal });
-      if (!mounted.current || controller.signal.aborted || generation.current !== epoch) return;
+      const result = await latest.current<{ id: string; readAt?: string; unreadCount?: number }>('/me/notifications/' + encodeURIComponent(id) + '/read', 'POST', undefined, undefined, { signal: controller.signal });
+      if (!mounted.current || controller.signal.aborted || generation.current !== epoch) return false;
+      if (result.readAt) setNotices(previous => previous.map(notice => notice.id === id ? { ...notice, readAt: result.readAt } : notice));
+      if (typeof result.unreadCount === 'number') setUnread(result.unreadCount);
       readDirty.current = true;
     } catch (failure) { if (mounted.current && !controller.signal.aborted && generation.current === epoch) {
-      denied(failure); setError('Không đánh dấu được thông báo. Vui lòng thử lại.');
-    } }
+      denied(failure); showToast('Không mở được thông báo. Vui lòng thử lại.', 'error');
+    } return false; }
     finally {
       if (reading.current.get(id) === controller) reading.current.delete(id);
       if (mounted.current) setReadingCount(reading.current.size);
@@ -86,24 +91,38 @@ export function usePartnerNotifications(request: PartnerRequest) {
     if (readDirty.current && mounted.current && generation.current === epoch && !reading.current.size) {
       readDirty.current = false; await refresh();
     }
+    return mounted.current && generation.current === epoch;
   }
   return { notices, unread, cursor, loading: loading || readingCount > 0, error, refresh, read };
 }
-export function PartnerNotifications({ model, openBooking }: { model: ReturnType<typeof usePartnerNotifications>;
-  openBooking: (id: string) => void }) {
+export function PartnerNotifications({ model, openBooking, openProfile }: { model: ReturnType<typeof usePartnerNotifications>;
+  openBooking: (id: string) => void; openProfile?: (businessId?: string) => void }) {
   const [reading, setReading] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  async function open(notice: Notice) {
+    if (reading || model.loading) return;
+    setSelected(notice.id); setReading(notice.id);
+    const success = notice.readAt ? true : await model.read(notice.id);
+    if (!mounted.current) return;
+    setReading(null);
+    if (!success) return;
+    if (notice.action === 'OPERATOR_BOOKING' && notice.bookingId && /^[0-9a-f-]{36}$/i.test(notice.bookingId)) openBooking(notice.bookingId);
+    if (notice.action === 'PARTNER_PROFILE' && openProfile) openProfile(notice.profileBusinessId ?? undefined);
+  }
   return <section aria-label="Thông báo của bạn">
     <button type="button" disabled={model.loading} onClick={() => void model.refresh()}>Tải lại thông báo</button>
     {model.loading && <p role="status">Đang tải thông báo…</p>}
     {model.error && <p className="feedback error" role="alert">{model.error}</p>}
     {!model.loading && !model.error && model.notices.length === 0 && <div className="panel empty-state"><h3>Chưa có thông báo</h3><p>Phản hồi hồ sơ và thông báo đơn đặt sân sẽ hiển thị tại đây.</p></div>}
     <ul className="notice-list">{model.notices.map(notice => <li className={notice.readAt ? '' : 'unread'} key={notice.id}>
-      <strong>{notice.title}</strong><p>{notice.body}</p><div className="booking-actions">
-      {notice.action === 'OPERATOR_BOOKING' && notice.bookingId && /^[0-9a-f-]{36}$/i.test(notice.bookingId) &&
-        <button type="button" onClick={() => { openBooking(notice.bookingId!); if (!notice.readAt) void model.read(notice.id); }}>Xem đơn đặt sân</button>}
-      {!notice.readAt ? <button type="button" disabled={reading === notice.id} onClick={async () => {
-        setReading(notice.id); await model.read(notice.id); setReading(null);
-      }}>Đã đọc</button> : <span className="status-badge">Đã đọc</span>}</div>
+      <button type="button" className="partner-notice-open" aria-label={noticeText(notice.title)} aria-expanded={selected === notice.id}
+        disabled={!!reading || model.loading} onClick={() => void open(notice)}><strong>{noticeText(notice.title)}</strong><span>{noticeText(notice.body)}</span>
+        <span className="status-badge">{notice.readAt ? 'Đã đọc' : 'Chưa đọc'}</span></button>
+      {selected === notice.id && <div className="partner-notice-detail" role="region" aria-label={`Chi tiết: ${noticeText(notice.title)}`}>
+        <p>{noticeText(notice.body)}</p>{reading === notice.id && <p role="status">Đang mở thông báo…</p>}
+      </div>}
     </li>)}</ul>
     {model.cursor && <button type="button" disabled={model.loading} onClick={() => void model.refresh(model.cursor!)}>Thông báo trước đó</button>}
   </section>;

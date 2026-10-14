@@ -5,7 +5,6 @@ export function BookingFacts({ booking }: { booking: Booking }) {
     <div><dt>Cơ sở / sân</dt><dd>{booking.venueName}<small>{booking.courtName}</small></dd></div>
     <div><dt>{booking.series ? 'Kỳ đặt cố định' : 'Ngày chơi'}</dt><dd>{booking.series ? `${booking.series.startsOn} → ${booking.series.endsOn}` : booking.date}
       <small>{booking.localStart}–{booking.localEnd}{booking.series ? ` · ${booking.series.occurrenceCount} buổi` : ''}</small></dd></div>
-    <div><dt>Múi giờ</dt><dd>{booking.timezone}</dd></div>
   </dl>;
 }
 

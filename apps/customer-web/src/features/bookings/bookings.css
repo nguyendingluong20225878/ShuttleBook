@@ -68,3 +68,8 @@
   .series-occurrence-list .booking-status { justify-self:start; }
   .booking-panel .series-quote-list li { padding:16px; }
 }
+.customer-notifications .customer-notice-open { display: block; width: 100%; background: transparent; color: inherit; text-align: left; padding: 0; border: 0; font: inherit; cursor: pointer; }
+.customer-notice-open:focus-visible { outline: 3px solid #087d75; outline-offset: 6px; border-radius: 4px; }
+.customer-notice-body { display: block; margin: 10px 0; overflow-wrap: anywhere; }
+.customer-notice-open strong { font-size: 1rem; }
+.customer-notifications .notification-item-actions { flex-wrap: wrap; border-top: 1px solid #d5e4e1; padding-top: 12px; }

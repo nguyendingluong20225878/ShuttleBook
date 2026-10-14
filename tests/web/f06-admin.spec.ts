@@ -35,6 +35,7 @@ for (const retry of [false, true]) {
       failed = false; await page.getByRole('button', { name: 'Làm mới thông báo' }).click();
     }
     await expect(page.getByText('Đơn quá hạn đối chiếu', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Đơn quá hạn đối chiếu', exact: true }).click();
     await expect(page.getByText('Cổng Admin không xác nhận tiền thay chủ sân.', { exact: false })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Xác nhận đã nhận tiền' })).toHaveCount(0);
     if (retry) {
@@ -42,7 +43,7 @@ for (const retry of [false, true]) {
       await expect(page.getByRole('button', { name: 'Đăng nhập', exact: true })).toBeVisible();
       await expect(page.getByText('Đơn quá hạn đối chiếu', { exact: true })).toHaveCount(0);
     } else {
-      await page.getByRole('button', { name: 'Đánh dấu đã đọc' }).click();
+      await page.getByRole('button', { name: 'Đơn quá hạn đối chiếu', exact: true }).click();
       await expect(page.getByRole('heading', { name: 'Thông báo 0 chưa đọc' })).toBeVisible();
       await page.reload();
       await expect(page.getByRole('heading', { name: 'Thông báo 0 chưa đọc' })).toBeVisible();

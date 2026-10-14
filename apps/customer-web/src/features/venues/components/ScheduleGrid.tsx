@@ -58,7 +58,7 @@ export function ScheduleGrid({ schedule, bookingMode = 'casual' }: { schedule: V
 
   return <section className="schedule-section" aria-label="Lịch các sân">
     <div className="schedule-intro"><div><h2>Lịch theo sân và giờ</h2>
-      <p>Giờ địa phương: {schedule.timezone}. Giá hiển thị cho từng ca 30 phút.</p></div>
+      <p>Giờ chơi theo cơ sở. Giá hiển thị cho từng ca 30 phút.</p></div>
       <div className="schedule-legend" aria-label="Chú giải trạng thái">
         <span><i className="legend-dot available" /> Còn trống</span>
         <span><i className="legend-dot reserved" /> Đã kín</span>
@@ -89,9 +89,9 @@ export function ScheduleGrid({ schedule, bookingMode = 'casual' }: { schedule: V
               ? `${money.format(slot.pricePerSlot)}đ` : '';
             return <td key={time} className={`slot-cell ${selected ? 'is-selected' : status.toLowerCase()}`}>
               {slot?.status === 'AVAILABLE' ? <button type="button" aria-pressed={selected}
-                aria-label={`${court.name}, ${time} đến ${slot.endsAt}, ${text}, ${price}`}
-                title={`${court.name}: ${time}–${slot.endsAt} · ${price}/30 phút`}
-                onClick={() => select(court, slot)}>{selected && <span>Đang chọn</span>}<small>{price}</small></button>
+                aria-label={`${court.name}, ${time} đến ${slot.endsAt}, ${text}, ${price}${slot.priceSource === 'SPECIAL' ? ', giá đặc biệt' : ''}`}
+                title={`${court.name}: ${time}–${slot.endsAt} · ${price}/30 phút${slot.priceSource === 'SPECIAL' ? ' · Giá đặc biệt' : ''}`}
+                onClick={() => select(court, slot)}>{selected && <span>Đang chọn</span>}<small>{price}{slot.priceSource === 'SPECIAL' && <span className="special-price-marker" aria-hidden="true">*</span>}</small></button>
                 : <span className="slot-label" aria-label={`${court.name}, ${time}, ${text}`}>
                   {status === 'CLOSED' ? '—' : text}</span>}</td>;
           })}</tr>;
@@ -107,6 +107,6 @@ export function ScheduleGrid({ schedule, bookingMode = 'casual' }: { schedule: V
         startsAt: selectedSlots[0].startsAt, endsAt: selectedSlots[selectedSlots.length - 1].endsAt,
       })}`)}>{bookingMode === 'fixed' ? 'Tiếp tục đặt cố định' : 'Tiếp tục đặt vãng lai'}</button>
     </div>}
-    <p className="schedule-note">Lịch và giá có thể thay đổi. Hệ thống sẽ kiểm tra lại khi tạo đơn đặt sân.</p>
+    <p className="schedule-note">* Giá đặc biệt trong ngày đã chọn. Lịch và giá có thể thay đổi; hệ thống kiểm tra lại khi tạo đơn.</p>
   </section>;
 }

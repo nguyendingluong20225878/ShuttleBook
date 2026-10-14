@@ -113,7 +113,7 @@ export function SeriesReview() {
   return <CustomerShell><section className="booking-panel series-review-panel sb-panel"><p className="eyebrow">Đặt lịch hàng tuần</p>
     <h1>Thiết lập lịch cố định</h1><a href={venueId ? backLink : '/venues'}>Quay lại lịch các sân</a>
     {loadingVenue && <p role="status">Đang tải thông tin sân…</p>}
-    {venue && court && <><h2>{venue.name} · {court.name}</h2><p>Múi giờ: {venue.timezone}. Chọn một thứ và cùng khung giờ cho cả kỳ.</p>
+    {venue && court && <><h2>{venue.name} · {court.name}</h2><p>Chọn một thứ và cùng khung giờ cho cả kỳ.</p>
       <form className="series-form" onSubmit={event => { void getQuote(event); }} noValidate aria-busy={loading || submitting}>
         <fieldset disabled={loading || submitting}><legend>Khung giờ và kỳ đặt</legend>
           <label>Ngày trong tuần<select value={form.dayOfWeek} onChange={event => change({ dayOfWeek: event.target.value })}>{weekdays.map(day => <option key={day.value} value={day.value}>{day.label}</option>)}</select></label>

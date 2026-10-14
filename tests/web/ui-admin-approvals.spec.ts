@@ -150,7 +150,7 @@ test('admin mark read refreshes all loaded notification pages using the fresh cu
   await login(page, '#notifications');
   await page.getByRole('button', { name: 'Xem thêm thông báo', exact: true }).click();
   const older = page.getByRole('listitem').filter({ hasText: 'Thông báo trang hai' });
-  await older.getByRole('button', { name: 'Đánh dấu đã đọc', exact: true }).click();
+  await older.getByRole('button', { name: 'Thông báo trang hai', exact: true }).click();
   await expect(older.getByText('Đã đọc', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: /Thông báo.*1 chưa đọc/ })).toBeVisible();
   expect(cursors).toEqual([null, 'old-cursor', null, 'new-cursor']);

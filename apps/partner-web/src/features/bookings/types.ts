@@ -21,7 +21,7 @@ export type BookingSummary = { bookingId: string; bookingNo: string; bookingType
 export type BookingDetail = BookingSummary & { businessId?: string; customer?: { maskedContact: string };
   paymentDeadline: string; createdAt: string; payment: { paymentId: string; status: string; expectedAmount: number; expectedAmountExact?: string;
     firstReportedAt: string | null; lastReportedAt: string | null; confirmedAmount: number | null; confirmedAmountExact?: string | null;
-    confirmedAt: string | null; confirmedBy?: string | null; bankCode: string; accountName: string;
+    confirmedAt: string | null; confirmedBy?: string | null; accountName: string;
     maskedAccountNumber: string; transferContent: string };
   slots: Array<{ startsAt: string; endsAt: string; pricePerSlot: number }>;
   evidence: Array<{ evidenceId: string; kind: string; bankReference: string | null; note: string | null; reportedAt: string; proofUrl: string | null }>;

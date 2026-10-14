@@ -10,9 +10,8 @@ export function PartnerOverview({ name, status, venues, navigate }: {
   const configured = courts.filter(court => court.hours.length > 0 && court.prices.length > 0).length;
   const steps: Array<{ label: string; done: boolean; page: PartnerPage; detail: string }> = [
     { label: 'Thông tin doanh nghiệp', done: true, page: 'profile', detail: 'Tên pháp lý và liên hệ' },
-    { label: 'Cơ sở và sân', done: venues.length > 0 && venues.every(v => v.courts.length > 0), page: 'venues', detail: 'Mỗi cơ sở cần ít nhất một sân' },
+    { label: 'Cơ sở và sân', done: venues.length > 0 && venues.every(v => v.courts.length > 0), page: 'venues', detail: 'Mỗi cơ sở cần ít nhất một sân; ảnh cơ sở tùy chọn' },
     { label: 'Giờ hoạt động và bảng giá', done: courts.length > 0 && configured === courts.length, page: 'schedule', detail: 'Cấu hình riêng cho từng sân' },
-    { label: 'Ảnh cơ sở', done: venues.length > 0 && venues.every(v => Boolean(v.imageUploadId)), page: 'media', detail: 'Ảnh nhận diện từng cơ sở' },
     { label: 'Tài khoản nhận tiền và QR', done: venues.length > 0 && venues.every(v => Boolean(v.paymentAccount)), page: 'payments', detail: 'QR do bạn cung cấp' },
   ];
   const complete = steps.filter(step => step.done).length;

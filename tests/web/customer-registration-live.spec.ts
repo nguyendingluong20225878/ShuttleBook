@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 // This suite uses the local API, PostgreSQL and Mailpit. Keep it opt-in so the
 // ordinary portal UI suite remains usable without identity infrastructure.
@@ -11,6 +11,29 @@ const api = process.env.SHUTTLEBOOK_TEST_API_URL ?? 'http://localhost:5080';
 
 type MessageList = { messages: { ID: string; To: { Address: string }[] }[] };
 type Message = { Text: string };
+
+// Only fixed operation labels, timing, status and allowlisted error codes are logged.
+// Never include request/response bodies, contacts, credentials or verification codes.
+async function observedPost(page: Page, path: string, action: () => Promise<void>) {
+  const started = Date.now();
+  const timestamp = new Date(started).toISOString();
+  try {
+    const [response] = await Promise.all([
+      page.waitForResponse(result => result.url() === `${api}/api/v1/auth/${path}` &&
+        result.request().method() === 'POST', { timeout: 20_000 }),
+      action(),
+    ]);
+    const elapsedMs = Date.now() - started;
+    const problem = response.ok() ? null : await response.json().catch(() => null) as { code?: unknown } | null;
+    const code = typeof problem?.code === 'string' && /^[A-Z0-9_]{1,64}$/.test(problem.code) ? problem.code : null;
+    console.info(JSON.stringify({ operation: `customer-${path}`, timestamp, elapsedMs, status: response.status(), code }));
+    return response;
+  } catch (failure) {
+    console.info(JSON.stringify({ operation: `customer-${path}`, timestamp,
+      elapsedMs: Date.now() - started, responseReceived: false }));
+    throw failure;
+  }
+}
 
 async function newestCode(contact: string, exceptId?: string): Promise<{ id: string; code: string } | null> {
   const response = await fetch(`${mailpit}/api/v1/messages`);
@@ -53,15 +76,16 @@ test('customer registration works through browser, API, PostgreSQL and Mailpit',
   expect(registerRequests).toHaveLength(0);
 
   await page.getByLabel('Nhập lại mật khẩu').fill(password);
-  const [registered] = await Promise.all([
-    page.waitForResponse(response => response.url().endsWith('/api/v1/auth/register') && response.request().method() === 'POST', { timeout: 20_000 }),
-    page.getByRole('button', { name: 'Đăng ký', exact: true }).last().click(),
-  ]);
+  const registered = await observedPost(page, 'register', () =>
+    page.getByRole('button', { name: 'Đăng ký', exact: true }).last().click());
   expect(registered.status()).toBe(202);
   await expect(page.getByRole('heading', { name: 'Xác minh tài khoản khách' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Mailpit' })).toHaveCount(0);
   expect(registerRequests).toHaveLength(1);
+  const deliveryStarted = Date.now();
   await expect.poll(async () => Boolean(await newestCode(contact))).toBe(true);
+  console.info(JSON.stringify({ operation: 'customer-register-mailpit', timestamp: new Date(deliveryStarted).toISOString(),
+    elapsedMs: Date.now() - deliveryStarted, delivered: true }));
   const first = await newestCode(contact);
   expect(first).not.toBeNull();
 
@@ -71,10 +95,8 @@ test('customer registration works through browser, API, PostgreSQL and Mailpit',
   await page.getByRole('button', { name: 'Xác minh', exact: true }).click();
   await expect(page.getByRole('status')).toContainText('không hợp lệ');
 
-  const [resent] = await Promise.all([
-    page.waitForResponse(response => response.url() === `${api}/api/v1/auth/verification-resend` && response.request().method() === 'POST', { timeout: 20_000 }),
-    page.getByRole('button', { name: 'Gửi lại mã' }).click(),
-  ]);
+  const resent = await observedPost(page, 'verification-resend', () =>
+    page.getByRole('button', { name: 'Gửi lại mã' }).click());
   expect(resent.status()).toBe(202);
   await expect(page.getByRole('status')).toContainText('mã mới đã được gửi');
   await expect.poll(async () => Boolean(await newestCode(contact, first!.id))).toBe(true);

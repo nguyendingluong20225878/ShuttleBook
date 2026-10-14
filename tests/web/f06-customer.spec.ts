@@ -105,9 +105,9 @@ test('notifications retain unread/read, allow only customer booking links and re
   await login(page, '/me/notifications');
   await expect(page.getByRole('heading', { name: 'Thông báo', exact: true })).toBeVisible();
   await expect(page.getByLabel('1 thông báo chưa đọc')).toBeVisible();
+  await page.getByRole('button', { name: 'Đã xác nhận đơn', exact: true }).click();
   await expect(page.getByRole('link', { name: 'Xem đơn đặt sân', exact: true })).toHaveCount(1);
   await expect(page.getByRole('link', { name: 'Xem đơn đặt sân', exact: true })).toHaveAttribute('href', `/bookings/${bookingId}`);
-  await page.getByRole('button', { name: 'Đánh dấu đã đọc' }).click();
   await expect(page.getByText('0 thông báo chưa đọc', { exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Thông báo', exact: true })).toBeVisible();

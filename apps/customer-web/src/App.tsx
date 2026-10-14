@@ -6,6 +6,18 @@ import { BookingDetail, BookingReview, MyBookings } from './features/bookings/Bo
 import { navigate } from './routes/navigation';
 import { CustomerNotificationsPage } from './features/notifications/CustomerNotifications';
 import { SeriesReview } from './features/bookings/SeriesReview';
+import { AccountProfile } from '@shuttlebook/ui/account-profile';
+import { CustomerShell } from './components/CustomerShell';
+import { useCustomerSession } from './features/auth/CustomerSession';
+
+function CustomerProfilePage() {
+  const { session, request, setDisplayName } = useCustomerSession();
+  if (!session) return <CustomerShell><section className="panel account-profile"><h1>Thông tin cá nhân</h1>
+    <p>Đăng nhập để xem và chỉnh sửa thông tin.</p><a href="/login">Đăng nhập</a></section></CustomerShell>;
+  return <CustomerShell title="Thông tin cá nhân" eyebrow="SHUTTLEBOOK / TÀI KHOẢN"
+    description="Cập nhật tên hiển thị trên tài khoản đặt sân của bạn.">
+    <AccountProfile request={request} onSaved={setDisplayName} /></CustomerShell>;
+}
 
 export function App() {
   const [url, setUrl] = useState(location.pathname + location.search);
@@ -25,6 +37,7 @@ export function App() {
   if (path === '/series-review') return <SeriesReview key={url} />;
   if (path === '/me/bookings') return <MyBookings />;
   if (path === '/me/notifications') return <CustomerNotificationsPage />;
+  if (path === '/me/profile') return <CustomerProfilePage />;
   const booking = /^\/bookings\/([^/]+)\/?$/.exec(path);
   if (booking) return <BookingDetail key={booking[1]} id={booking[1]} />;
   if (path === '/venues' || path === '/venues/') return <VenueSearchPage />;

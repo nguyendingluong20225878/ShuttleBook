@@ -1,5 +1,6 @@
 ﻿import { expect, test, type Page } from '@playwright/test';
 import { browserSessionFields, browserSessionRoute } from './helpers/browser-session';
+import { emptyPartnerCalendar } from './helpers/partner-calendar';
 
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/v1/browser-auth/**', async route => {
@@ -20,7 +21,7 @@ async function fixture(page: Page) {
     listGate: null as ReturnType<typeof deferred> | null, readGate: null as ReturnType<typeof deferred> | null, readStarted: false,
     row,
   };
-  const venue = (venueId: string) => ({ id: venueId, name: venueId === 'v1' ? 'Hoàng Cầu' : 'Đống Đa', status: 'ACTIVE',
+  const venue = (venueId: string) => ({ id: venueId, name: venueId === 'v1' ? 'Hoàng Cầu' : 'Đống Đa', status: 'PUBLISHED',
     courts: [{ id: 'c1', name: 'Pickleball 1', status: 'ACTIVE', hours: [], prices: [] }] });
   const business = { id: 'b1', name: 'Hoàng Cầu Sports', status: 'ACTIVE', legalName: 'Test', contact: 'Test', version: 1,
     venues: [venue('v1'), venue('v2')] };
@@ -61,6 +62,7 @@ async function fixture(page: Page) {
       timezone: 'Asia/Ho_Chi_Minh', bookingBlockMinutes: 30, minimumBookingMinutes: 60, holdMinutes: 20, hours: [], basePrices: [], rules: [] });
     if (path.endsWith('/price-preview')) return state.previewFail ? deny(400) : respond({ totalPrice: 200000, slots: [] });
     if (path.endsWith('/maintenance')) return respond([]);
+    if (path.endsWith('/calendar')) return respond(emptyPartnerCalendar(business.venues[0], url.searchParams.get('date')!));
     return respond({});
   });
   return state;
@@ -128,12 +130,12 @@ test('Partner notification poll and delayed read retain older pages with authori
   await expect(page.locator('.notice-list > li')).toHaveCount(56);
   const oldest = page.locator('.notice-list > li').filter({ has: page.getByText('Thông báo 1', { exact: true }) });
   const gate = deferred(); api.readGate = gate;
-  await oldest.getByRole('button', { name: 'Đã đọc', exact: true }).click();
+  await oldest.getByRole('button', { name: 'Thông báo 1', exact: true }).click();
   await expect.poll(() => api.readStarted).toBe(true); const calls = api.noticeCalls.length;
   await focus(page); expect(api.noticeCalls.length).toBe(calls);
   await expect(page.locator('.notice-list > li')).toHaveCount(56);
   gate.resolve();
-  await expect(oldest.getByRole('button', { name: 'Đã đọc', exact: true })).toHaveCount(0);
+  await expect(oldest.getByRole('button', { name: 'Thông báo 1', exact: true })).toBeEnabled();
   await expect(oldest.locator('.status-badge')).toHaveText('Đã đọc');
   await expect(page.locator('.notice-list > li')).toHaveCount(56);
   await expect(page.locator('.notice-list > li.unread')).toHaveCount(55);
@@ -153,15 +155,16 @@ test('Partner denied notification refresh clears older pages and unread state', 
 
 test('Partner preview reports calculated, write reports saved, failure has no stale price or success style', async ({ page }) => {
   const api = await fixture(page); await login(page, '#/schedule');
+  await page.getByRole('tab', { name: 'Giờ & giá', exact: true }).click();
   const preview = page.locator('#operator-preview'); await expect(preview).toBeVisible();
   await preview.getByRole('button', { name: 'Xem giá', exact: true }).click();
-  const operations = page.getByRole('region', { name: 'Vận hành sân', exact: true });
-  await expect(operations.locator('.feedback.success')).toHaveText('Đã tính giá.');
+  await expect(page.locator('.partner-toast--success')).toContainText('Đã tính giá.');
   await expect(preview).toContainText('Tổng giá:');
+  await page.locator('details:has(#operator-policy) > summary').click();
   await page.locator('#operator-policy').getByRole('button', { name: 'Lưu quy định', exact: true }).click();
-  await expect(operations.locator('.feedback.success')).toHaveText('Đã lưu.');
+  await expect(page.locator('.partner-toast--success')).toContainText('Đã lưu.');
   api.previewFail = true; await preview.getByRole('button', { name: 'Xem giá', exact: true }).click();
-  await expect(operations.locator('.feedback.error')).toBeVisible();
-  await expect(operations.locator('.feedback.success')).toHaveCount(0);
+  await expect(page.locator('.partner-toast--error')).toBeVisible();
+  await expect(page.locator('.partner-toast--success')).toHaveCount(0);
   await expect(preview).not.toContainText('Tổng giá:');
 });

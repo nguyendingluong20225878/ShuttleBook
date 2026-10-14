@@ -7,6 +7,7 @@ test.beforeEach(async ({ page }) => {
   });
 });
 import { openPartnerPage } from './helpers/partner-navigation';
+import { emptyPartnerCalendar } from './helpers/partner-calendar';
 
 async function fixture(page: Page, status = 'DRAFT', approval?: { status: string }) {
   const calls: Array<{ path: string; method: string; body: unknown }> = [];
@@ -26,6 +27,10 @@ async function fixture(page: Page, status = 'DRAFT', approval?: { status: string
       venues: [{ id: 'v3', name: 'Cơ sở B', address: 'Hà Nội', contact: 'Cơ sở B', latitude: 21, longitude: 105,
         timezone: 'Asia/Ho_Chi_Minh', status, version: 1, courts: [] }] },
   ];
+  businesses.forEach(business => business.venues.forEach(venue => {
+    if (status === 'ACTIVE') venue.status = 'PUBLISHED';
+    venue.courts.forEach(court => { if (status === 'DRAFT') court.status = 'INACTIVE'; });
+  }));
   await page.addInitScript(() => {
     (window as unknown as { maptilersdk: unknown }).maptilersdk = {
       config: { apiKey: '' }, Map: class { setCenter() {} setZoom() {} remove() {} resize() {} },
@@ -46,10 +51,18 @@ async function fixture(page: Page, status = 'DRAFT', approval?: { status: string
     if (path === '/api/v1/me/notifications/') return noticesFail ? route.fulfill({ status: 503, headers })
       : respond([{ id: 'n1', title: 'Phản hồi hồ sơ', body: 'Vui lòng kiểm tra thông tin cơ sở.', readAt: read ? '2026-10-07T00:00:00Z' : null }]);
     if (path === '/api/v1/me/notifications/n1/read') { read = true; return respond({}); }
+    if (path === '/api/v1/uploads/image/view') return route.fulfill({ status: 200, contentType: 'image/png', headers,
+      body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==', 'base64') });
     if (path.endsWith('/operations')) return respond({ id: 'c1', name: 'Pickleball 1', status: 'ACTIVE', version: 1,
       timezone: 'Asia/Ho_Chi_Minh', bookingBlockMinutes: 30, minimumBookingMinutes: 60, holdMinutes: 20,
       hours: [hour], basePrices: [price], rules: [{ ...price, startsOn: '2026-10-07', endsOn: '2026-10-08', priority: 1 }] });
     if (path.endsWith('/maintenance')) return respond([]);
+    if (path.endsWith('/calendar')) return respond(emptyPartnerCalendar(businesses[0].venues.find(venue => path.includes(`/venues/${venue.id}/`))!, new URL(request.url()).searchParams.get('date')!));
+    if (/\/partner-onboarding\/courts\/[^/]+\/schedule$/.test(path)) {
+      const court = businesses.flatMap(business => business.venues.flatMap(venue => venue.courts)).find(court => path.includes(`/courts/${court.id}/`))!;
+      return respond({ ...court, version: 1, timezone: 'Asia/Ho_Chi_Minh', bookingBlockMinutes: 30,
+        minimumBookingMinutes: 30, holdMinutes: 20, basePrices: court.prices, rules: [] });
+    }
     const business = businesses.find(item => path === `/api/v1/partner-onboarding/businesses/${item.id}`);
     return respond(business ?? {});
   });
@@ -69,23 +82,25 @@ test('workspace shows real counters, separated forms, retained drafts and cleare
   const api = await fixture(page); await login(page);
   const cards = page.locator('.stat-card');
   await expect(cards.nth(0)).toContainText('2'); await expect(cards.nth(1)).toContainText('3'); await expect(cards.nth(2)).toContainText('1/3');
-  await expect(page.locator('.checklist')).toContainText('Ảnh nhận diện từng cơ sở');
+  await expect(page.locator('.checklist')).toContainText('Cơ sở và sân');
   await page.screenshot({ path: info.outputPath('partner-overview.png'), fullPage: true });
-  await openPartnerPage(page, 'Sân');
-  await expect(page.getByRole('heading', { name: 'Thêm cơ sở' })).toBeHidden();
-  const court = page.getByRole('heading', { name: 'Thêm sân' }).locator('..');
-  await court.getByLabel('Cơ sở').selectOption('v1'); await court.getByLabel('Tên sân').fill('Sân chưa lưu');
-  await openPartnerPage(page, 'Thanh toán & QR');
-  const payment = page.getByRole('heading', { name: 'Tài khoản nhận tiền' }).locator('..');
-  await payment.getByLabel('Cơ sở').selectOption('v1'); await payment.getByLabel('Số tài khoản').fill('123456');
-  await openPartnerPage(page, 'Sân'); await expect(court.getByLabel('Tên sân')).toHaveValue('Sân chưa lưu');
+  await openPartnerPage(page, 'Cơ sở & sân');
+  await expect(page.getByRole('heading', { name: 'Thêm cơ sở' })).toBeVisible();
+  await expect(page.getByRole('img', { name: 'Ảnh cơ sở Cơ sở Hoàng Cầu' })).toBeVisible();
+  await expect(page.getByText('Múi giờ', { exact: false })).toHaveCount(0);
+  const firstVenue = page.getByRole('region', { name: 'Các sân tại Cơ sở Hoàng Cầu' });
+  await expect(firstVenue.getByRole('button', { name: 'Thêm sân tại Cơ sở Hoàng Cầu' })).toBeVisible();
+  const payment = page.getByRole('form', { name: 'Thiết lập QR cho Cơ sở Hoàng Cầu' });
+  await payment.getByLabel('Số tài khoản').fill('123456');
+  await openPartnerPage(page, 'Thanh toán & QR'); await expect(payment).toBeHidden();
+  await openPartnerPage(page, 'Cơ sở & sân');
+  await expect(payment.getByLabel('Số tài khoản')).toHaveValue('123456');
   await page.getByRole('combobox', { name: 'Doanh nghiệp', exact: true }).selectOption('b2');
   await expect(page.locator('.status-banner')).toContainText('Doanh nghiệp thứ hai');
-  await expect(court.getByLabel('Tên sân')).toHaveValue(''); await expect(court.getByLabel('Cơ sở')).toHaveValue('');
-  await openPartnerPage(page, 'Thanh toán & QR');
-  await expect(payment.getByLabel('Cơ sở')).toHaveValue(''); await expect(payment.getByLabel('Số tài khoản')).toHaveValue('');
-  await openPartnerPage(page, 'Sân'); await court.getByLabel('Cơ sở').selectOption('v3');
-  await court.getByLabel('Tên sân').fill('Sân B'); await court.getByRole('button', { name: 'Lưu sân' }).click();
+  await expect(firstVenue).toHaveCount(0);
+  await expect(payment).toHaveCount(0);
+  await expect(page.getByRole('form', { name: 'Thiết lập QR cho Cơ sở B' }).getByLabel('Số tài khoản')).toHaveValue('');
+  await page.getByRole('region', { name: 'Các sân tại Cơ sở B' }).getByRole('button', { name: 'Thêm sân tại Cơ sở B' }).click();
   await expect.poll(() => api.calls.filter(call => call.method === 'POST' && call.path.endsWith('/courts')).map(call => call.path))
     .toEqual(['/api/v1/partner-onboarding/venues/v3/courts']);
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
@@ -94,15 +109,16 @@ test('workspace shows real counters, separated forms, retained drafts and cleare
 test('navigation supports deep links, Back, keyboard menu and unique map labels', async ({ page }) => {
   await fixture(page); await login(page, '#/payments');
   await expect(page.getByRole('heading', { name: 'Thanh toán & QR', exact: true })).toBeVisible();
-  await openPartnerPage(page, 'Sân'); await openPartnerPage(page, 'Cơ sở'); await page.goBack();
-  await expect(page.getByRole('heading', { name: 'Sân', exact: true })).toBeVisible();
-  await page.goForward(); await expect(page.getByRole('heading', { name: 'Cơ sở', exact: true })).toBeVisible();
+  await openPartnerPage(page, 'Cơ sở & sân'); await openPartnerPage(page, 'Lịch & giá'); await page.goBack();
+  await expect(page.getByRole('heading', { name: 'Cơ sở & sân', exact: true })).toBeVisible();
+  await page.goForward(); await expect(page.getByRole('heading', { name: 'Lịch & giá', exact: true })).toBeVisible();
+  await openPartnerPage(page, 'Cơ sở & sân');
   const labels = page.getByLabel('Địa chỉ cơ sở trên MapTiler'); await expect(labels).toHaveCount(3);
   const ids = await labels.evaluateAll(elements => elements.map(element => element.id)); expect(new Set(ids).size).toBe(3);
   await page.setViewportSize({ width: 375, height: 812 });
   const menu = page.getByRole('button', { name: 'Menu', exact: true });
   await menu.click(); await expect(menu).toHaveAttribute('aria-expanded', 'true');
-  await page.getByRole('navigation', { name: 'Quản lý đối tác' }).getByRole('link', { name: 'Sân', exact: true }).focus();
+  await page.getByRole('navigation', { name: 'Quản lý đối tác' }).getByRole('link', { name: 'Cơ sở & sân', exact: true }).focus();
   await page.keyboard.press('Escape'); await expect(menu).toBeFocused(); await expect(menu).toHaveAttribute('aria-expanded', 'false');
   await menu.focus(); await page.keyboard.press('Shift+Tab'); await page.keyboard.press('Shift+Tab');
   await expect(page.getByRole('link', { name: 'Đến nội dung chính' })).toBeFocused(); await page.keyboard.press('Enter');
@@ -120,21 +136,24 @@ test('notifications show errors, retry and read state; profile loading can recov
   await expect(page.locator('.status-banner')).toContainText('Hoàng Cầu Sports');
   await openPartnerPage(page, 'Thông báo'); await expect(page.getByRole('alert')).toContainText('Không tải được thông báo');
   api.failNotices(false); await page.getByRole('button', { name: 'Tải lại thông báo' }).click();
-  await expect(page.locator('.notice-count')).toHaveText('1'); await page.getByRole('button', { name: 'Đã đọc' }).click();
+  await expect(page.locator('.notice-count')).toHaveText('1'); await page.locator('.notice-list .partner-notice-open').click();
   await expect(page.locator('.notice-count')).toHaveCount(0); await expect(page.locator('.notice-list .status-badge')).toHaveText('Đã đọc');
 });
 
 test('pending profiles and pending revisions keep mutation forms locked', async ({ page }) => {
   await fixture(page, 'PENDING_APPROVAL', { status: 'PENDING' }); await login(page);
-  for (const name of ['Hồ sơ doanh nghiệp', 'Cơ sở', 'Sân', 'Lịch & giá', 'Ảnh cơ sở', 'Thanh toán & QR']) {
-    await openPartnerPage(page, name); await expect(page.locator('main form:visible')).toHaveCount(0);
+  for (const name of ['Hồ sơ doanh nghiệp', 'Cơ sở & sân', 'Lịch & giá', 'Thanh toán & QR']) {
+    await openPartnerPage(page, name);
+    // A read-only schedule may remain visible while approval is pending; mutation stays locked.
+    for (const save of await page.locator('main form:visible button[type="submit"], main form:visible button:not([type])').all())
+      await expect(save).toBeDisabled();
   }
   await expect(page.getByRole('button', { name: 'Gửi hồ sơ duyệt' })).toHaveCount(0);
   await expect(page.getByText(/Hồ sơ đang chờ Admin duyệt/)).toBeVisible();
   await page.unroute('http://localhost:5080/api/v1/**');
   await fixture(page, 'ACTIVE', { status: 'PENDING' }); await page.reload();
   await expect(page.locator('.status-banner')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Đề nghị thay đổi thông tin quan trọng' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Đề nghị đổi tài khoản hoặc QR' })).toHaveCount(0);
 });
 
 test('forms and dashboard reflow at phone, tablet and desktop widths', async ({ page }, info) => {
@@ -145,9 +164,12 @@ test('forms and dashboard reflow at phone, tablet and desktop widths', async ({ 
     await page.setViewportSize({ width, height: 900 });
     for (const name of ['Tổng quan', 'Lịch & giá', 'Thanh toán & QR']) {
       await openPartnerPage(page, name);
-      if (name === 'Lịch & giá') await expect(page.getByRole('heading', { name: 'Giờ mở cửa hàng tuần' })).toBeVisible();
+      if (name === 'Lịch & giá') {
+        await page.getByRole('tab', { name: 'Giờ & giá', exact: true }).click();
+        await expect(page.getByRole('heading', { name: 'Giờ mở cửa và giá hàng tuần' })).toBeVisible();
+      }
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-      const visibleFields = page.locator('main input:visible, main select:visible');
+      const visibleFields = page.locator('main input:not([type="checkbox"]):not([type="radio"]):visible, main select:visible');
       for (const element of await visibleFields.all()) {
         const box = await element.boundingBox(); expect(box!.width).toBeGreaterThan(100); expect(box!.height).toBeGreaterThanOrEqual(44);
       }

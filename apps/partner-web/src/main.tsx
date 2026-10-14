@@ -2,6 +2,7 @@ import { FormEvent, StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { PartnerOnboarding } from './PartnerOnboarding';
 import { PartnerIcon } from './components/PartnerIcon';
+import { PartnerToastProvider } from './components/PartnerToast';
 import { useBrowserSession } from '@shuttlebook/ui/browser-session';
 import '@shuttlebook/ui/tokens.css';
 import '@shuttlebook/ui/primitives.css';
@@ -127,8 +128,8 @@ function PartnerIdentity() {
   if (auth.restoring) return <main className="auth-page" role="status">Đang khôi phục phiên đăng nhập…</main>;
   if (auth.restoreError) return <main className="auth-page"><p role="alert">{auth.restoreError}</p>
     <button type="button" onClick={() => void auth.retryRestore()}>Thử lại kết nối</button></main>;
-  if (session) return <PartnerOnboarding sendRequest={auth.request}
-    onLogout={() => void logout()} logoutBusy={submitting} />;
+  if (session) return <PartnerToastProvider><PartnerOnboarding sendRequest={auth.request}
+    onLogout={() => void logout()} logoutBusy={submitting} /></PartnerToastProvider>;
 
   return <main className="auth-page">
     <section className="auth-story">

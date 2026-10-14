@@ -250,15 +250,15 @@ function BookingInformation({ booking, request }: { booking: BookingDetail; requ
     .sort((a, b) => b.at.localeCompare(a.at));
   return <>
     <div className="booking-detail-heading"><div><p className="eyebrow">{booking.bookingNo}</p><h4>{booking.venueName} / {booking.courtName}</h4>
-      <p>{booking.series ? seriesPeriod(booking.series) : `${booking.date} · ${booking.localStart.slice(0, 5)}–${booking.localEnd.slice(0, 5)}`} · {booking.timezone}</p></div>
+      <p>{booking.series ? seriesPeriod(booking.series) : `${booking.date} · ${booking.localStart.slice(0, 5)}–${booking.localEnd.slice(0, 5)}`}</p></div>
       <span className={`status-badge status-${booking.status.toLowerCase()}`}>{bookingStatusLabel(booking.status)}</span></div>
     <dl className="booking-facts"><div><dt>{booking.series ? 'Tổng tiền cả kỳ cần đối chiếu' : 'Tổng tiền theo đơn'}</dt><dd>{money(payment.expectedAmountExact ?? payment.expectedAmount)}</dd></div>
       <div><dt>Khách đặt sân</dt><dd>{booking.customer?.maskedContact ?? 'Đã bảo vệ thông tin liên hệ'}</dd></div>
-      <div><dt>Tài khoản nhận tiền đã chốt</dt><dd>{payment.bankCode} · {payment.maskedAccountNumber}<small>{payment.accountName}</small></dd></div>
+      <div><dt>Tài khoản nhận tiền đã chốt</dt><dd>{payment.maskedAccountNumber}<small>{payment.accountName}</small></dd></div>
       <div><dt>Nội dung chuyển khoản</dt><dd>{payment.transferContent}</dd></div>
       <div><dt>Lần báo chuyển đầu tiên</dt><dd>{localDateTime(payment.firstReportedAt, booking.timezone)}</dd></div>
       <div><dt>Tiền đã xác nhận</dt><dd>{payment.confirmedAmount !== null ? money(payment.confirmedAmountExact ?? payment.confirmedAmount) : 'Chưa xác nhận'}</dd></div></dl>
-    {booking.series && <SeriesSchedule series={booking.series} timezone={booking.timezone} />}
+    {booking.series && <SeriesSchedule series={booking.series} />}
     {booking.isOverdue && <p className="feedback">Đơn đang chờ đối chiếu quá hạn. Sân vẫn được giữ; hãy kiểm tra giao dịch và phản hồi khách.</p>}
     {['AWAITING_OWNER_CONFIRMATION', 'NEEDS_REVIEW'].includes(booking.status) && <p className="feedback">Đối chiếu giao dịch với tài khoản và tổng tiền đã chốt trong đơn trước khi quyết định.</p>}
     {booking.status === 'CONFIRMED' && <p className="feedback success">Đã xác nhận thanh toán lúc {localDateTime(payment.confirmedAt, booking.timezone)}. Đơn đã hoàn tất luồng đặt sân.</p>}

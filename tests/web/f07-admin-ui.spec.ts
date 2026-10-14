@@ -57,7 +57,7 @@ async function login(page: Page, hash = '') {
 async function navigate(page: Page, name: string) {
   const opener = page.getByRole('button', { name: 'Mở menu quản trị', exact: true });
   if (await opener.isVisible()) await opener.click();
-  await page.getByRole('navigation', { name: 'Điều hướng quản trị' }).getByRole('link', { name, exact: true }).click();
+  await page.getByRole('navigation', { name: 'Điều hướng quản trị' }).getByRole('link', { name: new RegExp(`^${name}`) }).click();
 }
 
 test('admin overview has response counters, one notification source and safe alerts', async ({ page }, info) => {
@@ -68,7 +68,7 @@ test('admin overview has response counters, one notification source and safe ale
   await expect(page.getByText('Đơn quá hạn đối chiếu', { exact: true })).toHaveCount(1);
   expect(state.noticesCalls).toBe(1);
   await expect(page.getByRole('button', { name: 'Xác nhận đã nhận tiền' })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Đánh dấu đã đọc' }).click();
+  await page.getByRole('button', { name: 'Đơn quá hạn đối chiếu', exact: true }).click();
   await expect(page.getByRole('link', { name: /Thông báo chưa đọc 0/ })).toBeVisible();
   await page.screenshot({ path: info.outputPath(`admin-overview-${info.project.name}.png`), fullPage: true });
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
@@ -135,7 +135,7 @@ test('admin responsive layout keeps controls readable and menu keyboard accessib
       const opener = page.getByRole('button', { name: 'Mở menu quản trị', exact: true });
       await opener.click();
       await expect(page.getByRole('button', { name: 'Đóng menu quản trị', exact: true })).toHaveAttribute('aria-expanded', 'true');
-      await page.getByRole('navigation', { name: 'Điều hướng quản trị' }).getByRole('link', { name: 'Thông báo', exact: true }).focus();
+      await page.getByRole('navigation', { name: 'Điều hướng quản trị' }).getByRole('link', { name: /^Thông báo/ }).focus();
       await page.keyboard.press('Escape');
       await expect(page.getByRole('button', { name: 'Mở menu quản trị', exact: true })).toBeFocused();
       await expect(page.getByRole('navigation', { name: 'Điều hướng quản trị' })).not.toBeVisible();

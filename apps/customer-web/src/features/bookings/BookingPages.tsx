@@ -62,7 +62,7 @@ export function BookingReview() {
   }
   return <Shell><section className="booking-panel sb-panel"><h1>Xác nhận đặt vãng lai</h1><a href={`/venues/${venueId}?date=${date}`}>Quay lại lịch các sân</a>
     {loading && <p role="status">Đang lấy báo giá…</p>}{error && <p className="sb-notice sb-notice--error" role="alert">{error}</p>}
-    {quote && <><h2>{quote.venueName} · {quote.courtName}</h2><p>Ngày {quote.date} · Múi giờ {quote.timezone}</p>
+    {quote && <><h2>{quote.venueName} · {quote.courtName}</h2><p>Ngày {quote.date}</p>
       <PriceBreakdown slots={quote.slots} />
       <p className="booking-total">Tổng tiền: {money(quote.amountExact ?? quote.amount)}</p><div className="quote-hold-notice"><p>{now < Date.parse(quote.expiresAt) ? 'Đang giữ chỗ tạm cho bạn' : 'Đã hết thời gian giữ chỗ tạm'}: <strong>{remaining(quote.expiresAt, now)}</strong></p>
         <p>Các ca trong báo giá được khóa đến hết thời gian trên. Nếu bạn chưa tạo đơn, các ca sẽ tự trở về trống. Bạn chỉ có thể lấy báo giá khác sau khi thời gian giữ chỗ kết thúc.</p></div>
@@ -103,7 +103,7 @@ export function BookingDetail({ id }: { id: string }) {
       {booking.status === 'AWAITING_TRANSFER' && <><p>Hạn chuyển khoản: {dateTime(booking.paymentDeadline, booking.timezone)}</p>
         <p>Thời gian giữ chỗ còn: <strong>{remaining(booking.paymentDeadline, now)}</strong></p>
         {booking.payment.qrUrl && <PrivateImage path={booking.payment.qrUrl} className="booking-qr" alt="QR nhận tiền của cơ sở cho đơn đặt sân" />}
-        <p>Ngân hàng: {booking.payment.bankCode} · Chủ tài khoản: {booking.payment.accountName}</p>
+        <p>Chủ tài khoản: {booking.payment.accountName}</p>
         <p>Số tài khoản: {booking.payment.maskedAccountNumber}</p><p>Nội dung chuyển khoản: <strong>{booking.payment.transferContent}</strong></p>
         {now >= Date.parse(booking.paymentDeadline) && <p role="status">Đã qua hạn chuyển khoản. Đang cập nhật trạng thái từ máy chủ.</p>}</>}
       {['AWAITING_OWNER_CONFIRMATION', 'NEEDS_REVIEW'].includes(booking.status) && <div className="payment-notice">

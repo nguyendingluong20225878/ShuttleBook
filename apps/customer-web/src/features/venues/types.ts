@@ -30,6 +30,7 @@ export type ScheduleSlot = {
   endsAtUtc: string;
   status: SlotStatus;
   pricePerSlot: number | null;
+  priceSource?: 'SPECIAL' | 'WEEKLY' | null;
 };
 export type CourtSchedule = {
   courtId: string;
