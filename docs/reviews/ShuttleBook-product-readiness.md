@@ -173,3 +173,5 @@ Những quyết định business cần chốt khi bắt đầu feature liên qua
 4. S3/staging được phép dùng khi nào; lịch và người xử lý chuyển sai/quên báo, retention ảnh/audit và điều khoản vận hành ra sao?
 
 Bất biến cho mọi bước: business→venue→court; giá ca30 phút và snapshot; fixed all-or-none; PostgreSQL chuẩn; reported/review không tự release vì owner chậm; outbox retry/dedup; Customer không hủy/đổi; CONFIRMED kết thúc thành công, không check-in/check-out/completed/no-show. Feature mới đi DB→API→UI→test→review. Báo cáo đã thực hiện prompt; không tự code roadmap, commit/push/merge/deploy hay tạo tài nguyên trả phí.
+
+> Cập nhật phạm vi 2026-10-09: người dùng bỏ luôn F08 mời/ủy quyền/phân quyền nhân viên (**CANCELLED**); đề xuất staff và dependency F08 trong báo cáo lịch sử này không còn áp dụng. F09 chuẩn bị vận hành chỉ owner; báo cáo tùy chọn, S3 thật vẫn hoãn. Scope mới: [F09](../features/F09-production-readiness.md).

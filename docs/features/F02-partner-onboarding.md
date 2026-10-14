@@ -1,5 +1,9 @@
 # F02 — Chủ sân khai báo và Admin duyệt
 
+> **Ảnh theo quyết định hiện hành 2026-10-12:** chỉ ảnh cơ sở tùy chọn, không có ảnh riêng sân; Owner thêm/thay/gỡ ảnh cơ sở, không cần Admin duyệt. Không ảnh vẫn được submit/approve nếu QR, sân, giờ/giá và thông tin khác đủ. [Contract mới](Venue-only-optional-images.md) thay mọi điều kiện ảnh bắt buộc và ảnh sân lịch sử bên dưới.
+
+> Mở rộng 2026-10-12: các guard chỉ business DRAFT bên dưới được mở đúng scope cho mục bổ sung trong business ACTIVE; Owner tự quản ảnh giới thiệu và tên sân đã hoạt động, ảnh riêng từng sân, revision định danh doanh nghiệp. Xem [contract F02 mở rộng](F02-owner-self-service-and-additions.md). QR/tài khoản nhận tiền và địa chỉ vẫn phải qua Admin; hồ sơ ban đầu giữ luồng cũ.
+
 > Bổ sung 2026-10-06: partner UI dùng MapTiler SDK + Geocoding API để gợi ý, chọn và xác nhận địa chỉ khi tạo/sửa venue hoặc gửi revision; không yêu cầu chủ sân nhập vĩ/kinh độ. API giữ DTO address/lat/lng và lưu tọa độ PostGIS. Cần một MapTiler API key trong local `.env`; smoke test provider thật chưa chạy. Xem `../setup.md` và `../prompts/F01-F03-post-acceptance-logic.md`.
 
 Trạng thái 2026-10-05: **IN_PROGRESS** theo điều kiện bàn giao S3; luồng local trên PostgreSQL/PostGIS và adapter media private đã PASS. Contract được chốt trước khi triển khai.

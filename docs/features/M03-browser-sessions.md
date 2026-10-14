@@ -1,6 +1,6 @@
 # M03 — khôi phục phiên Customer/Partner
 
-Ngày 2026-10-09, scope/contract trước code. Người dùng hoãn F08: bản MVP nghiệm thu đợt này chỉ owner vận hành, không staff; F08 DEFERRED, không DONE.
+Ngày 2026-10-09, scope/contract trước code. Theo quyết định mới nhất của người dùng, F08 CANCELLED: bỏ luôn mời/ủy quyền/phân quyền nhân viên; chỉ owner vận hành, không gọi F08 DONE.
 
 **DONE local — người dùng xác nhận ngày 2026-10-09:** các lệnh typecheck/build/backend build/test:api/test:db và các ca test tay đã chạy đều PASS. Xác nhận này bổ sung các bằng chứng agent trong M03-browser-sessions-results; người dùng chưa cung cấp log/count/biên bản từng testcase, không tự dựng chúng. Production/S3/CI hosted/backup/load vẫn là gate riêng. UI Partner tách trang chi tiết đơn sau xác nhận được nghiệm thu riêng trong Partner-booking-detail-route.md.
 

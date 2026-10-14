@@ -1,5 +1,7 @@
 # F03 — Vận hành giờ, giá, QR và bảo trì theo sân
 
+> Cập nhật 2026-10-12: [Partner schedule workspace](Partner-schedule-workspace.md) hợp nhất UI nháp/ACTIVE, bổ sung lịch thực tế private và snapshot GET. Preview theo F05 chấp nhận thời lượng đủ minimum rồi tăng từng30phút, không yêu cầu bội số block hiển thị. GET lịch nháp mới và PUT nháp có If-Match428/412; các ghi chú preview/block cũ dưới đây là lịch sử.
+
 > Bổ sung 2026-10-06: owner đặt `bookingBlockMinutes` (30/60/90), `minimumBookingMinutes` (bội số block, đến 480), `holdMinutes` (5–60, mặc định 20) qua `PUT /operator/courts/{id}/booking-policy` có `If-Match`; GET operations trả các giá trị này. Preview kiểm tra min/block. F05 phải áp dụng hạn giữ trước báo chuyển; F04/F05/F07 dùng block 30 phút để hiện lịch/quote/series. Giá theo khách cố định/hội viên và sửa giá trong đơn chưa có booking/entitlement để thực thi trong F03; xem prompt `../prompts/F01-F03-post-acceptance-logic.md`.
 
 Trạng thái: **IN_PROGRESS — code và kiểm thử local đạt; người dùng xác nhận nghiệm thu tay và tạm thời chấp thuận ngày 2026-10-06**. Contract chốt ngày 2026-10-05 trước khi code. F03 tích hợp trên F02, kiểm thử trên database PostGIS tạm; F02 vẫn còn nghiệm thu S3 private.

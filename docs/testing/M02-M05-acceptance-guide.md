@@ -10,8 +10,8 @@ Ngày đối chiếu code: 2026-10-09. Dùng VS Code terminal **PowerShell** t�
 |---|---|---|
 | 2 | Rủi ro kỹ thuật: auth race, tiền chính xác, quote abuse, quyền, search race, CI | Một phần; search race đã sửa và có browser test. Các rủi ro còn lại cần test/thiết kế bổ sung |
 | 3 | Khôi phục phiên Customer/Partner sau F5 và quay lại từ ứng dụng ngân hàng | Đã triển khai theo policy30phút idle/30ngày absolute; xem [nghiệm thu M03](M03-browser-sessions-manual.md) |
-| 4 | F08 mời nhân viên và quyền theo cơ sở | DEFERRED theo người dùng09/10; ngoài phạm vi owner MVP đợt này |
-| 5 | Nghiệm thu tích hợp MVP owner | Luồng F01–F07 + phiên mới; F08 hoãn không chặn đợt này, mốc2 còn gate riêng |
+| 4 | F08 mời nhân viên và quyền theo cơ sở | CANCELLED theo quyết định mới nhất09/10; không triển khai |
+| 5 | Nghiệm thu tích hợp MVP owner | Luồng F01–F07 + phiên mới; F08 đã bỏ, không chặn đợt này, mốc2 còn gate riêng |
 
 Customer/Partner mới khôi phục phiên bằng cookieHttpOnly; access giữ memory. Policy người dùng duyệt: idle30phút, absolute30ngày từ login. Admin giữ flow riêng. Cần restart API cũ trước test mới; hướng dẫn memory-only trước ngày09/10 là lịch sử.
 
@@ -144,34 +144,9 @@ Sau khi có bản sửa workflow và bạn push theo kế hoạch: GitHub → Ac
 
 Lặp cho Customer và Partner; kiểm desktop/mobile. Boundary idle/absolute/reuse/race kiểm clock/PostGIS tự động, không đổi đồng hồ Windows. Kết quả mới xem M03-browser-sessions-results.md; không suy PASS tay từ suite.
 
-## 5. Mốc 4 — F08 tạm hoãn; checklist lưu cho sau
+## 5. Mốc 4 — F08 CANCELLED
 
-Chưa có UI/API invitation và quyền staff. Tên button/endpoint/error cụ thể phải lấy từ contract F08 sau khi được duyệt. Chuẩn bị Owner A hai venue A1/A2, Owner B venue B1, ba nhân viên thử với quyền khác nhau.
-
-Ma trận kỳ vọng cần chốt theo thiết kế:
-
-| Actor/quyền thử | Xem đơn A1 | Xem proof A1 | Xác nhận A1 | Đổi giá/QR A1 | A2/B1 |
-|---|---|---|---|---|---|
-| Staff chỉ xem đơn A1 | Có | Theo quyền proof riêng | Không | Không | Không |
-| Staff xác nhận A1 | Có | Theo quyền đã cấp | Có | Không nếu chưa cấp | Không |
-| Staff cấu hình A1 | Theo quyền đã cấp | Theo quyền đã cấp | Không nếu chưa cấp | Có trong phạm vi được cấp | Không |
-| Owner A | Theo quyền owner | Theo quyền owner | Có | Có | A2 có, B1 không |
-| Admin | Theo quyền quản trị đã thiết kế | Theo quyền đã thiết kế | Không tự có payment.confirm | Theo contract | Theo contract |
-
-Các ca bắt buộc:
-
-1. Owner mời nhân viên đúng venue/quyền; chỉ nhận lời mời hợp lệ mới có membership. Không tự join business bằng ID.
-2. Nhân viên đúng tài khoản nhận; lời mời đã dùng không tạo membership lần hai. Hai accept đồng thời chỉ có một hiệu lực.
-3. Invite expired/revoked bị từ chối; accept cạnh tranh revoke có một kết quả nhất quán.
-4. Staff chỉ xem không thấy nút xác nhận/đổi giá. Gọi API trực tiếp vẫn bị chặn; ẩn nút không đủ để PASS authorization.
-5. Staff có confirm xác nhận đúng số tiền snapshot; không có quyền configure thì không sửa giá/QR.
-6. Đổi venueId/bookingId sang A2/B1 không vượt scope. Chuyển scope không còn dữ liệu private cũ.
-7. Owner thu hồi quyền khi staff đang mở đơn. Yêu cầu mới bị chặn; request chờ khóa phải kiểm quyền fresh trước commit. Agent test concurrency trên PostGIS.
-8. Notification chỉ đến recipient có quyền phù hợp ở thời điểm xử lý theo contract; revoke không cho đọc proof từ API nữa.
-9. Audit ghi actor/action/scope/thời điểm; không mất quyền owner gốc và không cho staff tự nâng quyền.
-10. Mobile/keyboard: mời, nhận, chọn scope, trạng thái lỗi/rỗng và quyết định đọc được, thao tác được.
-
-Người dùng quyết định **DEFERRED** ngày09/10, ngoài phạm vi nghiệm thu owner đợt này. Không coi F08 DONE hoặc yêu cầu tìm nút chưa tồn tại.
+Người dùng quyết định bỏ luôn luồng mời/ủy quyền/phân quyền nhân viên ngày 2026-10-09, thay thế DEFERRED trước đó. Không triển khai hoặc nghiệm thu invitation/staff. Chỉ owner vận hành theo membership và business/venue scope tại backend; quyền Customer/Admin giữ nguyên. F08 không là gate trước F09, không gọi CANCELLED là DONE.
 
 ## 6. Mốc 5 — tích hợp F01–F07 và gate MVP
 
@@ -249,7 +224,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Test-Identity-Li
 ### 6.2. Khi nào được chốt
 
 - **Core local F01–F07:** luồng hiện có và gate tương ứng đạt, lưu bằng chứng. F07 đã nghiệm thu DONE local, không buộc làm lại tất cả nếu không thay phần đó.
-- **MVP owner theo scope09/10:** F08 hoãn không chặn đợt này; coreF01–F07 vàM03 phải đạt, các risk/gate mốc2 còn mở phải ghi rõ. F08 là việc tương lai, không gọi DONE.
+- **MVP owner theo scope09/10:** F08 đã bỏ, không chặn đợt này; coreF01–F07 vàM03 phải đạt, các risk/gate mốc2 còn mở phải ghi rõ. F08 CANCELLED, không còn là việc chờ triển khai và không gọi DONE.
 - **Production:** S3 thật/CI hosted/backup restore/load/security/monitoring/pilot có gate riêng. Manual local không chứng minh production đạt100%.
 
 ## 7. Biên bản test
@@ -259,7 +234,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Test-Identity-Li
 | M2-01 | NOT RUN | Truy vấn A/B hoặc command | | |
 | M2-02 race | NOT RUN | Cần test barrier PostGIS | | |
 | M3 | PASS theo xác nhận người dùng 2026-10-09; DONE local | Có restore/policy mới; build/typecheck/API/DB người dùng báo PASS | Không cung cấp log/count từng ca nên không tự dựng biên bản | UI Partner tách trang chi tiết sau đó nghiệm thu riêng |
-| M4 | DEFERRED | F08 hoãn09/10 | | Ngoài scope đợt owner |
+| M4 | CANCELLED | F08 đã bỏ09/10 | | Không triển khai invitation/staff |
 | M5-01…06 | NOT RUN trong hướng dẫn này | Mã đơn/sân/ngày | | |
 
 PASS chỉ sau khi làm và thấy đúng; FAIL ghi steps; NOT RUN là chưa chạy; BLOCKED ghi điều kiện chặn cụ thể. Gửi ảnh UI/HTTP status/error code và mã đơn thử, không gửi token/secret. Đây không sửa trạng thái feature hay tự tạo commit/push.

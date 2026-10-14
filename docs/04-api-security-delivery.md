@@ -1,5 +1,7 @@
 # API, bảo mật và kế hoạch triển khai
 
+> Quyết định mới nhất 2026-10-09: **F08 CANCELLED**. Bỏ luồng mời/ủy quyền/phân quyền nhân viên khỏi sản phẩm; chỉ owner vận hành đúng business/venue scope. Các mô tả invitation/staff trong thiết kế gốc bên dưới không còn là yêu cầu triển khai. Giữ quyền Customer/Admin và kiểm tra membership owner; không xóa schema/migration nền vì thay đổi phạm vi này.
+
 ## 1. Quy ước API
 
 - Base path: `/api/v1`.
@@ -68,6 +70,8 @@ Customer không có endpoint cancel/reschedule.
 ## 3. Contract tạo booking vãng lai
 
 Contract F05 đã triển khai: authenticated Customer ACTIVE `POST /api/v1/availability/quote` nhận `{courtId,date,startsAt,endsAt}` với ngày `YYYY-MM-DD` và giờ địa phương `HH:mm`. Quote có hiệu lực 120 giây, horizon 60 ngày theo timezone venue và giữ chỗ tạm đến expiresAt. Response có `quoteId`, expiry, interval UTC, từng ca/giá, tổng VND và policy block/minimum/hold. Tạo đơn cần Customer ACTIVE; operator scope ở bảng catalog thuộc F06, chưa được cấp trong F05.
+
+F09.1 contract mới (đang chờ PostGIS acceptance): casual quote bổ sung `amountExact`, `slots[].pricePerSlotExact` là chuỗi số nguyên VND, giữ trường number cũ tương thích. Casual/fixed quote hoặc create từ chối tổng tiền >10.000.000 VND bằng HTTP 409 `AMOUNT_LIMIT_EXCEEDED`; giá đúng trần được phép. Trần fixed áp toàn bộ payment anchor. Khi Customer có quote hold còn hiệu lực ở bất cứ sân nào, casual/fixed quote mới trả HTTP 409 `ACTIVE_QUOTE_EXISTS` và không thay/giải phóng quote cũ. Guard nằm ở PostgreSQL transaction theo Customer, không theo IP/browser; chi tiết testcase ở `features/F09.1-money-and-quote-limit.md`.
 
 ```http
 POST /api/v1/bookings

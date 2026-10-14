@@ -5,7 +5,7 @@
 | Cổng | Tên miền chính thức | Đối tượng |
 |---|---|---|
 | Đặt sân | `tenmien.vn` | Khách xem, tìm và đặt sân |
-| Đối tác | `partner.tenmien.vn` | Chủ sân và nhân sự vận hành |
+| Đối tác | `partner.tenmien.vn` | Chủ sân |
 | Quản trị | `admin.tenmien.vn` | Nhân sự quản trị nền tảng |
 | API | `api.tenmien.vn` | Backend dùng chung cho cả ba cổng |
 
@@ -14,7 +14,7 @@ Nếu sử dụng `datlich.tenmien.vn` cho chiến dịch hoặc tên miền cũ
 ## Mô hình nghiệp vụ đã thống nhất
 
 - `CUSTOMER`: khách tự đăng ký để tìm và thuê sân.
-- `VENUE_OPERATOR`: chủ sân tự đăng ký tại cổng đối tác; nhân viên được chủ sân hoặc Admin mời vào doanh nghiệp/cơ sở phù hợp.
+- `VENUE_OPERATOR`: chủ sân tự đăng ký tại cổng đối tác và vận hành doanh nghiệp/cơ sở thuộc quyền sở hữu.
 - `ADMIN`: duyệt doanh nghiệp/cơ sở do chủ sân khai báo, quản trị tài khoản vận hành, khiếu nại và cấu hình hệ thống.
 - Mỗi tài khoản chỉ có một `account_type`; quyền của operator còn bị giới hạn bởi membership và permission.
 - Cấu trúc quản lý là `Doanh nghiệp → Cơ sở/Chi nhánh → Sân`. Booking luôn gắn với một sân cụ thể.
@@ -62,13 +62,15 @@ Nếu sử dụng `datlich.tenmien.vn` cho chiến dịch hoặc tên miền cũ
 - Chủ sân chỉ được xác nhận booking thuộc doanh nghiệp/cơ sở đang có membership active.
 - `POST /auth/register` luôn tạo `CUSTOMER`; `POST /partner-auth/register` luôn tạo `VENUE_OPERATOR` ở trạng thái `PENDING_ONBOARDING`. Client không được tự gửi `account_type`.
 - Chủ sân tự khai báo doanh nghiệp/cơ sở/sân tại cổng đối tác. Chỉ dữ liệu đã được Admin duyệt mới xuất hiện trên cổng khách thuê.
-- Nhân viên vận hành không tự gán vào sân; họ tham gia bằng lời mời từ chủ doanh nghiệp hoặc Admin.
+- Không triển khai tài khoản nhân viên, lời mời hoặc luồng ủy quyền/phân quyền nhân viên; F08 CANCELLED theo quyết định 2026-10-09. Backend vẫn kiểm tra membership owner và scope business/venue.
 
 ## Phạm vi MVP
 
 | Bắt buộc | Nên có | Có thể bổ sung | Chưa làm |
 |---|---|---|---|
-| Ba cổng web, Customer auth, chủ sân tự onboarding, Admin duyệt sân, mời nhân viên, quản lý doanh nghiệp/cơ sở/sân, MapTiler + PostGIS, ngày tương lai, đặt vãng lai, đặt cố định hàng tuần, QR chuyển khoản, operator xác nhận, chống trùng lịch, S3, audit, backup | Notification đa kênh, review, dịch vụ đi kèm, báo cáo doanh thu, dispute | Promotion, favorite, export báo cáo | Customer hủy/đổi lịch, native app, loyalty, tournament, AI pricing, multi-currency |
+| Ba cổng web, Customer auth, chủ sân tự onboarding, Admin duyệt sân, quản lý doanh nghiệp/cơ sở/sân, MapTiler + PostGIS, ngày tương lai, đặt vãng lai, đặt cố định hàng tuần, QR chuyển khoản, owner xác nhận, chống trùng lịch, audit, backup | Notification đa kênh, review, dịch vụ đi kèm, báo cáo doanh thu, dispute | Promotion, favorite, export báo cáo | Customer hủy/đổi lịch, native app, loyalty, tournament, AI pricing, multi-currency; S3 thật vẫn hoãn theo người dùng |
+
+F08 mời/ủy quyền/phân quyền nhân viên **đã bỏ**, không phải feature chờ triển khai. Các mô tả invitation/staff trong tài liệu thiết kế gốc không còn áp dụng. Nhân viên tại sân được nhắc trong xử lý trực tiếp ngoài ứng dụng không đồng nghĩa tài khoản có quyền trên hệ thống. F09 tập trung chuẩn bị vận hành bản owner; báo cáo là tùy chọn, không tự triển khai khi chưa có yêu cầu.
 
 ## Tài liệu
 

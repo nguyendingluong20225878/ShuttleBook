@@ -52,10 +52,10 @@ Ghi ngày, môi trường, lệnh, PASS/FAIL/NOT RUN/BLOCKED và lý do. Không 
 | F05 | Quote/booking vãng lai, chống trùng, idempotency, expiry, snapshot QR/giá | F03–F04 |
 | F06 | Báo chuyển, outbox/in-app, owner xác nhận/từ chối/đối chiếu | F05 |
 | F07 | Series, quote nhiều buổi, giữ toàn kỳ, thanh toán theo chính sách đã chốt | F05–F06 |
-| F08 | Mời nhân viên và phân quyền cơ sở | F01–F03, tái kiểm tra F06 |
-| F09 | Báo cáo/chức năng tùy chọn, backup/restore, giám sát, chuẩn bị production | Luồng chính đã nghiệm thu |
+| F08 — CANCELLED | Đã bỏ luồng mời/ủy quyền/phân quyền nhân viên theo người dùng 2026-10-09 | Không triển khai; không là gate nghiệm thu |
+| F09 | Củng cố kỹ thuật, CI/release, backup/restore, giám sát, chuẩn bị chạy thử; báo cáo tùy chọn | Luồng chính và M03 đã nghiệm thu; chỉ owner vận hành |
 
-F02–F03 phải có owner hoàn tất hồ sơ và gửi duyệt trong luồng tích hợp. F05–F06 phải hoàn chỉnh trước khi nhận booking thật. Theo quyết định người dùng 2026-10-09, **F08 tạm hoãn (DEFERRED)**: phạm vi nghiệm thu hiện tại chỉ chủ sân vận hành, không phân quyền nhân viên. F08 vẫn nằm trên roadmap, không coi là DONE và không chặn nghiệm thu MVP owner trong đợt này. Không có feature check-in/check-out.
+F02–F03 phải có owner hoàn tất hồ sơ và gửi duyệt trong luồng tích hợp. F05–F06 phải hoàn chỉnh trước khi nhận booking thật. Theo quyết định mới nhất của người dùng 2026-10-09, **F08 CANCELLED**, thay thế quyết định DEFERRED trước đó: bỏ luồng mời/ủy quyền/phân quyền nhân viên khỏi phạm vi sản phẩm. Chỉ owner vận hành business/venue/court đúng scope; quyền Customer/Admin và kiểm tra membership owner tại backend vẫn giữ. Không coi F08 DONE hoặc yêu cầu triển khai/nghiệm thu F08 trước F09. Không có feature check-in/check-out. [Phạm vi dự kiến F09](features/F09-production-readiness.md).
 
 ## Những điểm chưa chốt
 

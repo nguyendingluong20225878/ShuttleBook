@@ -1,5 +1,7 @@
 # Hướng dẫn triển khai theo mô hình đã chốt
 
+> Quyết định mới nhất 2026-10-09: **F08 CANCELLED**. Bỏ luồng mời/ủy quyền/phân quyền nhân viên khỏi sản phẩm; chỉ owner vận hành đúng business/venue scope. Các mô tả invitation/staff trong thiết kế gốc bên dưới không còn là yêu cầu triển khai. Giữ quyền Customer/Admin và kiểm tra membership owner; không xóa schema/migration nền vì thay đổi phạm vi này.
+
 > Cập nhật2026-10-08: quote hợp lệ giữ chỗ tạm đến expiresAt; create chuyển allocation tạm sang BOOKING nguyên tử. Xem docs/features/F07-quote-reservations.md; chính sách mới thay mô tả quote không giữ chỗ trước đó.
 
 

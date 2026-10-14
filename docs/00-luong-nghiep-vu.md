@@ -1,5 +1,7 @@
 # Luồng nghiệp vụ toàn bộ hệ thống
 
+> Quyết định mới nhất 2026-10-09: **F08 CANCELLED**. Bỏ luồng mời/ủy quyền/phân quyền nhân viên khỏi sản phẩm; chỉ owner vận hành đúng business/venue scope. Các mô tả invitation/staff trong thiết kế gốc bên dưới không còn là yêu cầu triển khai. Giữ quyền Customer/Admin và kiểm tra membership owner; không xóa schema/migration nền vì thay đổi phạm vi này.
+
 ## 1. Tổng quan
 
 Hệ thống có ba nhóm người sử dụng và bốn địa chỉ truy cập:
@@ -90,6 +92,8 @@ Nếu khách từ chối quyền vị trí, hệ thống vẫn cho tìm theo t�
 ## 6. Đặt sân vãng lai
 
 Cập nhật2026-10-08: Customer ACTIVE lấy quote sẽ giữ các ca đến expiresAt; hết hạn tự trả trống. Create chuyển chính allocation giữ tạm sang BOOKING, không mở khoảng trống giữa hai bước.
+
+Cập nhật theo quyết định người dùng 2026-10-09: tổng tiền phải chuyển của **một booking vãng lai** hoặc **toàn kỳ cố định** tối đa 10.000.000 VND. Mỗi tài khoản Customer chỉ giữ tối đa một báo giá còn hiệu lực trên mọi sân, chung cả hai loại; yêu cầu mới bị từ chối và giữ báo giá cũ. Quote hết hạn hoặc đã tạo booking không chặn báo giá kế tiếp.
 
 Khách thực hiện cả hai loại đặt ngay trên trang chi tiết sân. Lịch của sân được chia thành các ca 30 phút; ví dụ 18:00-20:00 gồm bốn ca: 18:00, 18:30, 19:00 và 19:30.
 

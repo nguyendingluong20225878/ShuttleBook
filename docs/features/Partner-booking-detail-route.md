@@ -1,6 +1,6 @@
 # Partner — trang chi tiết đơn riêng
 
-Yêu cầu ngày 2026-10-09, sau người dùng xác nhận các lệnh typecheck/build/backend build/test:api/test:db và các ca nghiệm thu tay đều PASS. Thay đổi UI này nghiệm thu riêng; F08 vẫn DEFERRED.
+Yêu cầu ngày 2026-10-09, sau người dùng xác nhận các lệnh typecheck/build/backend build/test:api/test:db và các ca nghiệm thu tay đều PASS. Thay đổi UI này nghiệm thu riêng; F08 CANCELLED theo quyết định mới nhất09/10: bỏ luồng ủy quyền nhân viên.
 
 ## Phạm vi và acceptance
 
