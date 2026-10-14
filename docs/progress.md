@@ -1,5 +1,10 @@
 # Tiến độ ShuttleBook
 
+## GitHub Actions Node 24 — 2026-10-14 (chờ run mới)
+
+- Người dùng gửi ảnh run **#25** (`ec74223`) của `Verify foundation`: **Success**, `web` và `backend` đều PASS trên GitHub Actions/PostGIS thật. Run này kiểm đúng commit tài liệu ghi full PostGIS 150/150; phần annotations có cảnh báo các Action `checkout@v4` và `setup-node@v4` dùng runtime Node 20 đã ngừng hỗ trợ.
+- Đã đổi các Action trong `.github/workflows/ci.yml` sang `checkout@v7`, `setup-node@v7`, `setup-dotnet@v6`, `upload-artifact@v7` dùng Node 24; giữ nguyên Node 22 của ứng dụng, lệnh kiểm thử và service PostGIS. Acceptance của thay đổi workflow: run mới trên commit chứa YAML này có `web`/`backend` PASS và không còn cảnh báo Node 20. Chưa coi run #25 là bằng chứng cho YAML mới. Không ảnh hưởng gate AWS/OTP/backup của F09 production (**NO-GO**).
+
 ## Hoàn thiện sân và hồ sơ Customer — 2026-10-14 (PASS local; chờ xác minh hosted CI)
 
 - [Contract mới](features/Partner-court-profile-followup-2026-10-14.md): nút **Thêm sân** đặt cạnh **Lưu tất cả số sân** trong từng cơ sở, số mặc định bằng số lớn nhất + 1; bỏ xác nhận riêng từng sân. Owner lưu lịch/giá hợp lệ cho sân nháp của cơ sở đã công bố thì backend kiểm QR/quyền/version và tự công bố sân trong cùng transaction. Legacy pending court được thay bằng luồng này, approval cũ superseded. Hồ sơ Customer dùng card cùng mẫu Partner; tên đã lưu hiện ở tài khoản ngay và sau F5 qua GET có xác thực.
