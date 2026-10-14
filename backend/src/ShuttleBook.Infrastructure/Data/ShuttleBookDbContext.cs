@@ -51,6 +51,7 @@ public sealed class ShuttleBookDbContext(DbContextOptions<ShuttleBookDbContext> 
             entity.Property(user => user.Email).HasColumnName("email").HasMaxLength(320);
             entity.Property(user => user.NormalizedEmail).HasColumnName("normalized_email").HasMaxLength(320);
             entity.Property(user => user.Phone).HasColumnName("phone").HasMaxLength(32);
+            entity.Property(user => user.DisplayName).HasColumnName("display_name").HasMaxLength(80);
             entity.Property(user => user.NormalizedPhone).HasColumnName("normalized_phone").HasMaxLength(32);
             entity.Property(user => user.PasswordHash).HasColumnName("password_hash").HasMaxLength(512);
             entity.Property(user => user.EmailVerifiedAt).HasColumnName("email_verified_at");
@@ -174,6 +175,9 @@ public sealed class ShuttleBookDbContext(DbContextOptions<ShuttleBookDbContext> 
             entity.Property(x => x.Status).HasColumnName("status").HasMaxLength(32);
             entity.Property(x => x.Version).HasColumnName("version");
             entity.Property(x => x.BookingBlockMinutes).HasColumnName("booking_block_minutes");
+            entity.Property(x => x.ImageUploadId).HasColumnName("image_upload_id");
+            entity.HasOne<MediaUpload>().WithMany().HasForeignKey(x => x.ImageUploadId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasAlternateKey(x => new { x.Id, x.VenueId });
             entity.Property(x => x.MinimumBookingMinutes).HasColumnName("minimum_booking_minutes");
             entity.Property(x => x.HoldMinutes).HasColumnName("hold_minutes");
             entity.Property(x => x.CreatedAt).HasColumnName("created_at");
@@ -256,11 +260,12 @@ public sealed class ShuttleBookDbContext(DbContextOptions<ShuttleBookDbContext> 
         modelBuilder.Entity<MediaUpload>(entity =>
         {
             entity.ToTable("media_uploads", t => t.HasCheckConstraint("ck_media_booking_purpose",
-                "(purpose='PAYMENT_PROOF' AND booking_id IS NOT NULL) OR (purpose IN ('QR','VENUE_IMAGE') AND booking_id IS NULL)")); entity.HasKey(x => x.Id);
+                "(purpose='PAYMENT_PROOF' AND booking_id IS NOT NULL AND court_id IS NULL) OR (purpose IN ('QR','VENUE_IMAGE') AND booking_id IS NULL AND court_id IS NULL) OR (purpose='COURT_IMAGE' AND booking_id IS NULL AND court_id IS NOT NULL)")); entity.HasKey(x => x.Id);
             entity.Property(x => x.Id).HasColumnName("id");
             entity.Property(x => x.OwnerUserId).HasColumnName("owner_user_id");
             entity.Property(x => x.VenueId).HasColumnName("venue_id");
             entity.Property(x => x.BookingId).HasColumnName("booking_id");
+            entity.Property(x => x.CourtId).HasColumnName("court_id");
             entity.Property(x => x.Purpose).HasColumnName("purpose").HasMaxLength(32);
             entity.Property(x => x.ObjectKey).HasColumnName("object_key").HasMaxLength(300);
             entity.Property(x => x.ContentType).HasColumnName("content_type").HasMaxLength(100);
@@ -270,6 +275,8 @@ public sealed class ShuttleBookDbContext(DbContextOptions<ShuttleBookDbContext> 
             entity.Property(x => x.CreatedAt).HasColumnName("created_at");
             entity.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Venue>().WithMany().HasForeignKey(x => x.VenueId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Court>().WithMany().HasForeignKey(x => new { x.CourtId, x.VenueId })
+                .HasPrincipalKey(x => new { x.Id, x.VenueId }).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Booking>().WithMany().HasForeignKey(x => new { x.BookingId, x.OwnerUserId, x.VenueId })
                 .HasPrincipalKey(x => new { x.Id, x.CustomerId, x.VenueId }).OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(x => x.ObjectKey).IsUnique();
@@ -277,10 +284,16 @@ public sealed class ShuttleBookDbContext(DbContextOptions<ShuttleBookDbContext> 
         });
         modelBuilder.Entity<ApprovalRequest>(entity =>
         {
-            entity.ToTable("approval_requests"); entity.HasKey(x => x.Id);
+            entity.ToTable("approval_requests", t =>
+            {
+                t.HasCheckConstraint("ck_approval_kind_resource",
+                    "(kind IN ('ONBOARDING','BUSINESS_REVISION') AND venue_id IS NULL AND court_id IS NULL) OR (kind IN ('VENUE_REVISION','VENUE_ADDITION') AND venue_id IS NOT NULL AND court_id IS NULL) OR (kind='COURT_ADDITION' AND venue_id IS NOT NULL AND court_id IS NOT NULL)");
+                t.HasCheckConstraint("ck_approval_requests_status", "status IN ('PENDING','APPROVED','CHANGES_REQUESTED','SUPERSEDED')");
+            }); entity.HasKey(x => x.Id);
             entity.Property(x => x.Id).HasColumnName("id");
             entity.Property(x => x.BusinessId).HasColumnName("business_id");
             entity.Property(x => x.VenueId).HasColumnName("venue_id");
+            entity.Property(x => x.CourtId).HasColumnName("court_id");
             entity.Property(x => x.Kind).HasColumnName("kind").HasMaxLength(32);
             entity.Property(x => x.SubmittedBy).HasColumnName("submitted_by");
             entity.Property(x => x.ReviewedBy).HasColumnName("reviewed_by");
@@ -293,6 +306,8 @@ public sealed class ShuttleBookDbContext(DbContextOptions<ShuttleBookDbContext> 
             entity.HasOne<User>().WithMany().HasForeignKey(x => x.SubmittedBy).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<User>().WithMany().HasForeignKey(x => x.ReviewedBy).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Venue>().WithMany().HasForeignKey(x => x.VenueId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Court>().WithMany().HasForeignKey(x => new { x.CourtId, x.VenueId })
+                .HasPrincipalKey(x => new { x.Id, x.VenueId }).OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(x => new { x.BusinessId, x.Status });
         });
         modelBuilder.Entity<OutboxMessage>(entity =>

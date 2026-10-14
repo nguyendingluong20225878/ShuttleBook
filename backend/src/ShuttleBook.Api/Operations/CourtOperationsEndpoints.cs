@@ -1,4 +1,5 @@
 using ShuttleBook.Infrastructure.Bookings;
+using System.Data;
 using System.Globalization;
 using System.Security.Claims;
 using System.Text.Json;
@@ -11,7 +12,7 @@ using ShuttleBook.Infrastructure.Onboarding;
 
 namespace ShuttleBook.Api.Operations;
 
-public static class CourtOperationsEndpoints
+public static partial class CourtOperationsEndpoints
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
         { PropertyNameCaseInsensitive = false };
@@ -35,6 +36,7 @@ public static class CourtOperationsEndpoints
         courts.MapGet("/{courtId:guid}/operations", GetOperations);
         courts.MapPut("/{courtId:guid}/schedule", SetSchedule);
         courts.MapPut("/{courtId:guid}/pricing-rules", SetPricingRules);
+        courts.MapPut("/{courtId:guid}/special-price", SetSpecialPrice);
         courts.MapPut("/{courtId:guid}/booking-policy", SetBookingPolicy);
         courts.MapGet("/{courtId:guid}/price-preview", PricePreview);
         courts.MapGet("/{courtId:guid}/maintenance", ListMaintenance);
@@ -45,6 +47,7 @@ public static class CourtOperationsEndpoints
     private static async Task<IResult> GetOperations(HttpContext http, ShuttleBookDbContext db,
         Guid courtId, CancellationToken ct)
     {
+        await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, ct);
         var (court, venue, _, error) = await ScopedCourt(http, db, courtId, false, ct);
         if (error is not null) return error;
         var hours = await db.CourtOperatingHours.Where(x => x.CourtId == courtId)
@@ -52,6 +55,11 @@ public static class CourtOperationsEndpoints
         var prices = await db.PricingRules.Where(x => x.CourtId == courtId)
             .OrderBy(x => x.Priority).ThenBy(x => x.DayOfWeek).ThenBy(x => x.StartsOn)
             .ThenBy(x => x.StartsAt).ToListAsync(ct);
+        var overrides = prices.Where(x => x.Priority > 0).ToList();
+        var specialPrice = SingleSpecialPrice(overrides, hours);
+        await tx.CommitAsync(ct);
+        http.Response.Headers.CacheControl = "no-store";
+        http.Response.Headers.ETag = $"\"{court!.Version}\"";
         return Ok(http, new { court!.Id, court.Name, court.Status, court.Version, venueId = venue!.Id,
             venue.Timezone, court.BookingBlockMinutes, court.MinimumBookingMinutes, court.HoldMinutes,
             hours = hours.Select(x => new { x.DayOfWeek, x.OpensAt, x.ClosesAt }),
@@ -59,7 +67,8 @@ public static class CourtOperationsEndpoints
                 new { x.DayOfWeek, x.StartsAt, x.EndsAt, x.PricePerSlot }),
             rules = prices.Where(x => x.Priority > 0).Select(x =>
                 new { x.Id, x.StartsOn, x.EndsOn, x.DayOfWeek, x.StartsAt, x.EndsAt,
-                    x.PricePerSlot, x.Priority }) });
+                    x.PricePerSlot, x.Priority }), specialPrice,
+            legacySpecialPrices = overrides.Count > 0 && specialPrice is null });
     }
 
     private static async Task<IResult> SetBookingPolicy(HttpContext http, ShuttleBookDbContext db,
@@ -162,11 +171,12 @@ public static class CourtOperationsEndpoints
                 DateTimeStyles.None, out var date) ||
             !SlotTime(query["startsAt"], out var start) || !SlotTime(query["endsAt"], out var end) || start >= end)
             return Problem(http, 400, "VALIDATION_FAILED");
+        await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, ct);
         var (court, venue, _, error) = await ScopedCourt(http, db, courtId, false, ct);
         if (error is not null) return error;
         if (court!.Status != "ACTIVE") return Problem(http, 409, "STATE_CONFLICT");
         var minutes = (end - start).TotalMinutes;
-        if (minutes < court.MinimumBookingMinutes || minutes % court.BookingBlockMinutes != 0)
+        if (minutes < court.MinimumBookingMinutes || minutes % 30 != 0)
             return Problem(http, 400, "VALIDATION_FAILED");
         var day = (int)date.DayOfWeek;
         var opening = await db.CourtOperatingHours.SingleOrDefaultAsync(x => x.CourtId == courtId && x.DayOfWeek == day, ct);
@@ -186,6 +196,8 @@ public static class CourtOperationsEndpoints
                 endsAt = next.ToString("HH:mm", CultureInfo.InvariantCulture),
                 ruleId = rule.Id, rule.Priority, rule.PricePerSlot });
         }
+        await tx.CommitAsync(ct);
+        http.Response.Headers.CacheControl = "no-store";
         return Ok(http, new { court.Id, date, venue!.Timezone, slots, totalPrice = total });
     }
 

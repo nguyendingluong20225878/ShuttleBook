@@ -90,17 +90,17 @@ public static class MediaEndpoints
         }
         else
         {
-            if (input.VenueId == Guid.Empty || input.Purpose is not ("QR" or "VENUE_IMAGE")) return Error(http, 400, "VALIDATION_FAILED");
-            if (user?.AccountType != AccountType.VenueOperator || user.Status is not (UserStatus.PendingOnboarding or UserStatus.Active)) return Error(http, 403, "FORBIDDEN");
-            var venue = await db.Venues.SingleOrDefaultAsync(v => v.Id == input.VenueId, ct);
-            if (venue is null || !await db.BusinessMemberships.AnyAsync(m => m.BusinessId == venue.BusinessId &&
-                m.UserId == user.Id && m.Role == "OWNER" && (m.Status == "PENDING" || m.Status == "ACTIVE"), ct)) return Error(http, 404, "NOT_FOUND");
-            if (venue.Status != "DRAFT" && !(venue.Status == "PUBLISHED" && user.Status == UserStatus.Active && input.Purpose == "QR")) return Error(http, 409, "STATE_CONFLICT");
-            venueId = venue.Id;
+            if (input.VenueId == Guid.Empty || input.Purpose is not ("QR" or "VENUE_IMAGE"))
+                return Error(http, 400, "VALIDATION_FAILED");
+            var scope = await OwnerMediaScope.Resolve(http, db, input.VenueId, null, false, ct);
+            if (scope.Error is not null) return scope.Error;
+            user = scope.User;
+            venueId = scope.Venue!.Id;
         }
         var upload = new MediaUpload { OwnerUserId = user!.Id, VenueId = venueId, BookingId = bookingId, Purpose = input.Purpose!,
             ContentType = input.ContentType, SizeBytes = input.SizeBytes, Sha256Base64 = input.Sha256Base64!,
-            ObjectKey = bookingId is Guid proofId ? $"payment-proofs/{proofId:N}/{Guid.CreateVersion7():N}" : $"venues/{venueId:N}/{Guid.CreateVersion7():N}", CreatedAt = DateTimeOffset.UtcNow };
+            ObjectKey = bookingId is Guid proofId ? $"payment-proofs/{proofId:N}/{Guid.CreateVersion7():N}" :
+                $"venues/{venueId:N}/{Guid.CreateVersion7():N}", CreatedAt = DateTimeOffset.UtcNow };
         var expiration = DateTimeOffset.UtcNow.AddMinutes(5);
         string url;
         object uploadHeaders;
@@ -145,7 +145,7 @@ public static class MediaEndpoints
             expires < DateTimeOffset.UtcNow.ToUnixTimeSeconds() || expires > DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeSeconds())
             return Error(http, 403, "FORBIDDEN");
         var upload = await db.MediaUploads.SingleOrDefaultAsync(u => u.Id == uploadId, ct);
-        if (upload is null || upload.Status != "PENDING") return Error(http, 404, "NOT_FOUND");
+        if (upload is null || upload.Status != "PENDING" || upload.CourtId.HasValue || upload.Purpose == "COURT_IMAGE") return Error(http, 404, "NOT_FOUND");
         var expected = Sign(config, upload.Id, expires, upload.Sha256Base64);
         var supplied = http.Request.Query["sig"].ToString();
         if (supplied.Length != expected.Length ||
@@ -182,13 +182,17 @@ public static class MediaEndpoints
         var user = await CurrentUser(http, db, ct);
         if (user is null || user.Status is not (UserStatus.PendingOnboarding or UserStatus.Active)) return Error(http, 403, "FORBIDDEN");
         var upload = await db.MediaUploads.AsNoTracking().SingleOrDefaultAsync(u => u.Id == uploadId && u.OwnerUserId == user.Id, ct);
-        if (upload is null) return Error(http, 404, "NOT_FOUND");
+        if (upload is null || upload.CourtId.HasValue || upload.Purpose == "COURT_IMAGE") return Error(http, 404, "NOT_FOUND");
         if (upload.Purpose == "PAYMENT_PROOF")
         {
             if (user.AccountType != AccountType.Customer || user.Status != UserStatus.Active) return Error(http, 403, "FORBIDDEN");
             if (!await db.Bookings.AnyAsync(x => x.Id == upload.BookingId && x.CustomerId == user.Id && x.VenueId == upload.VenueId, ct)) return Error(http, 404, "NOT_FOUND");
         }
-        else if (user.AccountType != AccountType.VenueOperator) return Error(http, 403, "FORBIDDEN");
+        else
+        {
+            var scope = await OwnerMediaScope.Resolve(http, db, upload.VenueId, upload.CourtId, false, ct);
+            if (scope.Error is not null) return scope.Error;
+        }
         if (upload.Status == "READY") return Results.Ok(new { data = new { upload.Id, upload.Status }, traceId = http.TraceIdentifier });
         if (S3(config))
         {
@@ -224,8 +228,13 @@ public static class MediaEndpoints
         }
         // Verify bytes first, then serialize only the READY transition and its audit.
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        if (upload.Purpose != "PAYMENT_PROOF")
+        {
+            var scope = await OwnerMediaScope.Resolve(http, db, upload.VenueId, upload.CourtId, true, ct);
+            if (scope.Error is not null) return scope.Error;
+        }
         upload = await db.MediaUploads.FromSqlInterpolated($"SELECT * FROM media_uploads WHERE id={uploadId} AND owner_user_id={user.Id} FOR UPDATE").SingleOrDefaultAsync(ct);
-        if (upload is null) return Error(http, 404, "NOT_FOUND");
+        if (upload is null || upload.CourtId.HasValue || upload.Purpose == "COURT_IMAGE") return Error(http, 404, "NOT_FOUND");
         if (upload.Status == "READY") return Results.Ok(new { data = new { upload.Id, upload.Status }, traceId = http.TraceIdentifier });
         if (upload.Status != "PENDING") return Error(http, 409, "STATE_CONFLICT");
         upload.Status = "READY";
@@ -244,7 +253,7 @@ public static class MediaEndpoints
         var user = await CurrentUser(http, db, ct);
         if (user is null) return Error(http, 403, "FORBIDDEN");
         var upload = await db.MediaUploads.SingleOrDefaultAsync(u => u.Id == uploadId && u.Status == "READY", ct);
-        if (upload is null) return Error(http, 404, "NOT_FOUND");
+        if (upload is null || upload.CourtId.HasValue || upload.Purpose == "COURT_IMAGE") return Error(http, 404, "NOT_FOUND");
         var allowed = user.AccountType == AccountType.Admin && user.Status == UserStatus.Active ||
             user.AccountType == AccountType.VenueOperator && user.Status is UserStatus.PendingOnboarding or UserStatus.Active &&
             await (from venue in db.Venues join member in db.BusinessMemberships on venue.BusinessId equals member.BusinessId

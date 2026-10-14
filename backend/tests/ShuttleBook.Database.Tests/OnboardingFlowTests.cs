@@ -111,12 +111,17 @@ public sealed partial class OnboardingFlowTests
                 await db.Database.MigrateAsync("20261002000000_F014AdminHardening");
                 var owner = User("existing-owner@example.test", AccountType.VenueOperator, UserStatus.PendingOnboarding);
                 userId = owner.Id;
-                db.Users.Add(owner);
+                await db.Database.ExecuteSqlInterpolatedAsync($"""
+                    INSERT INTO users (id,account_type,status,email,normalized_email,password_hash,
+                        email_verified_at,created_at,updated_at)
+                    VALUES ({owner.Id},{owner.AccountType.ToString()},{owner.Status.ToString()},
+                        {owner.Email},{owner.NormalizedEmail},{owner.PasswordHash},
+                        {owner.EmailVerifiedAt},{owner.CreatedAt},{owner.UpdatedAt})
+                    """);
                 var session = new RefreshSession { UserId = owner.Id, FamilyId = Guid.CreateVersion7(),
                     TokenHash = SHA256.HashData(Guid.NewGuid().ToByteArray()), CreatedAt = DateTimeOffset.UtcNow,
                     ExpiresAt = DateTimeOffset.UtcNow.AddDays(1) };
                 sessionId = session.Id;
-                await db.SaveChangesAsync();
                 await db.Database.ExecuteSqlInterpolatedAsync($"""
                     INSERT INTO refresh_sessions (id, family_id, user_id, token_hash, created_at, expires_at)
                     VALUES ({session.Id}, {session.FamilyId}, {session.UserId}, {session.TokenHash},
@@ -180,9 +185,9 @@ public sealed partial class OnboardingFlowTests
                 HttpStatusCode.Created)).GetProperty("id").GetGuid();
             var venueId = (await Data(await owner.PostAsJsonAsync($"{Root}/businesses/{businessId}/venues", VenueBody()),
                 HttpStatusCode.Created)).GetProperty("id").GetGuid();
-            var courtId = (await Data(await owner.PostAsJsonAsync($"{Root}/venues/{venueId}/courts", new { name = "Race Court" }),
+            var courtId = (await Data(await owner.PostAsJsonAsync($"{Root}/venues/{venueId}/courts", new { name = "Sân 1" }),
                 HttpStatusCode.Created)).GetProperty("id").GetGuid();
-            await Data(await owner.PutAsJsonAsync($"{Root}/courts/{courtId}/schedule", ScheduleBody()));
+            await Data(await DraftSchedulePut(owner, courtId, ScheduleBody(), 1));
             var imageId = await Upload(owner, venueId, "VENUE_IMAGE");
             var qrId = await Upload(owner, venueId, "QR");
             await Data(await owner.PutAsJsonAsync($"{Root}/venues/{venueId}/image", new { uploadId = imageId }));
@@ -333,7 +338,7 @@ public sealed partial class OnboardingFlowTests
                 { hours = new[] { new { dayOfWeek = 1, opensAt = "08:15", closesAt = "10:00" } },
                   prices = new[] { new { dayOfWeek = 1, startsAt = "08:00", endsAt = "10:00", pricePerSlot = 100000 } } }),
                 HttpStatusCode.BadRequest, "VALIDATION_FAILED");
-            await Data(await ownerA.PutAsJsonAsync($"{Root}/courts/{courtId}/schedule", ScheduleBody()));
+            await Data(await DraftSchedulePut(ownerA, courtId, ScheduleBody(), 1));
             await Problem(await ownerA.PostAsync($"{Root}/businesses/{businessId}/submit", null),
                 HttpStatusCode.Conflict, "INCOMPLETE_PROFILE");
 
@@ -367,6 +372,9 @@ public sealed partial class OnboardingFlowTests
             var snapshot = (await Data(await admin.GetAsync($"/api/v1/admin/approval-requests/{approvalId}")))
                 .GetProperty("snapshot").GetString();
             Assert.Contains("A Club", snapshot);
+            string storedSnapshot;
+            await using (var before = context())
+                storedSnapshot = (await before.ApprovalRequests.SingleAsync(a => a.Id == approvalId)).Snapshot;
             await Problem(await admin.PostAsJsonAsync($"/api/v1/admin/approval-requests/{approvalId}/request-changes",
                     new { reason = "short" }), HttpStatusCode.BadRequest, "VALIDATION_FAILED");
             await Data(await admin.PostAsJsonAsync($"/api/v1/admin/approval-requests/{approvalId}/request-changes",
@@ -374,7 +382,7 @@ public sealed partial class OnboardingFlowTests
             await using (var db = context())
             {
                 Assert.Equal("DRAFT", (await db.Businesses.SingleAsync(b => b.Id == businessId)).Status);
-                Assert.Equal(snapshot, (await db.ApprovalRequests.SingleAsync(a => a.Id == approvalId)).Snapshot);
+                Assert.Equal(storedSnapshot, (await db.ApprovalRequests.SingleAsync(a => a.Id == approvalId)).Snapshot);
             }
 
             var business = await Data(await ownerA.GetAsync($"{Root}/businesses/{businessId}"));

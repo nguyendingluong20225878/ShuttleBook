@@ -384,10 +384,9 @@ public sealed class AdminFlowTests
                     EmailVerifiedAt = DateTimeOffset.UtcNow, CreatedAt = DateTimeOffset.UtcNow,
                     UpdatedAt = DateTimeOffset.UtcNow, PasswordHash = "test-hash"
                 };
-                db.Users.Add(customer);
                 customerId = customer.Id;
                 familyId = Guid.CreateVersion7();
-                await db.SaveChangesAsync();
+                await InsertUserBeforeProfileMigration(db, customer);
                 var sessionId = Guid.CreateVersion7();
                 var tokenHash = System.Security.Cryptography.SHA256.HashData(
                     System.Text.Encoding.UTF8.GetBytes("upgrade-token"));
@@ -451,9 +450,8 @@ public sealed class AdminFlowTests
                         CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow
                     };
                     admin.PasswordHash = new PasswordHasher<User>().HashPassword(admin, Password);
-                    db.Users.Add(admin);
+                    await InsertUserBeforeProfileMigration(db, admin);
                 }
-                await db.SaveChangesAsync();
             }
             await using (var db = context())
             {
@@ -692,6 +690,14 @@ public sealed class AdminFlowTests
             data.GetProperty("user").GetProperty("accountType").GetString()!,
             data.GetProperty("user").GetProperty("status").GetString()!);
     }
+
+    private static Task InsertUserBeforeProfileMigration(ShuttleBookDbContext db, User user) =>
+        db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO users (id, account_type, status, email, normalized_email, password_hash,
+                email_verified_at, created_at, updated_at)
+            VALUES ({user.Id}, {user.AccountType.ToString()}, {user.Status.ToString()}, {user.Email},
+                {user.NormalizedEmail}, {user.PasswordHash}, {user.EmailVerifiedAt}, {user.CreatedAt}, {user.UpdatedAt})
+            """);
 
     private static async Task WithDatabaseAsync(Func<string, Func<ShuttleBookDbContext>, Task> run)
     {

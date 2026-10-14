@@ -26,8 +26,13 @@ public sealed partial class OnboardingFlowTests
                 qrUploadId = Guid.CreateVersion7();
                 var now = DateTimeOffset.UtcNow;
                 var owner = User("f03-upgrade-owner@example.test", AccountType.VenueOperator, UserStatus.Active);
-                db.Users.Add(owner);
-                await db.SaveChangesAsync();
+                await db.Database.ExecuteSqlInterpolatedAsync($"""
+                    INSERT INTO users (id,account_type,status,email,normalized_email,password_hash,
+                        email_verified_at,created_at,updated_at)
+                    VALUES ({owner.Id},{owner.AccountType.ToString()},{owner.Status.ToString()},
+                        {owner.Email},{owner.NormalizedEmail},{owner.PasswordHash},
+                        {owner.EmailVerifiedAt},{owner.CreatedAt},{owner.UpdatedAt})
+                    """);
                 await db.Database.ExecuteSqlInterpolatedAsync($"""
                     INSERT INTO businesses (id,name,legal_name,contact,status,version,created_at,updated_at)
                     VALUES ({businessId},'F03 Upgrade','F03 Upgrade Company','Test contact','ACTIVE',1,{now},{now})

@@ -45,6 +45,7 @@ public sealed class Court
     public Guid VenueId { get; set; }
     public string Name { get; set; } = "";
     public string Status { get; set; } = "INACTIVE";
+    public Guid? ImageUploadId { get; set; }
     public long Version { get; set; } = 1;
     public int BookingBlockMinutes { get; set; } = 30;
     public int MinimumBookingMinutes { get; set; } = 30;
@@ -90,6 +91,7 @@ public sealed class MediaUpload
     public Guid OwnerUserId { get; set; }
     public Guid VenueId { get; set; }
     public Guid? BookingId { get; set; }
+    public Guid? CourtId { get; set; }
     public string Purpose { get; set; } = "";
     public string ObjectKey { get; set; } = "";
     public string ContentType { get; set; } = "";
@@ -104,6 +106,7 @@ public sealed class ApprovalRequest
     public Guid Id { get; set; } = Guid.CreateVersion7();
     public Guid BusinessId { get; set; }
     public Guid? VenueId { get; set; }
+    public Guid? CourtId { get; set; }
     public string Kind { get; set; } = "ONBOARDING";
     public Guid SubmittedBy { get; set; }
     public Guid? ReviewedBy { get; set; }

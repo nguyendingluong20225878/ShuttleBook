@@ -2,6 +2,7 @@ using System.Data;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using ShuttleBook.Api.Identity;
 using ShuttleBook.Infrastructure.Data;
@@ -10,7 +11,7 @@ using ShuttleBook.Infrastructure.Onboarding;
 
 namespace ShuttleBook.Api.Onboarding;
 
-public static class OnboardingEndpoints
+public static partial class OnboardingEndpoints
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     { PropertyNameCaseInsensitive = false, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
@@ -28,7 +29,8 @@ public static class OnboardingEndpoints
     private sealed record RevisionInput(string? Address, string? Contact, string? Timezone, double Latitude, double Longitude,
         string? BankCode, string? AccountName, string? AccountNumber, Guid QrUploadId);
     private sealed record RevisionSnapshot(long Version, string Address, string Contact, string Timezone, double Latitude,
-        double Longitude, string BankCode, string AccountName, string AccountNumber, Guid QrUploadId);
+        double Longitude, string BankCode, string AccountName, string AccountNumber, Guid QrUploadId,
+        SensitiveVenueBaseline? Baseline = null);
 
     public static void MapOnboardingEndpoints(this WebApplication app)
     {
@@ -39,13 +41,20 @@ public static class OnboardingEndpoints
         partner.MapPut("/businesses/{businessId:guid}", UpdateBusiness);
         partner.MapPost("/businesses/{businessId:guid}/venues", CreateVenue);
         partner.MapPut("/venues/{venueId:guid}", UpdateVenue);
+        partner.MapPut("/venues/{venueId:guid}/contact", UpdateVenueContact);
         partner.MapPut("/venues/{venueId:guid}/image", SetImage);
         partner.MapPost("/venues/{venueId:guid}/courts", CreateCourt);
         partner.MapPut("/courts/{courtId:guid}", UpdateCourt);
+        partner.MapPut("/venues/{venueId:guid}/court-numbers", UpdateCourtNumbers);
+        partner.MapGet("/courts/{courtId:guid}/schedule", GetSchedule);
         partner.MapPut("/courts/{courtId:guid}/schedule", SetSchedule);
         partner.MapPut("/venues/{venueId:guid}/payment-account", SetPaymentAccount);
         partner.MapPost("/businesses/{businessId:guid}/submit", Submit);
         partner.MapPost("/venues/{venueId:guid}/revisions", SubmitRevision);
+        partner.MapPost("/venues/{venueId:guid}/payment-account/revisions", SubmitPaymentRevision);
+        partner.MapPost("/venues/{venueId:guid}/submit", SubmitVenueAddition);
+        partner.MapPost("/courts/{courtId:guid}/confirm", ConfirmCourt);
+        partner.MapPost("/businesses/{businessId:guid}/revisions", SubmitBusinessRevision);
 
         var admin = app.MapGroup("/api/v1/admin/approval-requests").RequireAuthorization();
         admin.MapGet("/", ListApprovals);
@@ -104,15 +113,17 @@ public static class OnboardingEndpoints
         var hours = await db.CourtOperatingHours.Where(h => courtIds.Contains(h.CourtId)).ToListAsync(ct);
         var prices = await db.PricingRules.Where(p => courtIds.Contains(p.CourtId)).ToListAsync(ct);
         var accounts = await db.VenuePaymentAccounts.Where(p => venueIds.Contains(p.VenueId)).ToListAsync(ct);
-        var lastApproval = await db.ApprovalRequests.Where(a => a.BusinessId == businessId)
-            .OrderByDescending(a => a.SubmittedAt).Select(a => new { a.Id, a.Status, a.Reason, a.SubmittedAt, a.ReviewedAt })
-            .FirstOrDefaultAsync(ct);
+        var approvals = await db.ApprovalRequests.Where(a => a.BusinessId == businessId)
+            .OrderByDescending(a => a.SubmittedAt).ThenByDescending(a => a.Id)
+            .Select(a => new { a.Id, a.Kind, a.VenueId, a.CourtId, a.Status, a.Reason, a.SubmittedAt, a.ReviewedAt })
+            .Take(100).ToListAsync(ct);
+        var lastApproval = approvals.FirstOrDefault();
         return Ok(http, new { business.Id, business.Name, business.LegalName, business.Contact, business.Status,
-            business.Version, approval = lastApproval,
+            business.Version, approval = lastApproval, approvals,
             venues = venues.Select(v => new { v.Id, v.Name, v.Address, v.Contact, v.Timezone, v.Latitude, v.Longitude, v.Status,
                 v.ImageUploadId, v.Version, paymentAccount = accounts.Where(p => p.VenueId == v.Id)
-                    .Select(p => new { p.BankCode, p.AccountName, maskedAccountNumber = Mask(p.AccountNumber), p.QrUploadId }).FirstOrDefault(),
-                courts = courts.Where(c => c.VenueId == v.Id).Select(c => new { c.Id, c.Name, c.Status,
+                    .Select(p => new { p.AccountName, maskedAccountNumber = Mask(p.AccountNumber), p.QrUploadId }).FirstOrDefault(),
+                courts = CourtNumbers.Order(courts.Where(c => c.VenueId == v.Id)).Select(c => new { c.Id, c.Name, c.Status, c.Version,
                     hours = hours.Where(h => h.CourtId == c.Id).Select(h => new { h.DayOfWeek, h.OpensAt, h.ClosesAt }),
                     prices = prices.Where(p => p.CourtId == c.Id).Select(p => new { p.DayOfWeek, p.StartsAt, p.EndsAt, p.PricePerSlot }) }) }) });
     }
@@ -151,7 +162,8 @@ public static class OnboardingEndpoints
         var business = await db.Businesses.FromSqlInterpolated($"SELECT * FROM businesses WHERE id = {businessId} FOR UPDATE")
             .SingleOrDefaultAsync(ct);
         if (business is null || !await Owns(db, user!.Id, businessId, ct)) return Problem(http, 404, "NOT_FOUND");
-        if (business.Status != "DRAFT") return Problem(http, 409, "STATE_CONFLICT");
+        if (business.Status != "DRAFT" && !await ActiveOwner(db, user!, business, ct))
+            return Problem(http, 409, "STATE_CONFLICT");
         var now = DateTimeOffset.UtcNow;
         var venue = new Venue { BusinessId = businessId, Name = input!.Name!.Trim(), Address = input.Address!.Trim(),
             Contact = input.Contact!.Trim(),
@@ -177,7 +189,7 @@ public static class OnboardingEndpoints
         var business = await db.Businesses.FromSqlInterpolated($"SELECT * FROM businesses WHERE id = {venue.BusinessId} FOR UPDATE")
             .SingleAsync(ct);
         await db.Entry(venue).ReloadAsync(ct);
-        if (business.Status != "DRAFT" || venue.Status != "DRAFT") return Problem(http, 409, "STATE_CONFLICT");
+        if (!await DraftVenue(db, user!, business, venue, ct)) return Problem(http, 409, "STATE_CONFLICT");
         var versionError = CheckVersion(http, venue.Version);
         if (versionError is not null) return versionError;
         venue!.Name = input!.Name!.Trim(); venue.Address = input.Address!.Trim();
@@ -192,14 +204,21 @@ public static class OnboardingEndpoints
     {
         var (input, error) = await Read<CourtInput>(http, ["name"], ct);
         if (error is not null) return error;
-        if (!TextOk(input!.Name, 1, 100)) return Problem(http, 400, "VALIDATION_FAILED");
-        var (_, user, failure) = await EditableVenue(http, db, venueId, ct);
-        if (failure is not null) return failure;
+        if (!CourtNumbers.TryParse(input!.Name, out var number)) return Problem(http, 400, "VALIDATION_FAILED");
+        var user = await UserAsync(http, db, ct);
+        if (!Partner(user)) return Problem(http, 403, "FORBIDDEN");
+        var venue = await db.Venues.SingleOrDefaultAsync(v => v.Id == venueId, ct);
+        if (venue is null || !await Owns(db, user!.Id, venue.BusinessId, ct)) return Problem(http, 404, "NOT_FOUND");
         await using var tx = await db.Database.BeginTransactionAsync(ct);
-        if (!await LockDraftBusiness(db, venueId, ct)) return Problem(http, 409, "STATE_CONFLICT");
-        if (await db.Courts.AnyAsync(c => c.VenueId == venueId && c.Name == input.Name!.Trim(), ct))
+        var business = await db.Businesses.FromSqlInterpolated($"SELECT * FROM businesses WHERE id = {venue.BusinessId} FOR UPDATE").SingleAsync(ct);
+        await db.Entry(venue).ReloadAsync(ct);
+        if (!await DraftVenue(db, user!, business, venue, ct) &&
+            !(venue.Status == "PUBLISHED" && await ActiveOwner(db, user!, business, ct)))
             return Problem(http, 409, "STATE_CONFLICT");
-        var court = new Court { VenueId = venueId, Name = input.Name!.Trim(), CreatedAt = DateTimeOffset.UtcNow };
+        var existingNames = await db.Courts.Where(c => c.VenueId == venueId).Select(c => c.Name).ToListAsync(ct);
+        if (existingNames.Any(name => CourtNumbers.TryParse(name, out var existing) && existing == number))
+            return Problem(http, 409, "COURT_NUMBER_EXISTS");
+        var court = new Court { VenueId = venueId, Name = CourtNumbers.Name(number), CreatedAt = DateTimeOffset.UtcNow };
         db.Courts.Add(court);
         Audit(db, user!.Id, "court.created", "court", court.Id, http);
         await db.SaveChangesAsync(ct);
@@ -211,15 +230,61 @@ public static class OnboardingEndpoints
     {
         var (input, error) = await Read<CourtInput>(http, ["name"], ct);
         if (error is not null) return error;
-        if (!TextOk(input!.Name, 1, 100)) return Problem(http, 400, "VALIDATION_FAILED");
-        var (court, _, failure) = await EditableCourt(http, db, courtId, ct);
-        if (failure is not null) return failure;
+        if (!CourtNumbers.TryParse(input!.Name, out var number)) return Problem(http, 400, "VALIDATION_FAILED");
+        var user = await UserAsync(http, db, ct);
+        if (!Partner(user)) return Problem(http, 403, "FORBIDDEN");
+        var court = await db.Courts.SingleOrDefaultAsync(c => c.Id == courtId, ct);
+        if (court is null) return Problem(http, 404, "NOT_FOUND");
+        var venue = await db.Venues.SingleAsync(v => v.Id == court.VenueId, ct);
+        if (!await Owns(db, user!.Id, venue.BusinessId, ct)) return Problem(http, 404, "NOT_FOUND");
         await using var tx = await db.Database.BeginTransactionAsync(ct);
-        if (!await LockDraftBusiness(db, court!.VenueId, ct)) return Problem(http, 409, "STATE_CONFLICT");
-        court!.Name = input.Name!.Trim();
+        var business = await db.Businesses.FromSqlInterpolated($"SELECT * FROM businesses WHERE id = {venue.BusinessId} FOR UPDATE").SingleAsync(ct);
+        await db.Entry(venue).ReloadAsync(ct);
+        await db.Courts.FromSqlInterpolated($"SELECT * FROM courts WHERE id = {courtId} FOR UPDATE").SingleAsync(ct);
+        await db.Entry(court).ReloadAsync(ct);
+        if (!await DraftCourt(db, user!, business, venue, court, ct) &&
+            !(court.Status == "ACTIVE" && venue.Status == "PUBLISHED" && await ActiveOwner(db, user!, business, ct)))
+            return Problem(http, 409, "STATE_CONFLICT");
+        if (court.Status == "ACTIVE")
+        {
+            var versionError = CheckVersion(http, court.Version);
+            if (versionError is not null) return versionError;
+        }
+        var existingNames = await db.Courts.Where(c => c.VenueId == court.VenueId && c.Id != courtId)
+            .Select(c => c.Name).ToListAsync(ct);
+        if (existingNames.Any(name => CourtNumbers.TryParse(name, out var existing) && existing == number))
+            return Problem(http, 409, "COURT_NUMBER_EXISTS");
+        court!.Name = CourtNumbers.Name(number);
+        court.Version++;
+        Audit(db, user.Id, "court.name_updated", "court", court.Id, http);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
-        return Ok(http, new { court.Id, court.Name });
+        return Ok(http, new { court.Id, court.Name, court.Version });
+    }
+
+    private static async Task<IResult> GetSchedule(HttpContext http, ShuttleBookDbContext db, Guid courtId, CancellationToken ct)
+    {
+        if (http.Request.Query.Count != 0) return Problem(http, 400, "VALIDATION_FAILED");
+        await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, ct);
+        var user = await UserAsync(http, db, ct);
+        if (!Partner(user)) return Problem(http, 403, "FORBIDDEN");
+        var court = await db.Courts.SingleOrDefaultAsync(c => c.Id == courtId, ct);
+        if (court is null) return Problem(http, 404, "NOT_FOUND");
+        var venue = await db.Venues.SingleAsync(v => v.Id == court.VenueId, ct);
+        if (!await Owns(db, user!.Id, venue.BusinessId, ct)) return Problem(http, 404, "NOT_FOUND");
+        var hours = await db.CourtOperatingHours.Where(h => h.CourtId == courtId)
+            .OrderBy(h => h.DayOfWeek).ToListAsync(ct);
+        var prices = await db.PricingRules.Where(p => p.CourtId == courtId)
+            .OrderBy(p => p.Priority).ThenBy(p => p.DayOfWeek).ThenBy(p => p.StartsAt).ToListAsync(ct);
+        await tx.CommitAsync(ct);
+        http.Response.Headers.CacheControl = "no-store";
+        http.Response.Headers.ETag = $"\"{court.Version}\"";
+        return Ok(http, new { court.Id, court.Name, court.Status, court.Version, venueId = venue.Id,
+            venue.Timezone, court.BookingBlockMinutes, court.MinimumBookingMinutes, court.HoldMinutes,
+            hours = hours.Select(h => new { h.DayOfWeek, h.OpensAt, h.ClosesAt }),
+            basePrices = prices.Where(p => p.Priority == 0).Select(p => new { p.DayOfWeek, p.StartsAt, p.EndsAt, p.PricePerSlot }),
+            rules = prices.Where(p => p.Priority > 0).Select(p => new { p.Id, p.StartsOn, p.EndsOn, p.DayOfWeek,
+                p.StartsAt, p.EndsAt, p.PricePerSlot, p.Priority }) });
     }
 
     private static async Task<IResult> SetSchedule(HttpContext http, ShuttleBookDbContext db, Guid courtId, CancellationToken ct)
@@ -261,7 +326,23 @@ public static class OnboardingEndpoints
         var venue = await db.Venues.SingleAsync(v => v.Id == court!.VenueId, ct);
         var business = await db.Businesses.FromSqlInterpolated($"SELECT * FROM businesses WHERE id = {venue.BusinessId} FOR UPDATE")
             .SingleAsync(ct);
-        if (business.Status != "DRAFT") return Problem(http, 409, "STATE_CONFLICT");
+        await db.Entry(venue).ReloadAsync(ct); await db.Entry(court!).ReloadAsync(ct);
+        if (!await ConfigurableCourt(db, user!, business, venue, court!, ct)) return Problem(http, 409, "STATE_CONFLICT");
+        var versionError = CheckVersion(http, court!.Version);
+        if (versionError is not null) return versionError;
+        var publish = venue.Status == "PUBLISHED";
+        if (publish)
+        {
+            var payment = await db.VenuePaymentAccounts.SingleOrDefaultAsync(p => p.VenueId == venue.Id, ct);
+            if (payment is null || !await db.MediaUploads.AnyAsync(u => u.Id == payment.QrUploadId &&
+                u.VenueId == venue.Id && u.CourtId == null && u.BookingId == null &&
+                u.Purpose == "QR" && u.Status == "READY", ct))
+                return Problem(http, 409, "INCOMPLETE_PROFILE");
+        }
+        var legacy = court.Status == "PENDING_APPROVAL"
+            ? await db.ApprovalRequests.FromSqlInterpolated($"SELECT * FROM approval_requests WHERE business_id={business.Id} AND venue_id={venue.Id} AND court_id={courtId} AND kind='COURT_ADDITION' AND status='PENDING' FOR UPDATE").ToListAsync(ct)
+            : [];
+        if (court.Status == "PENDING_APPROVAL" && legacy.Count == 0) return Problem(http, 409, "STATE_CONFLICT");
         db.CourtOperatingHours.RemoveRange(db.CourtOperatingHours.Where(h => h.CourtId == courtId));
         db.PricingRules.RemoveRange(db.PricingRules.Where(p => p.CourtId == courtId));
         await db.SaveChangesAsync(ct);
@@ -269,34 +350,48 @@ public static class OnboardingEndpoints
             { CourtId = courtId, DayOfWeek = h.Day, OpensAt = h.Start, ClosesAt = h.End }));
         db.PricingRules.AddRange(parsedPrices.Select(p => new PricingRule
             { CourtId = courtId, DayOfWeek = p.Day, StartsAt = p.Start, EndsAt = p.End, PricePerSlot = p.Price }));
+        if (publish)
+        {
+            court.Status = "ACTIVE";
+            foreach (var approval in legacy)
+            {
+                approval.Status = "SUPERSEDED"; approval.ReviewedAt = DateTimeOffset.UtcNow;
+                approval.Reason = "Owner published court by saving its completed schedule.";
+                Audit(db, user!.Id, "approval.court_superseded", "approval_request", approval.Id, http);
+            }
+            Audit(db, user!.Id, "court.auto_published", "court", court.Id, http);
+        }
+        court!.Version++;
         Audit(db, user!.Id, "court.schedule_updated", "court", court!.Id, http);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
-        return Ok(http, new { court.Id, hours = parsedHours.Count, prices = parsedPrices.Count });
+        http.Response.Headers.ETag = $"\"{court.Version}\"";
+        return Ok(http, new { court.Id, court.Status, court.Version, hours = parsedHours.Count, prices = parsedPrices.Count });
     }
 
     private static async Task<IResult> SetPaymentAccount(HttpContext http, ShuttleBookDbContext db, Guid venueId, CancellationToken ct)
     {
-        var (input, error) = await Read<PaymentInput>(http, ["bankCode", "accountName", "accountNumber", "qrUploadId"], ct);
+        var (input, error) = await Read<PaymentInput>(http, ["bankCode", "accountName", "accountNumber", "qrUploadId"], ct, ["bankCode"]);
         if (error is not null) return error;
-        if (!TextOk(input!.BankCode, 2, 32) || !TextOk(input.AccountName, 2, 160) ||
+        if (!LegacyBankCodeOk(input!.BankCode) || !TextOk(input.AccountName, 2, 160) ||
             !TextOk(input.AccountNumber, 6, 40) || !input.AccountNumber!.All(char.IsDigit))
             return Problem(http, 400, "VALIDATION_FAILED");
         var (_, user, failure) = await EditableVenue(http, db, venueId, ct);
         if (failure is not null) return failure;
         await using var tx = await db.Database.BeginTransactionAsync(ct);
-        if (!await LockDraftBusiness(db, venueId, ct)) return Problem(http, 409, "STATE_CONFLICT");
+        if (!await LockDraftBusiness(db, user!, venueId, ct)) return Problem(http, 409, "STATE_CONFLICT");
         if (!await db.MediaUploads.AnyAsync(u => u.Id == input.QrUploadId && u.VenueId == venueId &&
             u.OwnerUserId == user!.Id && u.Purpose == "QR" && u.Status == "READY", ct))
             return Problem(http, 400, "VALIDATION_FAILED");
         var account = await db.VenuePaymentAccounts.SingleOrDefaultAsync(p => p.VenueId == venueId, ct);
         if (account is null) { account = new VenuePaymentAccount { VenueId = venueId }; db.VenuePaymentAccounts.Add(account); }
-        account.BankCode = input.BankCode!.Trim().ToUpperInvariant();
+        // Optional legacy metadata stays internal; manual transfers use the venue QR and account details.
+        if (input.BankCode is not null) account.BankCode = input.BankCode.Trim().ToUpperInvariant();
         account.AccountName = input.AccountName!.Trim(); account.AccountNumber = input.AccountNumber!; account.QrUploadId = input.QrUploadId;
         Audit(db, user!.Id, "venue.payment_account_updated", "venue", venueId, http);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
-        return Ok(http, new { venueId, account.BankCode, account.AccountName,
+        return Ok(http, new { venueId, account.AccountName,
             maskedAccountNumber = Mask(account.AccountNumber), account.QrUploadId });
     }
 
@@ -307,11 +402,13 @@ public static class OnboardingEndpoints
         var (venue, user, failure) = await EditableVenue(http, db, venueId, ct);
         if (failure is not null) return failure;
         await using var tx = await db.Database.BeginTransactionAsync(ct);
-        if (!await LockDraftBusiness(db, venueId, ct)) return Problem(http, 409, "STATE_CONFLICT");
+        if (!await LockDraftBusiness(db, user!, venueId, ct)) return Problem(http, 409, "STATE_CONFLICT");
         if (!await db.MediaUploads.AnyAsync(u => u.Id == input!.UploadId && u.VenueId == venueId &&
             u.OwnerUserId == user!.Id && u.Purpose == "VENUE_IMAGE" && u.Status == "READY", ct))
             return Problem(http, 400, "VALIDATION_FAILED");
         venue!.ImageUploadId = input!.UploadId;
+        venue.Version++;
+        Audit(db, user!.Id, "venue.image_updated", "venue", venue.Id, http);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return Ok(http, new { venue.Id, venue.ImageUploadId });
@@ -332,9 +429,7 @@ public static class OnboardingEndpoints
         var snapshotVenues = new List<object>();
         foreach (var venue in venues)
         {
-            if (venue.Status != "DRAFT" || !TextOk(venue.Contact, 3, 160) || venue.ImageUploadId is null ||
-                !await db.MediaUploads.AnyAsync(u => u.Id == venue.ImageUploadId && u.VenueId == venue.Id &&
-                    u.Purpose == "VENUE_IMAGE" && u.Status == "READY", ct))
+            if (venue.Status != "DRAFT" || !TextOk(venue.Contact, 3, 160) || !await ValidOptionalVenueImage(db, venue, ct))
                 return Problem(http, 409, "INCOMPLETE_PROFILE");
             var payment = await db.VenuePaymentAccounts.SingleOrDefaultAsync(p => p.VenueId == venue.Id, ct);
             if (payment is null || !await db.MediaUploads.AnyAsync(u => u.Id == payment.QrUploadId &&
@@ -367,39 +462,62 @@ public static class OnboardingEndpoints
         return Ok(http, new { approval.Id, approval.Status, businessId });
     }
 
-    private static async Task<IResult> SubmitRevision(HttpContext http, ShuttleBookDbContext db, Guid venueId, CancellationToken ct)
+    private static Task<IResult> SubmitRevision(HttpContext http, ShuttleBookDbContext db, Guid venueId, CancellationToken ct) =>
+        SubmitRevisionCore(http, db, venueId, ct, paymentOnly: false);
+
+    private static Task<IResult> SubmitPaymentRevision(HttpContext http, ShuttleBookDbContext db, Guid venueId, CancellationToken ct) =>
+        SubmitRevisionCore(http, db, venueId, ct, paymentOnly: true);
+
+    private static async Task<IResult> SubmitRevisionCore(HttpContext http, ShuttleBookDbContext db, Guid venueId,
+        CancellationToken ct, bool paymentOnly)
     {
-        var (input, error) = await Read<RevisionInput>(http,
-            ["address", "contact", "timezone", "latitude", "longitude", "bankCode", "accountName", "accountNumber", "qrUploadId"], ct);
-        if (error is not null) return error;
-        if (!TextOk(input!.Address, 8, 400) || !TextOk(input.Contact, 3, 160) ||
+        RevisionInput? input;
+        if (paymentOnly)
+        {
+            var (payment, error) = await Read<PaymentInput>(http, ["bankCode", "accountName", "accountNumber", "qrUploadId"], ct, ["bankCode"]);
+            if (error is not null) return error;
+            input = new(null, null, null, 0, 0, payment!.BankCode, payment.AccountName, payment.AccountNumber, payment.QrUploadId);
+        }
+        else
+        {
+            var (revision, error) = await Read<RevisionInput>(http,
+                ["address", "contact", "timezone", "latitude", "longitude", "bankCode", "accountName", "accountNumber", "qrUploadId"], ct, ["bankCode"]);
+            if (error is not null) return error;
+            input = revision!;
+        }
+        if ((!paymentOnly && (!TextOk(input.Address, 8, 400) || !TextOk(input.Contact, 3, 160) ||
             !TextOk(input.Timezone, 3, 80) ||
             !TimeZoneInfo.TryFindSystemTimeZoneById(input.Timezone!.Trim(), out _) ||
             !double.IsFinite(input.Latitude) || !double.IsFinite(input.Longitude) ||
-            input.Latitude is < -90 or > 90 || input.Longitude is < -180 or > 180 ||
-            !TextOk(input.BankCode, 2, 32) || !TextOk(input.AccountName, 2, 160) ||
+            input.Latitude is < -90 or > 90 || input.Longitude is < -180 or > 180)) ||
+            !LegacyBankCodeOk(input.BankCode) || !TextOk(input.AccountName, 2, 160) ||
             !TextOk(input.AccountNumber, 6, 40) || !input.AccountNumber!.All(char.IsDigit))
             return Problem(http, 400, "VALIDATION_FAILED");
         var user = await UserAsync(http, db, ct);
         if (user?.AccountType != AccountType.VenueOperator || user.Status != UserStatus.Active)
             return Problem(http, 403, "FORBIDDEN");
         await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
-        var venue = await db.Venues.FromSqlInterpolated($"SELECT * FROM venues WHERE id = {venueId} FOR UPDATE")
-            .SingleOrDefaultAsync(ct);
+        var venue = await db.Venues.AsNoTracking().SingleOrDefaultAsync(v => v.Id == venueId, ct);
         if (venue is null || !await db.BusinessMemberships.AnyAsync(m => m.BusinessId == venue.BusinessId &&
             m.UserId == user.Id && m.Role == "OWNER" && m.Status == "ACTIVE", ct))
             return Problem(http, 404, "NOT_FOUND");
-        var business = await db.Businesses.SingleAsync(b => b.Id == venue.BusinessId, ct);
+        var business = await db.Businesses.FromSqlInterpolated($"SELECT * FROM businesses WHERE id = {venue.BusinessId} FOR UPDATE").SingleAsync(ct);
+        // Lock the venue after its business. A concurrent metadata writer under this Serializable
+        // snapshot must cause a retry, rather than letting an older venue enter the proposal.
+        venue = await db.Venues.FromSqlInterpolated($"SELECT * FROM venues WHERE id = {venueId} FOR UPDATE").SingleAsync(ct);
         if (venue.Status != "PUBLISHED" || business.Status != "ACTIVE") return Problem(http, 409, "STATE_CONFLICT");
+        if (paymentOnly) input = input with { Address = venue.Address, Contact = venue.Contact,
+            Timezone = venue.Timezone, Latitude = venue.Latitude, Longitude = venue.Longitude };
         if (!await db.MediaUploads.AnyAsync(u => u.Id == input.QrUploadId && u.OwnerUserId == user.Id &&
             u.VenueId == venue.Id && u.Purpose == "QR" && u.Status == "READY", ct))
             return Problem(http, 400, "VALIDATION_FAILED");
         if (await db.ApprovalRequests.AnyAsync(a => a.BusinessId == business.Id && a.Status == "PENDING", ct))
             return Problem(http, 409, "STATE_CONFLICT");
+        var currentPayment = await db.VenuePaymentAccounts.SingleAsync(p => p.VenueId == venue.Id, ct);
         var snapshot = new RevisionSnapshot(venue.Version, input.Address!.Trim(), input.Contact!.Trim(),
             input.Timezone!.Trim(), input.Latitude,
-            input.Longitude, input.BankCode!.Trim().ToUpperInvariant(), input.AccountName!.Trim(),
-            input.AccountNumber!, input.QrUploadId);
+            input.Longitude, input.BankCode?.Trim().ToUpperInvariant() ?? currentPayment.BankCode, input.AccountName!.Trim(),
+            input.AccountNumber!, input.QrUploadId, Baseline(venue, currentPayment));
         var approval = new ApprovalRequest { BusinessId = business.Id, VenueId = venue.Id,
             Kind = "VENUE_REVISION", SubmittedBy = user.Id, Snapshot = JsonSerializer.Serialize(snapshot, Json),
             SubmittedAt = DateTimeOffset.UtcNow };
@@ -415,7 +533,7 @@ public static class OnboardingEndpoints
     private static async Task<IResult> ListApprovals(HttpContext http, ShuttleBookDbContext db, CancellationToken ct)
     {
         if (!Admin(await UserAsync(http, db, ct))) return Problem(http, 403, "FORBIDDEN");
-        var query = from a in db.ApprovalRequests.AsNoTracking() where a.Status == "PENDING"
+        var query = from a in db.ApprovalRequests.AsNoTracking() where a.Status == "PENDING" && a.Kind != "COURT_ADDITION"
             join b in db.Businesses.AsNoTracking() on a.BusinessId equals b.Id
             select new { a.Id, a.BusinessId, businessName = b.Name, a.Kind, a.Status, a.SubmittedAt };
         // Preserve the original response for clients deployed before the paged queue.
@@ -427,7 +545,7 @@ public static class OnboardingEndpoints
             return Problem(http, 400, "VALIDATION_FAILED");
         var q = parameters["q"].ToString().Trim(); var kind = parameters["kind"].ToString();
         var limit = 20;
-        if (q.Length > 120 || (kind.Length > 0 && kind is not ("ONBOARDING" or "VENUE_REVISION")) ||
+        if (q.Length > 120 || (kind.Length > 0 && kind is not ("ONBOARDING" or "VENUE_REVISION" or "VENUE_ADDITION" or "BUSINESS_REVISION")) ||
             (parameters.ContainsKey("limit") && (!int.TryParse(parameters["limit"], out limit) || limit is < 1 or > 100)))
             return Problem(http, 400, "VALIDATION_FAILED");
         ApprovalCursor? cursor = null;
@@ -470,17 +588,43 @@ public static class OnboardingEndpoints
         var approval = await db.ApprovalRequests.AsNoTracking().SingleOrDefaultAsync(a => a.Id == requestId, ct);
         if (approval is null) return Problem(http, 404, "NOT_FOUND");
         object? current = null;
+        if (approval.Kind == "BUSINESS_REVISION")
+            current = await db.Businesses.AsNoTracking().Where(b => b.Id == approval.BusinessId)
+                .Select(b => new { b.Name, b.LegalName, b.Contact, b.Version }).SingleOrDefaultAsync(ct);
         if (approval.Kind == "VENUE_REVISION" && approval.VenueId is Guid venueId)
         {
             current = await (from venue in db.Venues.AsNoTracking()
                 where venue.Id == venueId && venue.BusinessId == approval.BusinessId
                 join payment in db.VenuePaymentAccounts.AsNoTracking() on venue.Id equals payment.VenueId
                 select new { venueName = venue.Name, venue.Version, venue.Address, venue.Contact, venue.Timezone,
-                    venue.Latitude, venue.Longitude, payment.BankCode, payment.AccountName, payment.AccountNumber,
+                    venue.Latitude, venue.Longitude, payment.AccountName, payment.AccountNumber,
                     payment.QrUploadId }).SingleOrDefaultAsync(ct);
         }
-        return Ok(http, new { approval.Id, approval.BusinessId, approval.VenueId, approval.Kind, approval.Status, approval.Snapshot,
+        return Ok(http, new { approval.Id, approval.BusinessId, approval.VenueId, approval.CourtId, approval.Kind, approval.Status,
+            snapshot = ApprovalSnapshotForDisplay(approval.Snapshot),
             approval.Reason, approval.SubmittedAt, approval.ReviewedAt, current });
+    }
+
+    private static bool LegacyBankCodeOk(string? value) => value is null || TextOk(value, 2, 32);
+
+    // Sanitize the display projection, never the persisted approval/baseline used by approval checks.
+    private static string ApprovalSnapshotForDisplay(string snapshot)
+    {
+        var node = JsonNode.Parse(snapshot);
+        RemoveLegacyBankCode(node);
+        return node?.ToJsonString() ?? "null";
+    }
+
+    private static void RemoveLegacyBankCode(JsonNode? node)
+    {
+        if (node is JsonObject obj)
+        {
+            foreach (var key in obj.Select(p => p.Key).ToArray())
+                if (string.Equals(key, "bankCode", StringComparison.OrdinalIgnoreCase)) obj.Remove(key);
+                else RemoveLegacyBankCode(obj[key]);
+        }
+        else if (node is JsonArray array)
+            foreach (var item in array) RemoveLegacyBankCode(item);
     }
 
     private static async Task<IResult> Approve(HttpContext http, ShuttleBookDbContext db, Guid requestId, CancellationToken ct)
@@ -492,18 +636,28 @@ public static class OnboardingEndpoints
             $"SELECT * FROM approval_requests WHERE id = {requestId} FOR UPDATE").SingleOrDefaultAsync(ct);
         if (approval is null) return Problem(http, 404, "NOT_FOUND");
         if (approval.Status != "PENDING") return Problem(http, 409, "STATE_CONFLICT");
+        if (approval.Kind == "COURT_ADDITION") return Problem(http, 409, "STATE_CONFLICT");
+        if (approval.Kind is "VENUE_ADDITION" or "BUSINESS_REVISION")
+        {
+            var result = await DecideExtension(http, db, approval, admin!, null, ct);
+            if (result.Error is not null) return result.Error;
+            await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
+            return Ok(http, new { approval.Id, approval.Status });
+        }
         if (approval.Kind == "VENUE_REVISION")
         {
             var proposed = JsonSerializer.Deserialize<RevisionSnapshot>(approval.Snapshot, Json);
             if (proposed is null || approval.VenueId is null) return Problem(http, 409, "STATE_CONFLICT");
+            var currentBusiness = await db.Businesses.FromSqlInterpolated($"SELECT * FROM businesses WHERE id = {approval.BusinessId} FOR UPDATE").SingleAsync(ct);
             var venue = await db.Venues.FromSqlInterpolated(
                 $"SELECT * FROM venues WHERE id = {approval.VenueId.Value} FOR UPDATE").SingleAsync(ct);
-            var currentBusiness = await db.Businesses.SingleAsync(b => b.Id == venue.BusinessId, ct);
-            if (venue.Status != "PUBLISHED" || currentBusiness.Status != "ACTIVE" || venue.Version != proposed.Version ||
+            var payment = await db.VenuePaymentAccounts.SingleAsync(p => p.VenueId == venue.Id, ct);
+            if (venue.BusinessId != approval.BusinessId || venue.Status != "PUBLISHED" ||
+                !await ActiveSubmittedOwner(db, approval, currentBusiness, ct) ||
+                (proposed.Baseline is null ? venue.Version != proposed.Version : Baseline(venue, payment) != proposed.Baseline) ||
                 !await db.MediaUploads.AnyAsync(u => u.Id == proposed.QrUploadId && u.VenueId == venue.Id &&
                     u.OwnerUserId == approval.SubmittedBy && u.Purpose == "QR" && u.Status == "READY", ct))
                 return Problem(http, 409, "VERSION_CONFLICT");
-            var payment = await db.VenuePaymentAccounts.SingleAsync(p => p.VenueId == venue.Id, ct);
             venue.Address = proposed.Address; venue.Contact = proposed.Contact; venue.Timezone = proposed.Timezone;
             venue.Latitude = proposed.Latitude; venue.Longitude = proposed.Longitude; venue.Version++;
             venue.UpdatedAt = DateTimeOffset.UtcNow;
@@ -530,9 +684,7 @@ public static class OnboardingEndpoints
         if (courts.Count == 0) return Problem(http, 409, "INCOMPLETE_PROFILE");
         foreach (var venue in venues)
         {
-            if (!TextOk(venue.Contact, 3, 160) || venue.ImageUploadId is null ||
-                !await db.MediaUploads.AnyAsync(u => u.Id == venue.ImageUploadId && u.VenueId == venue.Id &&
-                    u.Purpose == "VENUE_IMAGE" && u.Status == "READY", ct))
+            if (!TextOk(venue.Contact, 3, 160) || !await ValidOptionalVenueImage(db, venue, ct))
                 return Problem(http, 409, "INCOMPLETE_PROFILE");
             var payment = await db.VenuePaymentAccounts.SingleOrDefaultAsync(p => p.VenueId == venue.Id, ct);
             if (payment is null || !await db.MediaUploads.AnyAsync(u => u.Id == payment.QrUploadId &&
@@ -570,6 +722,14 @@ public static class OnboardingEndpoints
             $"SELECT * FROM approval_requests WHERE id = {requestId} FOR UPDATE").SingleOrDefaultAsync(ct);
         if (approval is null) return Problem(http, 404, "NOT_FOUND");
         if (approval.Status != "PENDING") return Problem(http, 409, "STATE_CONFLICT");
+        if (approval.Kind == "COURT_ADDITION") return Problem(http, 409, "STATE_CONFLICT");
+        if (approval.Kind is "VENUE_ADDITION" or "BUSINESS_REVISION")
+        {
+            var result = await DecideExtension(http, db, approval, admin!, input.Reason!.Trim(), ct);
+            if (result.Error is not null) return result.Error;
+            await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
+            return Ok(http, new { approval.Id, approval.Status, approval.Reason });
+        }
         if (approval.Kind == "VENUE_REVISION")
         {
             approval.Status = "CHANGES_REQUESTED"; approval.Reason = input.Reason!.Trim();
@@ -616,7 +776,7 @@ public static class OnboardingEndpoints
         if (venue is null || !await Owns(db, user!.Id, venue.BusinessId, ct))
             return (null, null, Problem(http, 404, "NOT_FOUND"));
         var business = await db.Businesses.SingleAsync(b => b.Id == venue.BusinessId, ct);
-        if (business.Status != "DRAFT" || venue.Status != "DRAFT")
+        if (!await DraftVenue(db, user!, business, venue, ct))
             return (null, null, Problem(http, 409, "STATE_CONFLICT"));
         return (venue, user, null);
     }
@@ -625,15 +785,21 @@ public static class OnboardingEndpoints
     {
         var court = await db.Courts.SingleOrDefaultAsync(c => c.Id == courtId, ct);
         if (court is null) return (null, null, Problem(http, 404, "NOT_FOUND"));
-        var (_, user, error) = await EditableVenue(http, db, court.VenueId, ct);
-        return error is null ? (court, user, null) : (null, null, error);
+        var user = await UserAsync(http, db, ct);
+        if (!Partner(user)) return (null, null, Problem(http, 403, "FORBIDDEN"));
+        var venue = await db.Venues.SingleAsync(v => v.Id == court.VenueId, ct);
+        if (!await Owns(db, user!.Id, venue.BusinessId, ct)) return (null, null, Problem(http, 404, "NOT_FOUND"));
+        var business = await db.Businesses.SingleAsync(b => b.Id == venue.BusinessId, ct);
+        return await ConfigurableCourt(db, user!, business, venue, court, ct) ? (court, user, null) : (null, null, Problem(http, 409, "STATE_CONFLICT"));
     }
-    private static async Task<bool> LockDraftBusiness(ShuttleBookDbContext db, Guid venueId, CancellationToken ct)
+    private static async Task<bool> LockDraftBusiness(ShuttleBookDbContext db, User user, Guid venueId, CancellationToken ct)
     {
         var venue = await db.Venues.SingleAsync(v => v.Id == venueId, ct);
         var business = await db.Businesses.FromSqlInterpolated($"SELECT * FROM businesses WHERE id = {venue.BusinessId} FOR UPDATE")
             .SingleAsync(ct);
-        return business.Status == "DRAFT" && venue.Status == "DRAFT";
+        await db.Entry(venue).ReloadAsync(ct);
+        if (business.Status == "DRAFT" && venue.Status == "DRAFT") return true;
+        return await DraftVenue(db, user, business, venue, ct);
     }
 
     private static bool ValidVenue(VenueInput input) => TextOk(input.Name, 2, 160) && TextOk(input.Address, 8, 400) &&
@@ -687,7 +853,8 @@ public static class OnboardingEndpoints
     private static IResult Problem(HttpContext http, int status, string code) =>
         CustomerRegistrationEndpoints.Problem(http, status, code);
 
-    private static async Task<(T?, IResult?)> Read<T>(HttpContext http, HashSet<string> fields, CancellationToken ct)
+    private static async Task<(T?, IResult?)> Read<T>(HttpContext http, HashSet<string> fields, CancellationToken ct,
+        HashSet<string>? optionalFields = null)
     {
         if (http.Request.ContentLength is > 32_768) return (default, Problem(http, 400, "VALIDATION_FAILED"));
         try
@@ -710,7 +877,8 @@ public static class OnboardingEndpoints
                 if (!fields.Contains(property.Name)) return (default, Problem(http, 400, "UNSUPPORTED_FIELD"));
                 if (!seen.Add(property.Name)) return (default, Problem(http, 400, "VALIDATION_FAILED"));
             }
-            if (fields.Any(field => !seen.Contains(field))) return (default, Problem(http, 400, "VALIDATION_FAILED"));
+            if (fields.Any(field => !seen.Contains(field) && optionalFields?.Contains(field) != true))
+                return (default, Problem(http, 400, "VALIDATION_FAILED"));
             var input = document.RootElement.Deserialize<T>(Json);
             return input is null ? (default, Problem(http, 400, "VALIDATION_FAILED")) : (input, null);
         }

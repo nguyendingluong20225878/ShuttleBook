@@ -99,6 +99,7 @@ public static class PublicVenuesEndpoints
         if (venue is null) return Error(http, 404, "NOT_FOUND");
         var courts = await db.Courts.AsNoTracking().Where(c => c.VenueId == venueId && c.Status == "ACTIVE")
             .OrderBy(c => c.Name).ThenBy(c => c.Id).ToListAsync(ct);
+        courts = CourtNumbers.Order(courts).ToList();
         var images = await ReadyImages(db, [venue], ct);
         return Ok(http, new { venue.Id, venue.Name, venue.Address, venue.Contact,
             venue.Latitude, venue.Longitude, venue.Timezone, imageUrl = ImageUrl(venue, images),
@@ -131,6 +132,7 @@ public static class PublicVenuesEndpoints
         var courtsQuery = db.Courts.AsNoTracking().Where(c => c.VenueId == venueId && c.Status == "ACTIVE");
         if (courtId is Guid requested) courtsQuery = courtsQuery.Where(c => c.Id == requested);
         var courts = await courtsQuery.OrderBy(c => c.Name).ThenBy(c => c.Id).ToListAsync(ct);
+        courts = CourtNumbers.Order(courts).ToList();
         if (courtId.HasValue && courts.Count == 0) return Error(http, 404, "NOT_FOUND");
         var ids = courts.Select(c => c.Id).ToArray();
         var day = (int)date.DayOfWeek;
@@ -181,7 +183,8 @@ public static class PublicVenuesEndpoints
                 var status = slot.StartsAtUtc <= now ? "PAST" : reserved ? "RESERVED" :
                     rule is null ? "NO_PRICE" : "AVAILABLE";
                 return new { slot.StartsAt, slot.EndsAt, slot.StartsAtUtc, slot.EndsAtUtc,
-                    status, pricePerSlot = rule?.PricePerSlot };
+                    status, pricePerSlot = rule?.PricePerSlot,
+                    priceSource = rule is null ? null : rule.Priority > 0 ? "SPECIAL" : "WEEKLY" };
             })
         });
         http.Response.Headers.CacheControl = "no-store";
@@ -196,8 +199,15 @@ public static class PublicVenuesEndpoints
         var venue = await PublicQuery(db).SingleOrDefaultAsync(v => v.Id == venueId, ct);
         if (venue?.ImageUploadId is not Guid imageId) return Error(http, 404, "NOT_FOUND");
         var upload = await db.MediaUploads.AsNoTracking().SingleOrDefaultAsync(u => u.Id == imageId &&
-            u.VenueId == venueId && u.Purpose == "VENUE_IMAGE" && u.Status == "READY", ct);
+            u.VenueId == venueId && u.CourtId == null && u.BookingId == null &&
+            u.Purpose == "VENUE_IMAGE" && u.Status == "READY", ct);
         if (upload is null) return Error(http, 404, "NOT_FOUND");
+        return await ImageContent(http, upload, environment, config, clock, ct);
+    }
+
+    private static async Task<IResult> ImageContent(HttpContext http, MediaUpload upload,
+        IWebHostEnvironment environment, IConfiguration config, TimeProvider clock, CancellationToken ct)
+    {
         http.Response.Headers.CacheControl = "no-store";
         http.Response.Headers.XContentTypeOptions = "nosniff";
         http.Response.Headers["Referrer-Policy"] = "no-referrer";
@@ -241,7 +251,7 @@ public static class PublicVenuesEndpoints
         var ids = venues.Where(v => v.ImageUploadId.HasValue).Select(v => v.ImageUploadId!.Value).ToArray();
         if (ids.Length == 0) return [];
         var ready = await db.MediaUploads.AsNoTracking().Where(u => ids.Contains(u.Id) &&
-            u.Purpose == "VENUE_IMAGE" && u.Status == "READY")
+            u.Purpose == "VENUE_IMAGE" && u.Status == "READY" && u.CourtId == null && u.BookingId == null)
             .Select(u => new { u.Id, u.VenueId }).ToListAsync(ct);
         return ready.Select(u => (u.Id, u.VenueId)).ToHashSet();
     }

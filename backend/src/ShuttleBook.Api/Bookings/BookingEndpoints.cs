@@ -22,6 +22,7 @@ public static class BookingEndpoints
     private sealed record QuoteInput(Guid CourtId, string Date, string StartsAt, string EndsAt);
     private sealed record CreateInput(Guid CourtId, DateTimeOffset StartsAt, DateTimeOffset EndsAt, Guid QuoteId);
     public sealed record PriceSlot(string StartsAt, string EndsAt, long PricePerSlot);
+    // Persisted recipient/fingerprint contract. Legacy bank metadata never enters a consumer read DTO.
     public sealed record Recipient(string BankCode, string AccountName, string AccountNumber, Guid QrUploadId,
         string ObjectKey, string ContentType, long SizeBytes, string Sha256Base64);
     internal sealed record Computed(Court Court, Venue Venue, DateTimeOffset Start, DateTimeOffset End,

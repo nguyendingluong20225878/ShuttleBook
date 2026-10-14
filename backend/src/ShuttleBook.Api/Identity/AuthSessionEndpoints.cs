@@ -1,4 +1,7 @@
 using System.Security.Claims;
+using Microsoft.EntityFrameworkCore;
+using ShuttleBook.Infrastructure.Data;
+using ShuttleBook.Infrastructure.Identity;
 
 namespace ShuttleBook.Api.Identity;
 
@@ -6,6 +9,7 @@ public static class AuthSessionEndpoints
 {
     private static readonly HashSet<string> LoginFields = ["contactType", "contact", "password"];
     private static readonly HashSet<string> RefreshFields = ["refreshToken"];
+    private static readonly HashSet<string> ProfileFields = ["displayName"];
 
     public static void MapAuthSessionEndpoints(this WebApplication app)
     {
@@ -14,6 +18,8 @@ public static class AuthSessionEndpoints
         routes.MapPost("/refresh", RefreshAsync).RequireRateLimiting("auth-verify");
         routes.MapPost("/logout", LogoutAsync).RequireAuthorization();
         routes.MapGet("/me", MeAsync).RequireAuthorization();
+        routes.MapGet("/profile", ProfileAsync).RequireAuthorization();
+        routes.MapPut("/profile", UpdateProfileAsync).RequireAuthorization();
     }
 
     private static async Task<IResult> LoginAsync(HttpContext context, IAuthSessionService service, ContactAttemptLimiter limiter, CancellationToken cancellationToken)
@@ -67,6 +73,46 @@ public static class AuthSessionEndpoints
             userId = context.User.FindFirstValue("sub"),
             accountType = context.User.FindFirstValue("accountType")
         }, traceId = context.TraceIdentifier });
+
+    private static async Task<IResult> ProfileAsync(HttpContext context, ShuttleBookDbContext db, CancellationToken ct)
+    {
+        var user = await ProfileUser(context, db, ct);
+        if (user is null) return CustomerRegistrationEndpoints.Problem(context, 403, "FORBIDDEN");
+        context.Response.Headers.CacheControl = "no-store";
+        return Results.Ok(new { data = ProfileData(user), traceId = context.TraceIdentifier });
+    }
+
+    private static async Task<IResult> UpdateProfileAsync(HttpContext context, ShuttleBookDbContext db, CancellationToken ct)
+    {
+        var body = await CustomerRegistrationEndpoints.ReadBodyAsync(context, ProfileFields, ct);
+        if (body.Error is not null) return body.Error;
+        var name = body.Value!.Value.GetProperty("displayName").GetString()?.Trim();
+        if (name is null || name.Length is < 2 or > 80 || name.Any(char.IsControl))
+            return CustomerRegistrationEndpoints.Problem(context, 400, "VALIDATION_FAILED");
+        var user = await ProfileUser(context, db, ct);
+        if (user is null) return CustomerRegistrationEndpoints.Problem(context, 403, "FORBIDDEN");
+        user.DisplayName = name; user.UpdatedAt = DateTimeOffset.UtcNow;
+        db.AuditEvents.Add(new AuditEvent { ActorUserId = user.Id, Action = "account.profile_updated",
+            EntityType = "user", EntityId = user.Id, CorrelationId = context.TraceIdentifier,
+            CreatedAt = user.UpdatedAt });
+        await db.SaveChangesAsync(ct);
+        context.Response.Headers.CacheControl = "no-store";
+        return Results.Ok(new { data = ProfileData(user), traceId = context.TraceIdentifier });
+    }
+
+    private static async Task<User?> ProfileUser(HttpContext context, ShuttleBookDbContext db, CancellationToken ct)
+    {
+        if (!Guid.TryParse(context.User.FindFirstValue("sub"), out var id)) return null;
+        var user = await db.Users.SingleOrDefaultAsync(x => x.Id == id, ct);
+        return user is { AccountType: AccountType.Customer or AccountType.VenueOperator,
+            Status: UserStatus.Active or UserStatus.PendingOnboarding } &&
+            (user.EmailVerifiedAt is not null || user.PhoneVerifiedAt is not null) ? user : null;
+    }
+
+    private static object ProfileData(User user) => new { user.Id, user.DisplayName,
+        accountType = user.AccountType.ToString().ToUpperInvariant(),
+        contactType = user.NormalizedEmail is not null ? "email" : "phone",
+        contact = user.Email ?? user.Phone ?? "" };
 
     private static IResult TokenResponse(HttpContext context, AuthTokens tokens)
     {

@@ -29,6 +29,7 @@ public sealed class User
     public string? Email { get; set; }
     public string? NormalizedEmail { get; set; }
     public string? Phone { get; set; }
+    public string? DisplayName { get; set; }
     public string? NormalizedPhone { get; set; }
     public string PasswordHash { get; set; } = string.Empty;
     public DateTimeOffset? EmailVerifiedAt { get; set; }

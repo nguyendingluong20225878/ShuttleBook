@@ -924,6 +924,11 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<string>("DisplayName")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("display_name");
+
                     b.Property<string>("Email")
                         .HasMaxLength(320)
                         .HasColumnType("character varying(320)")
@@ -997,6 +1002,10 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("business_id");
 
+                    b.Property<Guid?>("CourtId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("court_id");
+
                     b.Property<string>("Kind")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -1049,7 +1058,14 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
 
                     b.HasIndex("BusinessId", "Status");
 
-                    b.ToTable("approval_requests", (string)null);
+                    b.HasIndex("CourtId", "VenueId");
+
+                    b.ToTable("approval_requests", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_approval_kind_resource", "(kind IN ('ONBOARDING','BUSINESS_REVISION') AND venue_id IS NULL AND court_id IS NULL) OR (kind IN ('VENUE_REVISION','VENUE_ADDITION') AND venue_id IS NOT NULL AND court_id IS NULL) OR (kind='COURT_ADDITION' AND venue_id IS NOT NULL AND court_id IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_approval_requests_status", "status IN ('PENDING','APPROVED','CHANGES_REQUESTED','SUPERSEDED')");
+                        });
                 });
 
             modelBuilder.Entity("ShuttleBook.Infrastructure.Onboarding.Business", b =>
@@ -1160,6 +1176,10 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("hold_minutes");
 
+                    b.Property<Guid?>("ImageUploadId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("image_upload_id");
+
                     b.Property<int>("MinimumBookingMinutes")
                         .HasColumnType("integer")
                         .HasColumnName("minimum_booking_minutes");
@@ -1185,6 +1205,8 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
                         .HasColumnName("version");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ImageUploadId");
 
                     b.HasIndex("VenueId", "Name")
                         .IsUnique();
@@ -1352,6 +1374,10 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("content_type");
 
+                    b.Property<Guid?>("CourtId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("court_id");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -1401,6 +1427,8 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
 
                     b.HasIndex("VenueId");
 
+                    b.HasIndex("CourtId", "VenueId");
+
                     b.HasIndex("BookingId", "OwnerUserId", "VenueId");
 
                     b.HasIndex("Id", "BookingId", "OwnerUserId", "VenueId")
@@ -1408,7 +1436,7 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
 
                     b.ToTable("media_uploads", null, t =>
                         {
-                            t.HasCheckConstraint("ck_media_booking_purpose", "(purpose='PAYMENT_PROOF' AND booking_id IS NOT NULL) OR (purpose IN ('QR','VENUE_IMAGE') AND booking_id IS NULL)");
+                            t.HasCheckConstraint("ck_media_booking_purpose", "(purpose='PAYMENT_PROOF' AND booking_id IS NOT NULL AND court_id IS NULL) OR (purpose IN ('QR','VENUE_IMAGE') AND booking_id IS NULL AND court_id IS NULL) OR (purpose='COURT_IMAGE' AND booking_id IS NULL AND court_id IS NOT NULL)");
                         });
                 });
 
@@ -1892,6 +1920,12 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
                         .WithMany()
                         .HasForeignKey("VenueId")
                         .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ShuttleBook.Infrastructure.Onboarding.Court", null)
+                        .WithMany()
+                        .HasForeignKey("CourtId", "VenueId")
+                        .HasPrincipalKey("Id", "VenueId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("ShuttleBook.Infrastructure.Onboarding.BusinessMembership", b =>
@@ -1911,6 +1945,11 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("ShuttleBook.Infrastructure.Onboarding.Court", b =>
                 {
+                    b.HasOne("ShuttleBook.Infrastructure.Onboarding.MediaUpload", null)
+                        .WithMany()
+                        .HasForeignKey("ImageUploadId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("ShuttleBook.Infrastructure.Onboarding.Venue", null)
                         .WithMany()
                         .HasForeignKey("VenueId")
@@ -1981,6 +2020,12 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
                         .HasForeignKey("VenueId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("ShuttleBook.Infrastructure.Onboarding.Court", null)
+                        .WithMany()
+                        .HasForeignKey("CourtId", "VenueId")
+                        .HasPrincipalKey("Id", "VenueId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("ShuttleBook.Infrastructure.Bookings.Booking", null)
                         .WithMany()

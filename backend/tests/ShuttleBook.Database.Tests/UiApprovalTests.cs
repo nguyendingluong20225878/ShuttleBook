@@ -112,10 +112,13 @@ public sealed partial class OnboardingFlowTests
             var detail = await Data(await adminClient.GetAsync(path)); var current = detail.GetProperty("current");
             Assert.Equal("Published Venue", current.GetProperty("venueName").GetString()); Assert.Equal(7, current.GetProperty("version").GetInt64());
             Assert.Equal("Published address", current.GetProperty("address").GetString()); Assert.Equal("Published contact", current.GetProperty("contact").GetString());
-            Assert.Equal("OLD", current.GetProperty("bankCode").GetString()); Assert.Equal("000123", current.GetProperty("accountNumber").GetString()); Assert.Equal(oldQr, current.GetProperty("qrUploadId").GetGuid());
+            Assert.False(current.TryGetProperty("bankCode", out _)); Assert.Equal("000123", current.GetProperty("accountNumber").GetString()); Assert.Equal(oldQr, current.GetProperty("qrUploadId").GetGuid());
             using var snapshot = JsonDocument.Parse(detail.GetProperty("snapshot").GetString()!); Assert.Equal("Proposed address", snapshot.RootElement.GetProperty("address").GetString());
+            Assert.False(snapshot.RootElement.TryGetProperty("bankCode", out _));
             await using var check = context(); Assert.Equal("Published address", (await check.Venues.SingleAsync(x => x.Id == venueId)).Address);
             Assert.Equal("PENDING", (await check.ApprovalRequests.SingleAsync(x => x.Id == approvalId)).Status);
+            using var persisted = JsonDocument.Parse((await check.ApprovalRequests.SingleAsync(x => x.Id == approvalId)).Snapshot);
+            Assert.Equal("NEW", persisted.RootElement.GetProperty("bankCode").GetString());
             Assert.Equal(auditsBeforeRead, await check.AuditEvents.CountAsync());
         });
     }

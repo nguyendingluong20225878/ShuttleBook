@@ -50,7 +50,7 @@ public static class BookingReadModel
             {
                 paymentId = p.Id, p.Status, p.ExpectedAmount,
                 expectedAmountExact = p.ExpectedAmount.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                confirmedAmountExact = p.ConfirmedAmount?.ToString(System.Globalization.CultureInfo.InvariantCulture), r.BankCode, r.AccountName,
+                confirmedAmountExact = p.ConfirmedAmount?.ToString(System.Globalization.CultureInfo.InvariantCulture), r.AccountName,
                 maskedAccountNumber = new string('*', Math.Max(0, r.AccountNumber.Length - 4)) + r.AccountNumber[^Math.Min(4, r.AccountNumber.Length)..],
                 qrUrl = !operatorView && b.Status == "AWAITING_TRANSFER" ? $"/api/v1/bookings/{b.Id}/qr" : null,
                 transferContent = series?.SeriesNo ?? b.BookingNo, p.FirstReportedAt, p.LastReportedAt, p.ConfirmedAmount, p.ConfirmedAt, p.ConfirmedBy

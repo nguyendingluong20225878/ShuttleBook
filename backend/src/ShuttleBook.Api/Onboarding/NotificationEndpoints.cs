@@ -28,20 +28,29 @@ public static class NotificationEndpoints
             (query.ContainsKey("limit") && (!int.TryParse(query["limit"], out limit) || limit is < 1 or > 100)) ||
             (query.ContainsKey("before") && (!Guid.TryParse(query["before"], out var parsed) || (before = parsed) == Guid.Empty)))
             return CustomerRegistrationEndpoints.Problem(http, 400, "VALIDATION_FAILED");
+        await using var transaction = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, ct);
         var scoped = Scoped(db, user);
         var unreadCount = await scoped.CountAsync(n => n.ReadAt == null, ct);
         if (before is Guid cursor) scoped = scoped.Where(x => x.Id.CompareTo(cursor) < 0);
         var rows = await (from n in scoped join message in db.OutboxMessages on n.OutboxMessageId equals message.Id
                           orderby n.Id descending select new { n.Id, n.Title, n.Body, n.CreatedAt, n.ReadAt,
-                              message.EventType, message.EntityId }).Take(limit + 1).ToListAsync(ct);
+                              message.EventType, message.EntityId,
+                              ProfileBusinessId = db.ApprovalRequests.Where(a => a.Id == message.EntityId &&
+                                  a.SubmittedBy == user.Id && db.BusinessMemberships.Any(m => m.BusinessId == a.BusinessId &&
+                                      m.UserId == user.Id && m.Role == "OWNER" && (m.Status == "PENDING" || m.Status == "ACTIVE")))
+                                  .Select(a => (Guid?)a.BusinessId).FirstOrDefault() }).Take(limit + 1).ToListAsync(ct);
         var data = rows.Take(limit).Select(n => new
         {
             n.Id, n.Title, n.Body, n.CreatedAt, n.ReadAt,
             bookingId = n.EventType.StartsWith("BOOKING_") || n.EventType.StartsWith("PAYMENT_") ? (Guid?)n.EntityId : null,
-            action = n.EventType == "PAYMENT_CONFIRMATION_OVERDUE" && user.AccountType == AccountType.Admin ? "ADMIN_PAYMENT_ALERT" :
-                OwnerEvents.Contains(n.EventType) ? "OPERATOR_BOOKING" :
-                n.EventType.StartsWith("BOOKING_") || n.EventType.StartsWith("PAYMENT_") ? "CUSTOMER_BOOKING" : null
+            profileBusinessId = user.AccountType == AccountType.VenueOperator && ProfileEvents.Contains(n.EventType) ? n.ProfileBusinessId : null,
+            action = n.EventType == "APPROVAL_SUBMITTED" && user.AccountType == AccountType.Admin ? "ADMIN_APPROVAL" :
+                ProfileEvents.Contains(n.EventType) && user.AccountType == AccountType.VenueOperator && n.ProfileBusinessId != null ? "PARTNER_PROFILE" :
+                n.EventType == "PAYMENT_CONFIRMATION_OVERDUE" && user.AccountType == AccountType.Admin ? "ADMIN_PAYMENT_ALERT" :
+                OwnerEvents.Contains(n.EventType) && user.AccountType == AccountType.VenueOperator ? "OPERATOR_BOOKING" :
+                user.AccountType == AccountType.Customer && (n.EventType.StartsWith("BOOKING_") || n.EventType.StartsWith("PAYMENT_")) ? "CUSTOMER_BOOKING" : null
         });
+        await transaction.CommitAsync(ct);
         http.Response.Headers.CacheControl = "no-store";
         return Results.Ok(new { data, unreadCount, nextCursor = rows.Count > limit ? rows[limit - 1].Id.ToString() : null,
             traceId = http.TraceIdentifier });
@@ -65,10 +74,12 @@ public static class NotificationEndpoints
             if (item is null) return CustomerRegistrationEndpoints.Problem(http, 404, "NOT_FOUND");
         }
         http.Response.Headers.CacheControl = "no-store";
-        return Results.Ok(new { data = new { item.Id, item.ReadAt }, traceId = http.TraceIdentifier });
+        var unreadCount = await Scoped(db, user).CountAsync(n => n.ReadAt == null, ct);
+        return Results.Ok(new { data = new { item.Id, item.ReadAt, unreadCount }, traceId = http.TraceIdentifier });
     }
 
     private static readonly string[] OwnerEvents = ["PAYMENT_TRANSFER_REPORTED", "PAYMENT_EVIDENCE_SUPPLEMENTED", "PAYMENT_CONFIRMATION_OVERDUE"];
+    private static readonly string[] ProfileEvents = ["APPROVAL_APPROVED", "APPROVAL_CHANGES_REQUESTED"];
     private static IQueryable<Notification> Scoped(ShuttleBookDbContext db, User user) =>
         from n in db.Notifications join message in db.OutboxMessages on n.OutboxMessageId equals message.Id
         where n.UserId == user.Id && (!OwnerEvents.Contains(message.EventType) ||
