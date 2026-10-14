@@ -6,11 +6,11 @@ Phạm vi: nhánh `codex/f09-local-readiness`, ba cổng Customer/Partner/Admin,
 
 | Mục tiêu | Ước lượng | Kết luận và bằng chứng |
 |---|---:|---|
-| Demo local với dữ liệu giả để phỏng vấn | 80/100 | Có thể trình diễn có hướng dẫn sau khi kiểm tra thủ công dữ liệu demo và chốt lại PostGIS/live suite trên commit cuối. Ba cổng build/typecheck, browser fixture 332 PASS; luồng thực và DB đang được chạy lại ở mốc này. |
+| Demo local với dữ liệu giả để phỏng vấn | 80/100 | Có thể trình diễn có hướng dẫn sau khi kiểm tra thủ công dữ liệu demo. Ba cổng build/typecheck, API 96/96, PostGIS 150/150, browser fixture 332 PASS và live 8/8 PASS trên source nhánh đã push. Hosted CI của SHA cuối chưa xác minh. |
 | Link demo công khai trên AWS | 45/100 | NO-GO hiện tại: chưa có HTTPS/domain, email/SMS OTP thật, cấu hình Linux/reverse proxy, S3 thật, backup/restore ngoài EC2, alert hoặc thử deployment. Tài khoản AWS Free Tier chỉ chứng minh có thể bắt đầu setup. |
 | Production với người dùng/giao dịch thật | Chưa chấm GO | NO-GO: ngoài các gate public demo còn cần quy trình hỗ trợ, bảo vệ dữ liệu, diễn tập phục hồi, theo dõi và kiểm định giao dịch thật. |
 
-Điểm local theo rubric 100 điểm: luồng nghiệp vụ 27/30; backend/dữ liệu 22/25; UX/UI/accessibility 16/20; kiểm thử/CI 12/15; vận hành/deploy 3/10. Các điểm này là nhận định của reviewer, không phải chỉ số tự động. Nếu PostGIS/live/hosted CI của commit cuối FAIL, cần hạ kết luận local cho đến khi sửa và chạy lại.
+Điểm local theo rubric 100 điểm: luồng nghiệp vụ 27/30; backend/dữ liệu 22/25; UX/UI/accessibility 16/20; kiểm thử/CI 12/15; vận hành/deploy 3/10. Các điểm này là nhận định của reviewer, không phải chỉ số tự động. Nếu hosted CI của commit cuối FAIL, cần sửa/chạy lại trước khi dùng nhánh đó làm bằng chứng phỏng vấn.
 
 ## Điểm mạnh có thể nói trong phỏng vấn
 
