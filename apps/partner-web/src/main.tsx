@@ -34,6 +34,7 @@ function retryMessage(response: Response): string {
 function PartnerIdentity() {
   const [view, setView] = useState<View>('register');
   const [contactType, setContactType] = useState<ContactType>('email');
+  const registrationContactType: ContactType = import.meta.env.DEV ? contactType : 'email';
   const [contact, setContact] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -52,9 +53,9 @@ function PartnerIdentity() {
     if (password !== confirmPassword) { setMessage('Mật khẩu nhập lại chưa khớp.'); return; }
     setSubmitting(true); setMessage('');
     try {
-      const response = await post('/partner-auth/register', { contactType, contact, password });
+      const response = await post('/partner-auth/register', { contactType: registrationContactType, contact, password });
       if (response.status === 202) {
-        setPassword(''); setConfirmPassword(''); setView('verify');
+        setPassword(''); setConfirmPassword(''); setContactType(registrationContactType); setView('verify');
         setMessage('Nếu thông tin hợp lệ, mã xác minh đã được gửi.');
       } else {
         const error = await errorCode(response);
@@ -145,18 +146,21 @@ function PartnerIdentity() {
     </section>
     <section className="auth-panel"><div>
     <nav aria-label="Tài khoản chủ sân">
-      {view !== 'register' && view !== 'session' && <button type="button" onClick={() => { setView('register'); setMessage(''); }}>Đăng ký</button>}{' '}
+      {view !== 'register' && view !== 'session' && <button type="button" onClick={() => {
+        if (!import.meta.env.DEV && contactType === 'phone') { setContactType('email'); setContact(''); }
+        setView('register'); setMessage('');
+      }}>Đăng ký</button>}{' '}
       {view !== 'login' && view !== 'session' && <button type="button" onClick={() => { setView('login'); setMessage(''); }}>Đăng nhập</button>}
     </nav>
 
     {view === 'register' && <form onSubmit={register}>
       <h2>Tạo tài khoản chủ sân</h2>
-      <label>Phương thức liên hệ<br /><select value={contactType} onChange={event => setContactType(event.target.value as ContactType)}>
+      {import.meta.env.DEV && <label>Phương thức liên hệ<br /><select value={contactType} onChange={event => setContactType(event.target.value as ContactType)}>
         <option value="email">Email</option><option value="phone">Số điện thoại</option>
-      </select></label><br /><br />
-      <label>{contactType === 'email' ? 'Email' : 'Số điện thoại E.164'}<br />
-        <input required type={contactType === 'email' ? 'email' : 'tel'} value={contact}
-          onChange={event => setContact(event.target.value)} placeholder={contactType === 'email' ? 'ban@example.com' : '+84901234567'} />
+      </select></label>}
+      <label>{registrationContactType === 'email' ? 'Email' : 'Số điện thoại E.164'}<br />
+        <input required type={registrationContactType === 'email' ? 'email' : 'tel'} value={contact}
+          onChange={event => setContact(event.target.value)} placeholder={registrationContactType === 'email' ? 'ban@example.com' : '+84901234567'} />
       </label><br /><br />
       <label>Mật khẩu<br /><input required type="password" minLength={12} value={password}
         onChange={event => setPassword(event.target.value)} /></label><br /><br />

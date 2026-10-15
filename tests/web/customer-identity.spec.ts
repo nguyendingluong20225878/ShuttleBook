@@ -10,6 +10,14 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/api/v1/browser-auth/**', async route => { if (!(await browserSessionRoute(route, page))) await route.fallback(); });
 });
 
+test('production customer registration offers email only', async ({ page }) => {
+  await page.goto(customerUrl);
+  await expect(page.getByRole('heading', { name: 'Tạo tài khoản khách' })).toBeVisible();
+  await expect(page.getByLabel('Email', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Phương thức liên hệ')).toHaveCount(0);
+  await expect(page.getByLabel('Số điện thoại E.164')).toHaveCount(0);
+});
+
 test('customer can register, verify, log in, restore after F5 and log out without token storage', async ({ page }) => {
   const requests: { path: string; body: Record<string, string>; authorization?: string }[] = [];
   let active = false;

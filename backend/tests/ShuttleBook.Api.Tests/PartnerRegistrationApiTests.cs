@@ -15,6 +15,23 @@ namespace ShuttleBook.Api.Tests;
 
 public sealed class PartnerRegistrationApiTests
 {
+    [Theory]
+    [InlineData("/api/v1/partner-auth/register", "{\"contactType\":\"phone\",\"contact\":\"+84901234567\",\"password\":\"Example-password-2026!\"}")]
+    [InlineData("/api/v1/partner-auth/verification-resend", "{\"contactType\":\"phone\",\"contact\":\"+84901234567\"}")]
+    [InlineData("/api/v1/partner-auth/verify", "{\"contactType\":\"phone\",\"contact\":\"+84901234567\",\"code\":\"123456\"}")]
+    public async Task Phone_verification_is_unavailable_outside_development_before_service_call(string path, string payload)
+    {
+        var service = new FakePartnerRegistrationService();
+        await using var factory = new PartnerApiFactory(service);
+        using var client = factory.CreateClient();
+        using var response = await client.PostAsync(path, new StringContent(payload, System.Text.Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("CONTACT_TYPE_UNAVAILABLE", await CodeAsync(response));
+        Assert.Equal(0, service.RegisterCalls);
+        Assert.Null(service.LastResend);
+        Assert.Null(service.LastVerify);
+    }
+
     [Fact]
     public async Task Register_accepts_only_partner_registration_fields_and_never_returns_a_code()
     {

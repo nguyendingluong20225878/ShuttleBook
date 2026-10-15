@@ -39,6 +39,7 @@ async function post(path: string, body: object, bearer?: string): Promise<Respon
 export function CustomerIdentity() {
   const [page, setPage] = useState<Page>(pageFromPath);
   const [contactType, setContactType] = useState<ContactType>(() => pendingContact()?.contactType ?? 'email');
+  const registrationContactType: ContactType = import.meta.env.DEV ? contactType : 'email';
   const [contact, setContact] = useState(() => pendingContact()?.contact ?? '');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -66,6 +67,7 @@ export function CustomerIdentity() {
 
   const navigate = (next: Page, state: object | null = null) => {
     go(`${next === 'register' ? '/' : `/${next}`}${location.search}`, false, state);
+    if (next === 'register' && !import.meta.env.DEV && contactType === 'phone') { setContactType('email'); setContact(''); }
     setPage(next); setMessage('');
   };
 
@@ -74,10 +76,10 @@ export function CustomerIdentity() {
     if (password !== confirmPassword) { setMessage('Mật khẩu nhập lại chưa khớp.'); return; }
     setSubmitting(true); setMessage('');
     try {
-      const response = await post('/register', { contactType, contact, password });
+      const response = await post('/register', { contactType: registrationContactType, contact, password });
       if (response.status === 202) {
         setPassword(''); setConfirmPassword(''); setCode('');
-        navigate('verify', { pendingContact: { contactType, contact } });
+        navigate('verify', { pendingContact: { contactType: registrationContactType, contact } });
         setMessage('Nếu thông tin hợp lệ, mã xác minh đã được gửi.');
       } else {
         const failure = (await response.json() as { code?: string }).code;
@@ -159,8 +161,8 @@ export function CustomerIdentity() {
       {page === 'register' && <form className="identity-form" onSubmit={submitRegistration} aria-busy={submitting}>
         <h2>Tạo tài khoản khách</h2>
         <p className="form-note">Tạo tài khoản để tiếp tục đặt sân và theo dõi thanh toán.</p>
-        <label>Phương thức liên hệ<select value={contactType} onChange={event => setContactType(event.target.value as ContactType)}><option value="email">Email</option><option value="phone">Số điện thoại</option></select></label>
-        <label>{contactType === 'email' ? 'Email' : 'Số điện thoại E.164'}<input required type={contactType === 'email' ? 'email' : 'tel'} autoComplete={contactType === 'email' ? 'email' : 'tel'} value={contact} onChange={event => setContact(event.target.value)} placeholder={contactType === 'email' ? 'ban@example.com' : '+84901234567'} /></label>
+        {import.meta.env.DEV && <label>Phương thức liên hệ<select value={contactType} onChange={event => setContactType(event.target.value as ContactType)}><option value="email">Email</option><option value="phone">Số điện thoại</option></select></label>}
+        <label>{registrationContactType === 'email' ? 'Email' : 'Số điện thoại E.164'}<input required type={registrationContactType === 'email' ? 'email' : 'tel'} autoComplete={registrationContactType === 'email' ? 'email' : 'tel'} value={contact} onChange={event => setContact(event.target.value)} placeholder={registrationContactType === 'email' ? 'ban@example.com' : '+84901234567'} /></label>
         <label>Mật khẩu<input required type="password" autoComplete="new-password" minLength={12} aria-describedby="customer-password-help" value={password} onChange={event => setPassword(event.target.value)} /></label>
         <label>Nhập lại mật khẩu<input required type="password" autoComplete="new-password" minLength={12} aria-invalid={message === 'Mật khẩu nhập lại chưa khớp.' ? true : undefined} value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} /></label>
         <p id="customer-password-help" className="form-note">Tối thiểu 12 ký tự, gồm ít nhất 3 nhóm: chữ thường, chữ hoa, số, ký tự đặc biệt.</p>

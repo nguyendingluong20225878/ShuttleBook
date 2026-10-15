@@ -7,6 +7,14 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+test('production partner registration offers email only', async ({ page }) => {
+  await page.goto('http://localhost:5174');
+  await expect(page.getByRole('heading', { name: 'Tạo tài khoản chủ sân' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Email' })).toBeVisible();
+  await expect(page.getByLabel('Phương thức liên hệ')).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: 'Số điện thoại E.164' })).toHaveCount(0);
+});
+
 test('partner can register, verify, log in and log out without persisting tokens in the browser', async ({ page }) => {
   const requests: { path: string; body: unknown }[] = [];
   await page.route('http://localhost:5080/api/v1/**', async route => {

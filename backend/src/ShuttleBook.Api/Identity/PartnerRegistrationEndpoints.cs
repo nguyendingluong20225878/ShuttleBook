@@ -23,6 +23,8 @@ public static class PartnerRegistrationEndpoints
         var body = await ReadBodyAsync(context, RegisterFields, cancellationToken);
         if (body.Error is not null) return body.Error;
         var value = body.Value!.Value;
+        var unavailable = RejectUnavailableContact(context, value);
+        if (unavailable is not null) return unavailable;
         if (!limiter.TryAcquire("register", value.GetProperty("contactType").GetString()!, value.GetProperty("contact").GetString()!,
             configuration.GetValue("Identity:RateLimits:RegisterPerContact", 3), out var retryAfter))
             return RateLimited(context, retryAfter);
@@ -41,6 +43,8 @@ public static class PartnerRegistrationEndpoints
         var body = await ReadBodyAsync(context, VerifyFields, cancellationToken);
         if (body.Error is not null) return body.Error;
         var value = body.Value!.Value;
+        var unavailable = RejectUnavailableContact(context, value);
+        if (unavailable is not null) return unavailable;
         if (!limiter.TryAcquire("verify", value.GetProperty("contactType").GetString()!, value.GetProperty("contact").GetString()!, 10, out var retryAfter))
             return RateLimited(context, retryAfter);
         var result = await service.VerifyAsync(new VerifyPartnerContactCommand(
@@ -64,6 +68,8 @@ public static class PartnerRegistrationEndpoints
         var body = await ReadBodyAsync(context, ResendFields, cancellationToken);
         if (body.Error is not null) return body.Error;
         var value = body.Value!.Value;
+        var unavailable = RejectUnavailableContact(context, value);
+        if (unavailable is not null) return unavailable;
         if (!limiter.TryAcquire("register", value.GetProperty("contactType").GetString()!, value.GetProperty("contact").GetString()!,
             configuration.GetValue("Identity:RateLimits:RegisterPerContact", 3), out var retryAfter))
             return RateLimited(context, retryAfter);

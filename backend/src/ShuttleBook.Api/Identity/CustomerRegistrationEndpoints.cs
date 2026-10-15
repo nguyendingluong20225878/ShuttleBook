@@ -21,6 +21,8 @@ public static class CustomerRegistrationEndpoints
     {
         var body = await ReadBodyAsync(context, RegisterFields, cancellationToken);
         if (body.Error is not null) return body.Error;
+        var unavailable = RejectUnavailableContact(context, body.Value!.Value);
+        if (unavailable is not null) return unavailable;
         if (!limiter.TryAcquire("register", body.Value!.Value.GetProperty("contactType").GetString()!,
             body.Value.Value.GetProperty("contact").GetString()!, configuration.GetValue("Identity:RateLimits:RegisterPerContact", 3), out var retryAfter))
             return RateLimited(context, retryAfter);
@@ -43,6 +45,8 @@ public static class CustomerRegistrationEndpoints
     {
         var body = await ReadBodyAsync(context, VerifyFields, cancellationToken);
         if (body.Error is not null) return body.Error;
+        var unavailable = RejectUnavailableContact(context, body.Value!.Value);
+        if (unavailable is not null) return unavailable;
         if (!limiter.TryAcquire("verify", body.Value!.Value.GetProperty("contactType").GetString()!,
             body.Value.Value.GetProperty("contact").GetString()!, 10, out var retryAfter))
             return RateLimited(context, retryAfter);
@@ -63,6 +67,8 @@ public static class CustomerRegistrationEndpoints
     {
         var body = await ReadBodyAsync(context, ResendFields, cancellationToken);
         if (body.Error is not null) return body.Error;
+        var unavailable = RejectUnavailableContact(context, body.Value!.Value);
+        if (unavailable is not null) return unavailable;
         if (!limiter.TryAcquire("register", body.Value!.Value.GetProperty("contactType").GetString()!,
             body.Value.Value.GetProperty("contact").GetString()!, configuration.GetValue("Identity:RateLimits:RegisterPerContact", 3), out var retryAfter))
             return RateLimited(context, retryAfter);
@@ -79,6 +85,11 @@ public static class CustomerRegistrationEndpoints
             _ => Problem(context, StatusCodes.Status429TooManyRequests, "RATE_LIMITED")
         };
     }
+
+    internal static IResult? RejectUnavailableContact(HttpContext context, JsonElement value) =>
+        !context.RequestServices.GetRequiredService<IHostEnvironment>().IsDevelopment() &&
+        string.Equals(value.GetProperty("contactType").GetString(), "phone", StringComparison.OrdinalIgnoreCase)
+            ? Problem(context, StatusCodes.Status400BadRequest, "CONTACT_TYPE_UNAVAILABLE") : null;
 
     internal static async Task<(JsonElement? Value, IResult? Error)> ReadBodyAsync(HttpContext context, HashSet<string> fields, CancellationToken cancellationToken)
     {

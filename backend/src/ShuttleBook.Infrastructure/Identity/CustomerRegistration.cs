@@ -34,10 +34,19 @@ public sealed class SmtpContactVerificationDelivery(IConfiguration configuration
 {
     public async Task DeliverAsync(ContactType contactType, string normalizedContact, string code, CancellationToken cancellationToken)
     {
+        if (contactType == ContactType.Phone && !configuration.GetValue("Identity:Delivery:AllowSyntheticPhone", false))
+            throw new InvalidOperationException("Phone verification delivery is unavailable.");
         var host = configuration["Identity:Delivery:SmtpHost"];
         var port = int.TryParse(configuration["Identity:Delivery:SmtpPort"], out var configuredPort) ? configuredPort : 0;
         var sender = configuration["Identity:Delivery:From"];
-        if (string.IsNullOrWhiteSpace(host) || port is < 1 or > 65535 || string.IsNullOrWhiteSpace(sender))
+        var username = configuration["Identity:Delivery:SmtpUsername"];
+        var password = configuration["Identity:Delivery:SmtpPassword"];
+        var useStartTls = configuration.GetValue("Identity:Delivery:SmtpUseStartTls", false);
+        var requireTlsAndAuth = configuration.GetValue("Identity:Delivery:RequireTlsAndAuth", true);
+        if (string.IsNullOrWhiteSpace(host) || port is < 1 or > 65535 ||
+            !MailAddress.TryCreate(sender, out _) ||
+            (string.IsNullOrWhiteSpace(username) != string.IsNullOrWhiteSpace(password)) ||
+            (requireTlsAndAuth && (!useStartTls || string.IsNullOrWhiteSpace(username))))
         {
             throw new InvalidOperationException("Identity contact delivery is not configured.");
         }
@@ -52,7 +61,12 @@ public sealed class SmtpContactVerificationDelivery(IConfiguration configuration
             Body = $"Mã xác minh của bạn là: {code}. Mã hết hạn sau 10 phút.",
             IsBodyHtml = false
         };
-        using var smtp = new SmtpClient(host, port) { EnableSsl = false, DeliveryMethod = SmtpDeliveryMethod.Network };
+        using var smtp = new SmtpClient(host, port)
+        {
+            EnableSsl = useStartTls, DeliveryMethod = SmtpDeliveryMethod.Network,
+            UseDefaultCredentials = false, Timeout = 15_000
+        };
+        if (!string.IsNullOrWhiteSpace(username)) smtp.Credentials = new NetworkCredential(username, password);
         await smtp.SendMailAsync(message, cancellationToken);
     }
 }

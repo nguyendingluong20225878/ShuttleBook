@@ -16,6 +16,22 @@ namespace ShuttleBook.Api.Tests;
 
 public sealed class CustomerRegistrationApiTests
 {
+    [Theory]
+    [InlineData("/api/v1/auth/register", "{\"contactType\":\"phone\",\"contact\":\"+84901234567\",\"password\":\"Example-password-2026!\"}")]
+    [InlineData("/api/v1/auth/verification-resend", "{\"contactType\":\"phone\",\"contact\":\"+84901234567\"}")]
+    [InlineData("/api/v1/auth/verify-contact", "{\"contactType\":\"phone\",\"contact\":\"+84901234567\",\"code\":\"123456\"}")]
+    public async Task Phone_verification_is_unavailable_outside_development_before_service_call(string path, string payload)
+    {
+        var service = new FakeCustomerRegistrationService();
+        await using var factory = new CustomerApiFactory(service);
+        using var client = factory.CreateClient();
+        using var response = await client.PostAsync(path, new StringContent(payload, System.Text.Encoding.UTF8, "application/json"));
+        await AssertProblemAsync(response, HttpStatusCode.BadRequest, "CONTACT_TYPE_UNAVAILABLE");
+        Assert.Equal(0, service.RegisterCalls);
+        Assert.Null(service.LastResend);
+        Assert.Null(service.LastVerify);
+    }
+
     [Fact]
     public async Task Register_verify_and_resend_use_allowlisted_contract_without_secrets()
     {
