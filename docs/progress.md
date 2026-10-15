@@ -1,5 +1,10 @@
 # Tiến độ ShuttleBook
 
+## Nạp SMTP SES từ `.env` local — 2026-10-15 (PASS kiểm tra script; SES OTP NOT RUN)
+
+- Theo yêu cầu người dùng, `scripts/Use-LocalEnvironment.ps1` nạp đúng các khóa `Identity__Delivery__*` và ba origin CORS từ `.env` bị Git bỏ qua; `.env.example` chỉ có placeholder. Không ghi/đọc/in SMTP credential thật trong lượt sửa này, không đổi API/database. Bài thử Staging local có thể chạy bằng `npm.cmd run dev:api` sau khi người dùng tự điền `.env`. [Các bước và cách quay về Mailpit](runbooks/F09-demo-otp-aws-steps-2026-10-14.md).
+- **PASS:** `git check-ignore -v .env` xác nhận file bị ignore; PowerShell parser của loader không có lỗi; `git diff --check` exit 0. **NOT RUN:** đăng ký/nhận/xác minh OTP qua SES từ ShuttleBook, vì SMTP credential chỉ có trên máy người dùng. Người dùng đã xác nhận SES identity Verified tại Singapore và thư thử trực tiếp từ SES đến Gmail Spam; đây chỉ là bằng chứng gửi SES Console, chưa phải tích hợp ứng dụng. Chưa commit/push/merge hoặc deploy; F09 production vẫn **NO-GO**.
+
 ## Bỏ lưu/xóa sân, làm mới hồ sơ Customer và chuẩn bị email OTP — 2026-10-15 (PASS local; hosted CI theo xác nhận người dùng)
 
 - Quyết định mới của người dùng ưu tiên contract cũ: mỗi cơ sở chỉ còn **Thêm sân**, tự lấy số cao nhất + 1; bỏ chỉnh số/lưu hàng loạt, **không thêm nút xóa sân**. Hồ sơ Customer có bố cục và avatar rõ hơn trên desktop/mobile, giữ API hồ sơ cũ. [Contract và testcase](features/F09-court-profile-email-first-2026-10-15.md).
