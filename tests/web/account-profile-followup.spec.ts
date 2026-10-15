@@ -46,6 +46,10 @@ for (const portal of ['customer', 'partner'] as const) {
       await page.getByRole('button', { name: 'Mở thông tin cá nhân' }).click();
     }
     await expect(page.locator('.account-profile').getByRole('heading', { name: 'Thông tin cá nhân' })).toBeVisible();
+    if (portal === 'customer') {
+      await expect(page.getByRole('complementary', { name: 'Hướng dẫn tài khoản' })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    }
     await expect(page.getByLabel('Email đăng nhập')).toHaveValue(`${portal}@example.test`);
     await expect(page.getByLabel('Email đăng nhập')).toHaveAttribute('readonly');
     await page.locator('.account-profile').getByLabel('Tên hiển thị').fill('Tên thử nghiệm');

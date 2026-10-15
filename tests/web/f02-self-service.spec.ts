@@ -117,9 +117,8 @@ test('Partner numbers courts within each venue and keeps action buttons compact'
   await expect(first.getByRole('button', { name: `Thêm sân tại ${longName}`, exact: true })).toHaveText('Thêm sân');
   await expect(page.getByRole('button', { name: `Gỡ ảnh cơ sở ${longName}`, exact: true })).toHaveText('Gỡ ảnh');
   const actions = first.locator('.court-batch-actions');
-  const saveBox = (await actions.getByRole('button', { name: 'Lưu tất cả số sân' }).boundingBox())!;
   const addBox = (await actions.getByRole('button', { name: `Thêm sân tại ${longName}` }).boundingBox())!;
-  if (info.project.name === 'desktop') expect(addBox.x).toBeGreaterThan(saveBox.x + saveBox.width - 2);
+  await expect(actions.getByRole('button')).toHaveCount(1);
   expect(addBox.width).toBeLessThan(180);
   expect(addBox.height).toBeGreaterThanOrEqual(44);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -173,7 +172,7 @@ test('venue setup groups court actions and links exact draft through pricing tab
   const api = await partnerFixture(page);
   const group = page.getByRole('region', { name: 'Các sân tại Cơ sở A' });
   const row = group.locator('.court-item').filter({ hasText: 'Sân mới:' });
-  await expect(group.getByRole('button', { name: 'Lưu tất cả số sân' })).toHaveCount(1);
+  await expect(group.getByRole('button', { name: 'Lưu tất cả số sân' })).toHaveCount(0);
   await expect(row.getByRole('button', { name: /^Xác nhận/ })).toHaveCount(0);
   await expect(group.getByRole('button', { name: 'Thêm sân tại Cơ sở A' })).toBeVisible();
   await row.getByRole('link', { name: /Thiết lập giờ & giá/ }).click();
@@ -203,23 +202,22 @@ test('venue setup groups court actions and links exact draft through pricing tab
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-test('one venue button saves every edited court number together', async ({ page }) => {
+test('Partner court numbers are read-only and adding a court does not rename existing courts', async ({ page }) => {
   const api = await partnerFixture(page);
   api.business.venues[0].courts[0].name = 'Sân 1';
   api.business.venues[0].courts[1].name = 'Sân 2';
   await page.getByRole('button', { name: 'Tải lại hồ sơ', exact: true }).click();
   const group = page.getByRole('region', { name: 'Các sân tại Cơ sở A' });
-  await group.getByRole('spinbutton', { name: 'Số sân Sân 1 tại Cơ sở A' }).fill('2');
-  await group.getByRole('spinbutton', { name: 'Số sân Sân 2 tại Cơ sở A' }).fill('1');
-  await expect(group.getByRole('button', { name: 'Lưu tất cả số sân' })).toBeEnabled();
-  await group.getByRole('button', { name: 'Lưu tất cả số sân' }).click();
-  await expect.poll(() => api.calls.filter(call => call.path.endsWith('/v1/court-numbers')).length).toBe(1);
-  expect(api.calls.find(call => call.path.endsWith('/v1/court-numbers'))!.body.courts).toEqual([
-    { id: 'c1', version: 7, number: 2 }, { id: 'c2', version: 1, number: 1 }]);
-  await expect(group.getByRole('button', { name: 'Lưu tất cả số sân' })).toBeDisabled();
+  await expect(group.getByRole('spinbutton')).toHaveCount(0);
+  await expect(group.getByRole('button', { name: /Lưu tất cả số sân|Xóa sân/ })).toHaveCount(0);
+  await group.getByRole('button', { name: 'Thêm sân tại Cơ sở A' }).click();
+  expect(api.calls.filter(call => call.path.endsWith('/v1/court-numbers'))).toEqual([]);
+  expect(api.calls.filter(call => call.method === 'DELETE' && call.path.includes('/courts/'))).toEqual([]);
+  expect(api.calls.find(call => call.path.endsWith('/v1/courts') && call.method === 'POST')?.body).toEqual({ name: 'Sân 3' });
   await page.reload();
-  await expect(group.getByRole('spinbutton', { name: 'Số sân Sân 2 tại Cơ sở A' })).toHaveValue('2');
-  await expect(group.getByRole('spinbutton', { name: 'Số sân Sân 1 tại Cơ sở A' })).toHaveValue('1');
+  await expect(group.getByText('Sân 1:', { exact: false })).toBeVisible();
+  await expect(group.getByText('Sân 2:', { exact: false })).toBeVisible();
+  await expect(group.getByText('Sân 3:', { exact: false })).toBeVisible();
 });
 
 test('initial venue QR is set inside venue setup without bank code and revision sends payment fields only', async ({ page }) => {

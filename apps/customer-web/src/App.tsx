@@ -15,8 +15,16 @@ function CustomerProfilePage() {
   if (!session) return <CustomerShell><section className="panel account-profile"><h1>Thông tin cá nhân</h1>
     <p>Đăng nhập để xem và chỉnh sửa thông tin.</p><a href="/login">Đăng nhập</a></section></CustomerShell>;
   return <CustomerShell title="Thông tin cá nhân" eyebrow="SHUTTLEBOOK / TÀI KHOẢN"
-    description="Cập nhật tên hiển thị trên tài khoản đặt sân của bạn.">
-    <AccountProfile request={request} onSaved={setDisplayName} /></CustomerShell>;
+    description="Thông tin dùng khi bạn đặt sân và theo dõi đơn.">
+    <div className="customer-profile-layout">
+      <AccountProfile request={request} onSaved={setDisplayName} variant="customer" />
+      <aside className="customer-profile-aside" aria-label="Hướng dẫn tài khoản">
+        <span className="customer-profile-aside-icon" aria-hidden="true">✓</span>
+        <h2>Tài khoản của bạn</h2>
+        <p>Tên hiển thị giúp bạn nhận ra tài khoản đang sử dụng. Email hoặc số điện thoại đăng nhập được giữ nguyên để bảo vệ việc xác minh.</p>
+        <a href="/me/bookings">Xem đơn đặt sân <span aria-hidden="true">→</span></a>
+      </aside>
+    </div></CustomerShell>;
 }
 
 export function App() {

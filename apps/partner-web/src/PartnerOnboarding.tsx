@@ -85,7 +85,6 @@ export function PartnerOnboarding({ sendRequest, onLogout, logoutBusy }: {
   const [latitude, setLatitude] = useState('');
   const [longitude, setLongitude] = useState('');
   const [createPickerKey, setCreatePickerKey] = useState(0);
-  const [courtNumbers, setCourtNumbers] = useState<Record<string, string>>({});
   const [accountName, setAccountName] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
   const [qrFile, setQrFile] = useState<File | null>(null);
@@ -137,8 +136,6 @@ export function PartnerOnboarding({ sendRequest, onLogout, logoutBusy }: {
         loadedBusiness.current = target ?? '';
       }
       setBusinesses(list); setSelected(target ?? ''); setDetail(next); setStale(false);
-      setCourtNumbers(Object.fromEntries(next?.venues.flatMap(venue => venue.courts.map(court =>
-        [court.id, courtNumberOf(court.name)])) ?? []));
     } catch (error) {
       if (error instanceof PartnerApiError && [401, 403, 404].includes(error.status)) {
         setDetail(null); setBusinesses([]); loadedBusiness.current = ''; scheduleDirty.current = false;
@@ -195,8 +192,6 @@ export function PartnerOnboarding({ sendRequest, onLogout, logoutBusy }: {
   const pendingApproval = approvals.some(approval => approval.status === 'PENDING');
   const itemApproval = (venueId: string, courtId?: string) => approvals.find(approval => courtId
     ? approval.courtId === courtId : approval.venueId === venueId && !approval.courtId);
-  const courtNumbersChanged = (venue: Venue) => venue.courts.some(court =>
-    (courtNumbers[court.id] ?? courtNumberOf(court.name)) !== courtNumberOf(court.name));
 
   return <PartnerShell page={page} navigate={navigate} unread={notifications.unread}
     onLogout={() => { if (allowScheduleLeave()) onLogout(); }} logoutBusy={logoutBusy || scheduleBusy} businessControl={
@@ -249,7 +244,7 @@ export function PartnerOnboarding({ sendRequest, onLogout, logoutBusy }: {
       {page === 'venues' && detail.status === 'ACTIVE' && <section className="panel" role="note">
         <h3>Thêm cơ sở hoặc sân sau khi duyệt</h3>
         <p>Cơ sở mới cần Admin duyệt. Với cơ sở đang công bố, thêm sân nháp, thiết lập lịch và giá rồi bấm Xác nhận để khách có thể đặt ngay.</p>
-        <p>Ảnh và số sân có thể đổi trực tiếp. Lịch và giá cho đơn mới được quản lý ở Lịch & giá.</p>
+        <p>Ảnh cơ sở có thể đổi trực tiếp. Sân mới tự nhận số tiếp theo; lịch và giá cho đơn mới được quản lý ở Lịch & giá.</p>
       </section>}
       {page === 'profile' && detail.status === 'ACTIVE' && !pendingApproval && <form key={`revision-${detail.version}`} onSubmit={event => submit(event, async () => {
         const fields = new FormData(event.currentTarget);
@@ -348,24 +343,11 @@ export function PartnerOnboarding({ sendRequest, onLogout, logoutBusy }: {
             ? 'Lưu lại giờ và giá để công bố sân theo quy trình mới.'
             : 'Sân thuộc hồ sơ cơ sở đang chờ duyệt; khách chưa thể đặt sân này.'}</p>}
           {publishedVenue(v) && c.status === 'INACTIVE' && <p className="muted">Lưu giờ và giá hợp lệ để sân tự công bố. QR dùng chung của cơ sở.</p>}
-          {editableCourt(v, c) && <div className="court-action-form">
-            {!courtNumberOf(c.name) && <p className="muted">Tên hiện tại: {c.name}. Nhập số nếu muốn đổi sang cách gọi Sân 1, Sân 2…</p>}
-            <label>Số sân <input aria-label={`Số sân ${c.name} tại ${v.name}`} type="number" min="1" max="2147483647" step="1"
-              value={courtNumbers[c.id] ?? courtNumberOf(c.name)} onChange={event => setCourtNumbers(previous => ({ ...previous, [c.id]: event.target.value }))} /></label>
-          </div>}
           <a className="court-setup-link" href={`#/schedule?${new URLSearchParams({ tab: 'pricing', businessId: detail.id, venueId: v.id, courtId: c.id })}`}>
             {editableCourt(v, c) || publishedVenue(v) && c.status === 'PENDING_APPROVAL' ? 'Thiết lập giờ & giá' : 'Xem giờ & giá'} →</a>
         </div>)}</div>
         {page === 'venues' && (draftVenue(v) || publishedVenue(v)) && <div className="court-batch-actions">
-          <button type="button" disabled={busy || !v.courts.length || !v.courts.every(c => editableCourt(v, c)) || !courtNumbersChanged(v)} onClick={() => void run(async () => {
-            const changes = v.courts.map(c => ({ id: c.id, version: c.version, number: Number(courtNumbers[c.id] ?? courtNumberOf(c.name)) }));
-            if (changes.some(c => !Number.isInteger(c.number) || c.number < 1 || c.number > 2147483647) ||
-              new Set(changes.map(c => c.number)).size !== changes.length)
-              throw new Error('Mỗi sân cần số nguyên dương riêng trong cơ sở.');
-            await request(`/partner-onboarding/venues/${v.id}/court-numbers`, 'PUT', { courts: changes });
-            await load(detail.id);
-          }, 'Đã lưu tất cả số sân trong cơ sở.')}>Lưu tất cả số sân</button>
-          <button type="button" className="secondary" disabled={busy || courtNumbersChanged(v) || !nextCourtNumber(v.courts)}
+          <button type="button" className="secondary" disabled={busy || !nextCourtNumber(v.courts)}
             aria-label={`Thêm sân tại ${v.name}`} onClick={() => void run(async () => {
               const number = nextCourtNumber(v.courts);
               if (!number) throw new Error('Số sân đã đạt giới hạn.');
@@ -373,13 +355,11 @@ export function PartnerOnboarding({ sendRequest, onLogout, logoutBusy }: {
               await load(detail.id);
             }, draftVenue(v) ? 'Đã thêm sân. Thiết lập giờ và giá trước khi gửi duyệt.'
               : 'Đã thêm sân. Lưu giờ và giá để sân tự công bố.')}>Thêm sân</button>
-          {courtNumbersChanged(v) && <small>Lưu tất cả số sân trước khi thêm sân hoặc gửi duyệt.</small>}
-          {v.courts.some(c => !editableCourt(v, c)) && <small>Sân đang chờ duyệt chỉ đổi số sau khi được công bố.</small>}
         </div>}
         </section>
         {page === 'venues' && draftVenue(v) && <div className="venue-submit-row">
           <p>Trước khi gửi duyệt: lưu QR nhận tiền, thêm sân và thiết lập giờ/giá. Ảnh cơ sở là tùy chọn.</p>
-          {detail.status === 'ACTIVE' ? <button type="button" disabled={busy || pendingApproval || courtNumbersChanged(v)}
+          {detail.status === 'ACTIVE' ? <button type="button" disabled={busy || pendingApproval}
             aria-label={`Gửi duyệt cơ sở ${v.name}`} onClick={() => void run(async () => {
               await request(`/partner-onboarding/venues/${v.id}/submit`, 'POST'); await load(detail.id);
             })}>Gửi duyệt cơ sở</button> : <span className="muted">Nút gửi hồ sơ doanh nghiệp ở cuối trang.</span>}
@@ -405,7 +385,7 @@ export function PartnerOnboarding({ sendRequest, onLogout, logoutBusy }: {
       {page === 'venues' && detail.status === 'DRAFT' && <section className="panel venue-final-submit">
         <h3>Hoàn tất hồ sơ doanh nghiệp</h3>
         <p>Kiểm tra từng cơ sở: thông tin liên hệ, QR nhận tiền, số sân, lịch mở cửa và giá. Ảnh cơ sở là tùy chọn.</p>
-        <button type="button" className="primary-action" disabled={busy || detail.venues.some(courtNumbersChanged)}
+        <button type="button" className="primary-action" disabled={busy}
           onClick={() => void run(async () => {
             await request(`/partner-onboarding/businesses/${detail.id}/submit`, 'POST'); await load(detail.id);
           })}>Gửi hồ sơ duyệt</button>

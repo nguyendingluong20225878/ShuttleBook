@@ -373,6 +373,28 @@ a:hover { color: var(--customer-primary-dark); }
 .account-profile form { display: grid; gap: 16px; }
 .account-profile label { display: grid; gap: 7px; }
 .account-profile input { width: 100%; }
+.customer-profile-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(250px, 310px); align-items: start; gap: 22px; max-width: 1050px; }
+.customer-profile-layout .account-profile { max-width: none; margin: 0; padding: 0; overflow: hidden; border-radius: 18px; box-shadow: 0 12px 30px #15382d09; }
+.account-profile-customer .account-profile-heading { display: flex; align-items: center; gap: 18px; padding: 28px 30px; border-bottom: 1px solid var(--customer-border); background: linear-gradient(120deg, #e5f3ee, #f7fbf9); }
+.account-profile-avatar { width: 58px; height: 58px; flex: 0 0 58px; display: grid; place-items: center; border-radius: 17px; background: var(--customer-primary); color: #fff; font-size: 20px; font-weight: 800; }
+.account-profile-heading h2 { margin: 2px 0 3px; font-size: clamp(20px, 2vw, 25px); line-height: 1.2; }
+.account-profile-heading p { margin: 0; color: var(--customer-muted); font-size: 13px; }
+.account-profile-heading .account-profile-kicker { color: var(--customer-primary-dark); font-size: 10px; font-weight: 800; letter-spacing: .12em; }
+.customer-profile-layout .account-profile form { gap: 20px; padding: 30px; }
+.customer-profile-layout .account-profile label { gap: 8px; font-weight: 700; }
+.customer-profile-layout .account-profile input { min-height: 46px; padding: 10px 13px; border: 1px solid #aac5ba; border-radius: 10px; background: #fff; color: var(--customer-text); }
+.customer-profile-layout .account-profile input[readonly] { background: #f2f6f4; color: #536a61; }
+.customer-profile-layout .account-profile .account-profile-help { margin: -8px 0 0; color: var(--customer-muted); font-size: 13px; }
+.customer-profile-layout .account-profile button { justify-self: start; min-height: 44px; padding: 10px 19px; border: 0; border-radius: 10px; background: var(--customer-primary); color: #fff; font-weight: 700; }
+.customer-profile-layout .account-profile button:hover { background: var(--customer-primary-dark); }
+.customer-profile-layout .account-profile button:disabled { opacity: .55; cursor: not-allowed; }
+.customer-profile-layout .account-profile > [role='alert'], .customer-profile-layout .account-profile > [role='status'] { margin: 20px 30px; }
+.customer-profile-layout .account-profile .account-profile-saved { margin: 0; color: #176c4e; font-weight: 650; }
+.customer-profile-aside { padding: 25px; border: 1px solid var(--customer-border); border-radius: 18px; background: #fff; }
+.customer-profile-aside-icon { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 11px; background: #e1f4eb; color: #167054; font-weight: 800; }
+.customer-profile-aside h2 { margin: 18px 0 10px; font-size: 18px; }
+.customer-profile-aside p { margin: 0; color: var(--customer-muted); font-size: 14px; line-height: 1.6; }
+.customer-profile-aside a { display: inline-flex; gap: 8px; align-items: center; margin-top: 24px; font-weight: 700; text-decoration: none; }
 .customer-sidebar-account strong, .customer-sidebar-account small { display: block; }
 .customer-sidebar-account small { color: var(--customer-muted); font-size: 11px; margin-top: 2px; }
 .customer-avatar { flex: 0 0 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; background: #e8f4f0; color: var(--customer-primary-dark); font-size: 11px; font-weight: 700; }
@@ -410,6 +432,7 @@ a:hover { color: var(--customer-primary-dark); }
   .customer-workspace .identity-steps { display: none; }
 }
 @media (max-width: 800px) {
+  .customer-profile-layout { grid-template-columns: minmax(0, 1fr); }
   .customer-shell { display: block; }
   .customer-shell .site-header { position: static; height: auto; padding: 16px 20px 12px; border-right: 0; border-bottom: 1px solid var(--customer-border); gap: 12px; }
   .site-header .brand { padding: 0; }
@@ -423,6 +446,10 @@ a:hover { color: var(--customer-primary-dark); }
   .customer-workspace .identity-layout { margin: 0 auto; }
 }
 @media (max-width: 520px) {
+  .account-profile-customer .account-profile-heading { align-items: flex-start; padding: 22px 20px; gap: 13px; }
+  .account-profile-avatar { width: 46px; height: 46px; flex-basis: 46px; border-radius: 13px; font-size: 16px; }
+  .customer-profile-layout .account-profile form { padding: 22px 20px; }
+  .customer-profile-aside { padding: 20px; }
   .customer-shell .site-header { padding: 14px 16px 10px; }
   .site-header .brand { font-size: 20px; }
   .site-header .brand svg { width: 34px; height: 34px; }

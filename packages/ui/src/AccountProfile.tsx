@@ -1,9 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
 
 type Profile = { id: string; displayName: string | null; contactType: 'email' | 'phone'; contact: string };
-type Props = { request: (path: string, options?: RequestInit) => Promise<Response>; onSaved?: (name: string) => void };
+type Props = { request: (path: string, options?: RequestInit) => Promise<Response>; onSaved?: (name: string) => void;
+  variant?: 'default' | 'customer' };
 
-export function AccountProfile({ request, onSaved }: Props) {
+export function AccountProfile({ request, onSaved, variant = 'default' }: Props) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -30,18 +31,22 @@ export function AccountProfile({ request, onSaved }: Props) {
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Chưa lưu được hồ sơ.'); }
     finally { setBusy(false); }
   }
-  return <section className="panel account-profile" aria-labelledby="account-profile-title">
-    <h2 id="account-profile-title">Thông tin cá nhân</h2>
+  return <section className={`panel account-profile ${variant === 'customer' ? 'account-profile-customer' : ''}`} aria-labelledby="account-profile-title">
+    {variant === 'customer' ? <header className="account-profile-heading">
+      <span className="account-profile-avatar" aria-hidden="true">{profile?.displayName?.trim().charAt(0).toLocaleUpperCase('vi-VN') || 'KH'}</span>
+      <div><p className="account-profile-kicker">HỒ SƠ KHÁCH ĐẶT SÂN</p><h2 id="account-profile-title">Thông tin cá nhân</h2>
+        <p>Quản lý tên hiển thị và xem liên hệ đăng nhập của bạn.</p></div>
+    </header> : <h2 id="account-profile-title">Thông tin cá nhân</h2>}
     {!profile && !error && <p role="status">Đang tải thông tin cá nhân…</p>}
     {error && <p role="alert">{error}</p>}
     {profile && <form onSubmit={event => void save(event)}>
-      <label>Tên hiển thị <input value={name} minLength={2} maxLength={80} required
+      <label>Tên hiển thị <input value={name} minLength={2} maxLength={80} required autoComplete="name"
         onChange={event => { setName(event.target.value); setSaved(false); }} /></label>
       <label>{profile.contactType === 'email' ? 'Email đăng nhập' : 'Số điện thoại đăng nhập'}
         <input value={profile.contact} readOnly aria-readonly="true" /></label>
-      <p>Để đổi email hoặc số điện thoại đăng nhập cần xác minh liên hệ mới.</p>
+      <p className="account-profile-help">Liên hệ đăng nhập đã được xác minh và hiện chỉ có thể xem.</p>
       <button type="submit" disabled={busy || name.trim().length < 2}>{busy ? 'Đang lưu…' : 'Lưu thông tin'}</button>
-      {saved && <p role="status">Đã lưu thông tin cá nhân.</p>}
+      {saved && <p className="account-profile-saved" role="status">Đã lưu thông tin cá nhân.</p>}
     </form>}
   </section>;
 }
