@@ -1,11 +1,12 @@
 # Tiến độ ShuttleBook
 
-## Bỏ lưu/xóa sân, làm mới hồ sơ Customer và chuẩn bị email OTP — 2026-10-15 (PASS local; hosted CI chờ)
+## Bỏ lưu/xóa sân, làm mới hồ sơ Customer và chuẩn bị email OTP — 2026-10-15 (PASS local; hosted CI theo xác nhận người dùng)
 
 - Quyết định mới của người dùng ưu tiên contract cũ: mỗi cơ sở chỉ còn **Thêm sân**, tự lấy số cao nhất + 1; bỏ chỉnh số/lưu hàng loạt, **không thêm nút xóa sân**. Hồ sơ Customer có bố cục và avatar rõ hơn trên desktop/mobile, giữ API hồ sơ cũ. [Contract và testcase](features/F09-court-profile-email-first-2026-10-15.md).
 - Bản ngoài Development chỉ đăng ký bằng **email** ở Customer/Partner; API chặn phone register/resend/verify với `400 CONTACT_TYPE_UNAVAILABLE`. Đăng nhập phone của tài khoản cũ còn hoạt động. SMTP đã nhận cấu hình username/password, STARTTLS, timeout; từ chối cấu hình production thiếu TLS/auth với `503 IDENTITY_DELIVERY_UNAVAILABLE` ở luồng đăng ký/gửi lại. Mailpit Development giữ luồng thử; không có credential trong repo. [Runbook SES/EC2/S3 cập nhật](runbooks/F09-demo-otp-aws-steps-2026-10-14.md).
 - **PASS local:** backend Release build 0 warning/error; API tests **106/106**; typecheck bốn workspace; build ba web; browser fixture sân/hồ sơ **34/34** desktop/mobile, đăng ký Customer/Partner **16/16** desktop/mobile; live browser→API→Worker→PostGIS/Mailpit **8/8**, runner exit 0, DB thử đã drop đúng tên. Test SMTP chỉ chứng minh cấu hình thiếu bị từ chối; Mailpit không chứng minh SES thật.
-- **NOT RUN:** SMTP SES gửi nhận thật, S3 thật, EC2/HTTPS, backup offsite/restore từ S3, toàn bộ hosted CI trên commit mới và nghiệm thu tay. Chưa tạo AWS resource hay dùng dữ liệu thật. Điểm demo local tạm giữ **80/100** đến khi nghiệm thu tay; F09 production **NO-GO**. Người dùng đã cho phép push nhánh thử từng lát cắt, không merge `main` trước nghiệm thu cuối. Lỗi Vite dev `heap out of memory` trên máy khoảng 8 GB RAM và bộ nhớ khả dụng thấp; build/preview/test chạy được, cần giải phóng RAM rồi thử dev server lại, chưa coi lỗi này là sửa xong.
+- Người dùng đã kiểm tra GitHub Actions của commit **`8d8a3c6`** và xác nhận **PASS**. Agent chưa đọc trực tiếp run/ảnh của commit này, nên không ghi thêm chi tiết job hoặc annotations. Bằng chứng CI này áp dụng cho code của ba commit `1cfeefd`, `fca3be3`, `8d8a3c6` trên nhánh `codex/f09-local-readiness`.
+- **NOT RUN:** SMTP SES gửi nhận thật, S3 thật, EC2/HTTPS, backup offsite/restore từ S3 và nghiệm thu tay. Chưa tạo AWS resource hay dùng dữ liệu thật. Điểm demo local tạm giữ **80/100** đến khi nghiệm thu tay; F09 production **NO-GO**. Người dùng đã cho phép push nhánh thử từng lát cắt, không merge `main` trước nghiệm thu cuối. Lỗi Vite dev `heap out of memory` trên máy khoảng 8 GB RAM và bộ nhớ khả dụng thấp; build/preview/test chạy được, cần giải phóng RAM rồi thử dev server lại, chưa coi lỗi này là sửa xong.
 
 ## GitHub Actions Node 24 — 2026-10-14 (PASS hosted CI)
 
