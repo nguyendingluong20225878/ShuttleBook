@@ -1,5 +1,10 @@
 # Tiến độ ShuttleBook
 
+## SES OTP local: sửa 403 đăng nhập browser — 2026-10-16
+
+- Người dùng báo đăng ký đã nhận nhưng `POST /api/v1/browser-auth/customer/login` trả HTTP 403. Kiểm tra code xác định endpoint từ chối trước khi xét mật khẩu nếu `Origin` không khớp `BrowserSession:CustomerOrigin`; `.env` Staging local thiếu khóa này. Đã thêm `BrowserSession__CustomerOrigin=http://localhost:5173`, `BrowserSession__PartnerOrigin=http://localhost:5174` và `AdminSession__AllowedOrigin=http://localhost:5175` vào `.env` bị Git ignore; không đọc/in SMTP secret. API Staging đã khởi động lại.
+- **PASS local:** `/health/ready` HTTP 200; POST JSON `{}` từ origin Customer và Partner hợp lệ trả 400 do body thiếu trường, chứng tỏ đã qua cổng origin; origin Customer lạ trả 403. **NOT RUN:** đăng nhập bằng tài khoản người dùng/OTP riêng tư, vì cần người dùng nhập trên browser. Nếu đã xác minh OTP mà vẫn lỗi, kiểm HTTP status và `code` response mới. Không merge/deploy.
+
 ## SES OTP local: môi trường thử sẵn sàng — 2026-10-16 (OTP ứng dụng NOT RUN)
 
 - Người dùng đã tự xác minh SES email identity tại Singapore, nhận thư thử SES Console trong Gmail Spam và tạo/lưu SMTP credentials. `.env` local đã được người dùng điền cho `Staging`; agent chỉ kiểm trạng thái khóa, không đọc/in giá trị email, SMTP username/password. Đã sửa duy nhất `.env` bị Git ignore: bỏ hai dòng `Development` trùng với `Staging` và đổi ghi chú `//` thành `#` để Docker Compose đọc được; không commit secret.
