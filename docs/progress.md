@@ -1,5 +1,11 @@
 # Tiến độ ShuttleBook
 
+## SES OTP local: môi trường thử sẵn sàng — 2026-10-16 (OTP ứng dụng NOT RUN)
+
+- Người dùng đã tự xác minh SES email identity tại Singapore, nhận thư thử SES Console trong Gmail Spam và tạo/lưu SMTP credentials. `.env` local đã được người dùng điền cho `Staging`; agent chỉ kiểm trạng thái khóa, không đọc/in giá trị email, SMTP username/password. Đã sửa duy nhất `.env` bị Git ignore: bỏ hai dòng `Development` trùng với `Staging` và đổi ghi chú `//` thành `#` để Docker Compose đọc được; không commit secret.
+- **PASS local:** `docker compose config --quiet`; PostGIS và Mailpit `Healthy` qua `docker compose up -d --wait` (không xóa volume); API Staging khởi động, `/health/live` và `/health/ready` đều HTTP 200; CORS preflight Customer HTTP 204 với `Access-Control-Allow-Origin: http://localhost:5173`; Customer production preview tại `http://localhost:5173/` HTTP 200; kết nối TCP ngoài sandbox tới SES Singapore cổng 587 mở. PowerShell loader `.env` có 0 dòng sai cú pháp và 0 khóa trùng. Trình điều khiển browser của agent không khả dụng trong phiên này, nên chưa mở tab tự động.
+- **NOT RUN:** Customer/Partner đăng ký, nhận và xác minh OTP qua API→SES→Gmail; cần người dùng tự nhập email đã Verified, mật khẩu thử và OTP trên browser. HTTP health/CORS/SMTP TCP và thư gửi trực tiếp từ SES Console không chứng minh đường gửi của ShuttleBook. Chưa merge/deploy; F09 production **NO-GO**.
+
 ## Nạp SMTP SES từ `.env` local — 2026-10-15 (PASS kiểm tra script; SES OTP NOT RUN)
 
 - Theo yêu cầu người dùng, `scripts/Use-LocalEnvironment.ps1` nạp đúng các khóa `Identity__Delivery__*` và ba origin CORS từ `.env` bị Git bỏ qua; `.env.example` chỉ có placeholder. Không ghi/đọc/in SMTP credential thật trong lượt sửa này, không đổi API/database. Bài thử Staging local có thể chạy bằng `npm.cmd run dev:api` sau khi người dùng tự điền `.env`. [Các bước và cách quay về Mailpit](runbooks/F09-demo-otp-aws-steps-2026-10-14.md).
