@@ -1,5 +1,10 @@
 # Tiến độ ShuttleBook
 
+## Đổi thứ tự kiểm định demo — 2026-10-16
+
+- Theo yêu cầu mới của người dùng, chuyển việc mua/xác minh domain và xin SES production access để gửi OTP tới email bất kỳ xuống cuối lộ trình. Trước mắt chỉ dùng email thử đã Verified trong SES sandbox; không coi đó là khả năng đăng ký công khai.
+- Kiểm tra trạng thái local trong phiên này: API `/health/ready` HTTP 200, Customer `localhost:5173` HTTP 200; Partner `localhost:5174` và Admin `localhost:5175` chưa chạy. Nhánh `codex/f09-local-readiness` sạch trước cập nhật tài liệu. Bước tiếp theo là nghiệm thu tay luồng ba vai trò với dữ liệu giả, rà soát chi phí AWS, rồi mới chuẩn bị staging EC2/S3; SES production access là việc cuối.
+
 ## SES OTP local: người dùng đăng nhập thành công — 2026-10-16
 
 - Sau khi bổ sung origin cho Browser Session trong `.env` Staging và restart API, người dùng xác nhận đã đăng nhập Customer được bằng tài khoản vừa đăng ký. **PASS theo nghiệm thu tay của người dùng:** đăng nhập local sau sửa lỗi 403. Không thu thập email, mật khẩu hay OTP. Chưa có log HTTP/SES độc lập để xác nhận chi tiết toàn bộ đường gửi OTP hoặc Partner tương ứng.
