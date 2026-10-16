@@ -1,5 +1,10 @@
 # Tiến độ ShuttleBook
 
+## SES OTP local: người dùng đăng nhập thành công — 2026-10-16
+
+- Sau khi bổ sung origin cho Browser Session trong `.env` Staging và restart API, người dùng xác nhận đã đăng nhập Customer được bằng tài khoản vừa đăng ký. **PASS theo nghiệm thu tay của người dùng:** đăng nhập local sau sửa lỗi 403. Không thu thập email, mật khẩu hay OTP. Chưa có log HTTP/SES độc lập để xác nhận chi tiết toàn bộ đường gửi OTP hoặc Partner tương ứng.
+- Tiếp theo: kiểm SES Account dashboard ở Singapore và yêu cầu production access để gửi cho người nhận chưa Verified; kiểm OTP email mới, gửi lại/hết hạn/giới hạn, rồi mới chuẩn bị AWS demo dữ liệu giả và các gate production. F09 production vẫn **NO-GO**; chưa merge/deploy.
+
 ## SES OTP local: sửa 403 đăng nhập browser — 2026-10-16
 
 - Người dùng báo đăng ký đã nhận nhưng `POST /api/v1/browser-auth/customer/login` trả HTTP 403. Kiểm tra code xác định endpoint từ chối trước khi xét mật khẩu nếu `Origin` không khớp `BrowserSession:CustomerOrigin`; `.env` Staging local thiếu khóa này. Đã thêm `BrowserSession__CustomerOrigin=http://localhost:5173`, `BrowserSession__PartnerOrigin=http://localhost:5174` và `AdminSession__AllowedOrigin=http://localhost:5175` vào `.env` bị Git ignore; không đọc/in SMTP secret. API Staging đã khởi động lại.
