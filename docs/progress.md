@@ -1,5 +1,10 @@
 # Tiến độ ShuttleBook
 
+## Nghiệm thu tay luồng local — 2026-10-16
+
+- Người dùng xác nhận **PASS** các bước local vừa được hướng dẫn: Partner thiết lập cơ sở/QR/sân/giá và gửi duyệt, Admin duyệt, Customer xem/đặt, Partner xác nhận; đồng thời kiểm trần báo giá 10 triệu VND và giới hạn một báo giá đang giữ mỗi tài khoản. Đây là **bằng chứng nghiệm thu tay do người dùng báo**, chưa phải run tự động mới hoặc kiểm toán dữ liệu độc lập trong lượt này.
+- Giữ SES production access/tên miền ở cuối. Bước hiện tại: kiểm Billing/Free Tier/credit và cảnh báo chi phí trước khi quyết định tài nguyên AWS demo. Chưa tạo EC2/S3 hoặc deploy; F09 production **NO-GO**.
+
 ## Đổi thứ tự kiểm định demo — 2026-10-16
 
 - Theo yêu cầu mới của người dùng, chuyển việc mua/xác minh domain và xin SES production access để gửi OTP tới email bất kỳ xuống cuối lộ trình. Trước mắt chỉ dùng email thử đã Verified trong SES sandbox; không coi đó là khả năng đăng ký công khai.
