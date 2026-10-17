@@ -10,7 +10,10 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.IdentityModel.Tokens;
+using System.Net;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Amazon;
@@ -21,9 +24,28 @@ using ShuttleBook.Api.Bookings;
 var builder = WebApplication.CreateBuilder(args);
 if (builder.Configuration["DataProtection:KeysPath"] is { Length: > 0 } keysPath)
 {
-    if (!OperatingSystem.IsWindows())
-        throw new InvalidOperationException("The configured local data protection key path requires Windows DPAPI.");
-    builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(keysPath)).ProtectKeysWithDpapi();
+    var keys = builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(keysPath));
+    if (OperatingSystem.IsWindows() && string.IsNullOrWhiteSpace(builder.Configuration["DataProtection:CertificatePath"]))
+        keys.ProtectKeysWithDpapi();
+    else
+    {
+        var certificatePath = builder.Configuration["DataProtection:CertificatePath"];
+        var certificatePassword = builder.Configuration["DataProtection:CertificatePassword"];
+        if (string.IsNullOrWhiteSpace(certificatePath) || string.IsNullOrWhiteSpace(certificatePassword))
+            throw new InvalidOperationException("Persistent Linux data protection requires a PFX certificate path and password.");
+        keys.ProtectKeysWithCertificate(X509CertificateLoader.LoadPkcs12FromFile(certificatePath, certificatePassword));
+    }
+}
+if (builder.Configuration["ReverseProxy:KnownProxy"] is { Length: > 0 } knownProxy)
+{
+    if (!IPAddress.TryParse(knownProxy, out var proxyAddress))
+        throw new InvalidOperationException("ReverseProxy:KnownProxy must be a single IP address.");
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+        options.KnownProxies.Add(proxyAddress);
+        options.ForwardLimit = 1;
+    });
 }
 var authRegisterPerIp = Math.Max(1, builder.Configuration.GetValue("RateLimits:AuthRegisterPerIp", 5));
 var authVerifyPerIp = Math.Max(1, builder.Configuration.GetValue("RateLimits:AuthVerifyPerIp", 10));
@@ -155,6 +177,8 @@ builder.Services.AddCors(options => options.AddPolicy("WebPortals", policy =>
 }));
 
 var app = builder.Build();
+if (builder.Configuration["ReverseProxy:KnownProxy"] is { Length: > 0 })
+    app.UseForwardedHeaders();
 app.Use(async (context, next) =>
 {
     if (context.Request.Path.StartsWithSegments("/api/v1/browser-auth"))
