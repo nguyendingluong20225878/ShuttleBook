@@ -4,6 +4,7 @@
 
 - Người dùng gửi Summary của run `b3b4f43`: `web` **PASS**, `backend` **PASS**, `staging-package` **FAIL** sau 6 giây (exit 1). Summary không có log bước lỗi nên nguyên nhân cụ thể chưa được xác nhận trực tiếp.
 - Rà soát bước fixture thấy `chown 1654:1654` chạy trước `chmod 600` bằng user runner; user runner không còn là chủ file sau `chown`. Đảo thứ tự thành `chmod` rồi `chown`. Đây là sửa lỗi quyền file có căn cứ từ workflow, chờ run CI mới xác nhận; Docker Desktop local không điều khiển runner GitHub.
+- Run `7271ac2`: bước `Create disposable staging fixture` **PASS**; bước `Validate and build Linux package` **FAIL**. Tái hiện Docker build local với fixture placeholder: `config --quiet` PASS; web build báo TS6142/TS17004 vì Dockerfile thiếu `tsconfig.base.json` được ba app tham chiếu. Đã thêm `COPY` file này; chờ CI mới xác nhận. Docker build local bị dừng khi ổ C hết chỗ; agent đã xóa log tạm và output `bin/Release` có thể tạo lại. Chưa coi image/smoke PASS.
 
 ## F09.4 — gói private staging Linux/EC2 — 2026-10-17
 
