@@ -59,3 +59,34 @@ jobs:
       - run: dotnet run --project backend/src/ShuttleBook.Migrator --no-build --configuration Release
       - run: dotnet test backend/tests/ShuttleBook.Api.Tests --no-build --configuration Release
       - run: dotnet test backend/tests/ShuttleBook.Database.Tests --no-build --configuration Release
+  staging-package:
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE_PARALLEL_LIMIT: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - name: Create disposable staging fixture
+        run: |
+          cp deploy/staging.env.example .env.staging
+          sed -i 's/REPLACE_WITH_SAME_PASSWORD/REPLACE_WITH_RANDOM_ALPHANUMERIC_PASSWORD/' .env.staging
+          sed -i 's/^Media__Mode=S3$/Media__Mode=Local/' .env.staging
+          mkdir -p deploy/secrets
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=CI DataProtection' -keyout /tmp/shuttlebook-ci-dp.key -out /tmp/shuttlebook-ci-dp.crt
+          openssl pkcs12 -export -passout pass:REPLACE_WITH_PFX_EXPORT_PASSWORD -out deploy/secrets/dp.pfx -inkey /tmp/shuttlebook-ci-dp.key -in /tmp/shuttlebook-ci-dp.crt
+          sudo chown 1654:1654 deploy/secrets/dp.pfx
+          chmod 600 deploy/secrets/dp.pfx
+      - name: Validate and build Linux package
+        run: |
+          docker compose --env-file .env.staging -f deploy/compose.staging.yml config --quiet
+          docker compose --env-file .env.staging -f deploy/compose.staging.yml --profile tools build
+      - name: Smoke test private staging stack
+        run: |
+          docker compose --env-file .env.staging -f deploy/compose.staging.yml up -d --wait --wait-timeout 180
+          curl --fail --silent http://127.0.0.1:5173/ > /dev/null
+          curl --fail --silent http://127.0.0.1:5174/ > /dev/null
+          curl --fail --silent http://127.0.0.1:5175/ > /dev/null
+          docker compose --env-file .env.staging -f deploy/compose.staging.yml exec -T api curl --fail --silent http://127.0.0.1:8080/health/ready > /dev/null
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:5173/api/v1/no-such-route)" = 404
+      - name: Stop disposable stack
+        if: always()
+        run: docker compose --env-file .env.staging -f deploy/compose.staging.yml down -v --remove-orphans

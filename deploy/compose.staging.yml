@@ -1,0 +1,124 @@
+name: shuttlebook-staging
+
+services:
+  postgres:
+    image: postgis/postgis:17-3.5
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    networks: [data]
+
+  migrator:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.backend
+      args:
+        APP_NAME: ShuttleBook.Migrator
+    env_file: ../.env.staging
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks: [data]
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.backend
+      args:
+        APP_NAME: ShuttleBook.Api
+    env_file: ../.env.staging
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      DataProtection__KeysPath: /app/dp-keys
+      DataProtection__CertificatePath: /run/secrets/dp.pfx
+      ReverseProxy__KnownProxy: 172.30.54.10
+    volumes:
+      - dp-keys:/app/dp-keys
+      - ./secrets/dp.pfx:/run/secrets/dp.pfx:ro
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+    networks: [edge, data]
+
+  worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.backend
+      args:
+        APP_NAME: ShuttleBook.Worker
+    env_file: ../.env.staging
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    networks: [data]
+
+  admin-cli:
+    profiles: [tools]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.backend
+      args:
+        APP_NAME: ShuttleBook.AdminCli
+    env_file: ../.env.staging
+    stdin_open: true
+    tty: true
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+    restart: "no"
+    networks: [data]
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+      args:
+        CUSTOMER_API_BASE_URL: http://localhost:5173
+        PARTNER_API_BASE_URL: http://localhost:5174
+        ADMIN_API_BASE_URL: http://localhost:5175
+        VITE_MAPTILER_API_KEY: ${VITE_MAPTILER_API_KEY:-}
+    ports:
+      - "127.0.0.1:5173:5173"
+      - "127.0.0.1:5174:5174"
+      - "127.0.0.1:5175:5175"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:5173/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      edge:
+        ipv4_address: 172.30.54.10
+
+networks:
+  edge:
+    ipam:
+      config:
+        - subnet: 172.30.54.0/24
+  data:
+
+volumes:
+  postgres-data:
+  dp-keys:

@@ -3,6 +3,7 @@
 .media-local/
 .env.*
 !.env.example
+deploy/secrets/
 **/appsettings.Local.json
 **/appsettings.*.Local.json
 *.pfx

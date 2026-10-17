@@ -1,0 +1,32 @@
+:5173 {
+    handle /api/* {
+        reverse_proxy api:8080
+    }
+    handle {
+        root * /srv/customer
+        try_files {path} /index.html
+        file_server
+    }
+}
+
+:5174 {
+    handle /api/* {
+        reverse_proxy api:8080
+    }
+    handle {
+        root * /srv/partner
+        try_files {path} /index.html
+        file_server
+    }
+}
+
+:5175 {
+    handle /api/* {
+        reverse_proxy api:8080
+    }
+    handle {
+        root * /srv/admin
+        try_files {path} /index.html
+        file_server
+    }
+}

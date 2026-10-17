@@ -1,5 +1,11 @@
 # Tiến độ ShuttleBook
 
+## F09.4 — gói private staging Linux/EC2 — 2026-10-17
+
+- Theo yêu cầu người dùng, EC2 đã tạo/kiểm tra role và đang **Stop**; agent chuẩn bị phần code và test local, không khởi động/deploy AWS. Gói mới gồm Dockerfile API/Worker/Migrator/Admin CLI, ba web static qua Caddy trên các cổng loopback, PostGIS, migration one-shot, health, reverse proxy chỉ tin IP Caddy, key ring Linux bền và mã hóa bằng PFX. Có mẫu `.env.staging` placeholder và [runbook](runbooks/F09-ec2-private-staging.md). Không có secret thật trong repo.
+- **PASS local:** `dotnet build backend/ShuttleBook.slnx --no-restore -c Release -v quiet` (0 warning/error), API tests 106/106 khi cấp pepper fixture theo CI; ba Vite bundle build PASS và kiểm literal URL đúng `localhost:5173–5175`, không còn `localhost:5080` trong bundle staging. Hai test Admin fail ở lượt đầu vì thiếu pepper fixture trong lệnh local; chạy lại đủ fixture PASS.
+- **NOT RUN:** Docker/Compose trên máy này chưa dùng được; job `staging-package` mới thêm cần GitHub Actions xác minh image/Compose/health/proxy. Browser tunnel, SES/S3 live, restart session và backup/restore ngoài EC2 chưa chạy vì EC2 Stop. [Biên bản test](testing/F09.4-ec2-private-staging-2026-10-17.md). F09 production vẫn **NO-GO**; chưa có HTTPS/domain, SES production access hay backup ngoài EC2.
+
 ## Nghiệm thu tay luồng local — 2026-10-16
 
 - Người dùng xác nhận **PASS** các bước local vừa được hướng dẫn: Partner thiết lập cơ sở/QR/sân/giá và gửi duyệt, Admin duyệt, Customer xem/đặt, Partner xác nhận; đồng thời kiểm trần báo giá 10 triệu VND và giới hạn một báo giá đang giữ mỗi tài khoản. Đây là **bằng chứng nghiệm thu tay do người dùng báo**, chưa phải run tự động mới hoặc kiểm toán dữ liệu độc lập trong lượt này.
