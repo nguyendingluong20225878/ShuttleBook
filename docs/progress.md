@@ -1,5 +1,10 @@
 # Tiến độ ShuttleBook
 
+## F09.4 — CI staging-package: sửa quyền file PFX — 2026-10-17
+
+- Người dùng gửi Summary của run `b3b4f43`: `web` **PASS**, `backend` **PASS**, `staging-package` **FAIL** sau 6 giây (exit 1). Summary không có log bước lỗi nên nguyên nhân cụ thể chưa được xác nhận trực tiếp.
+- Rà soát bước fixture thấy `chown 1654:1654` chạy trước `chmod 600` bằng user runner; user runner không còn là chủ file sau `chown`. Đảo thứ tự thành `chmod` rồi `chown`. Đây là sửa lỗi quyền file có căn cứ từ workflow, chờ run CI mới xác nhận; Docker Desktop local không điều khiển runner GitHub.
+
 ## F09.4 — gói private staging Linux/EC2 — 2026-10-17
 
 - Theo yêu cầu người dùng, EC2 đã tạo/kiểm tra role và đang **Stop**; agent chuẩn bị phần code và test local, không khởi động/deploy AWS. Gói mới gồm Dockerfile API/Worker/Migrator/Admin CLI, ba web static qua Caddy trên các cổng loopback, PostGIS, migration one-shot, health, reverse proxy chỉ tin IP Caddy, key ring Linux bền và mã hóa bằng PFX. Có mẫu `.env.staging` placeholder và [runbook](runbooks/F09-ec2-private-staging.md). Không có secret thật trong repo.

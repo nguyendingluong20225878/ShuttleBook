@@ -73,8 +73,8 @@ jobs:
           mkdir -p deploy/secrets
           openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=CI DataProtection' -keyout /tmp/shuttlebook-ci-dp.key -out /tmp/shuttlebook-ci-dp.crt
           openssl pkcs12 -export -passout pass:REPLACE_WITH_PFX_EXPORT_PASSWORD -out deploy/secrets/dp.pfx -inkey /tmp/shuttlebook-ci-dp.key -in /tmp/shuttlebook-ci-dp.crt
-          sudo chown 1654:1654 deploy/secrets/dp.pfx
           chmod 600 deploy/secrets/dp.pfx
+          sudo chown 1654:1654 deploy/secrets/dp.pfx
       - name: Validate and build Linux package
         run: |
           docker compose --env-file .env.staging -f deploy/compose.staging.yml config --quiet
