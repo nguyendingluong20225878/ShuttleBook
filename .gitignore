@@ -37,3 +37,23 @@ artifacts/
 *.suo
 Thumbs.db
 .DS_Store
+
+# Private project notes and agent instructions
+docs/
+AGENT.md
+AGENTS.md
+
+# Machine-specific deployment and verification artifacts
+deploy/aws/
+deploy/ops/
+deploy/compose.rollback.yml
+deploy/compose.domain.yml
+deploy/Caddyfile.domain
+s06-invalid.txt
+%SystemDrive%/
+.agents/
+.codex/
+backups/
+*.dump
+*.backup
+*.sql.gz
