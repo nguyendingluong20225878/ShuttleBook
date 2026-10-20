@@ -29,6 +29,9 @@ async function login(page: Page, returnTo: string) {
   await page.getByLabel('Mật khẩu', { exact: true }).fill('Test-password-2026!');
   await page.getByRole('button', { name: 'Đăng nhập', exact: true }).last().click();
 }
+async function revalidateBooking(page: Page) {
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+}
 const loginResponse = { tokenType: 'Bearer', accessToken: 'access-f06-test', ...browserSessionFields(), expiresInSeconds: 600,
   user: { accountType: 'CUSTOMER', status: 'ACTIVE' } };
 
@@ -55,6 +58,7 @@ test('reported booking survives old deadline, private proof/history and focus po
   await expect(page.getByRole('img', { name: 'Biên lai chuyển khoản đã gửi' })).toBeVisible();
   await expect(page.getByText('FT-F06-TEST', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: /Hủy|Đổi lịch|Đã chuyển khoản/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Làm mới đơn', exact: true })).toHaveCount(0);
   current = { ...current, status: 'CONFIRMED', version: 3, payment: { ...current.payment, status: 'PAID' } };
   current.decisions = [{ decisionId: bookingId, resolution: 'CONFIRMED', reasonCode: null, reason: null, confirmedAmount: 250000,
     bankReference: 'FT-F06-TEST', note: 'Đã đối chiếu', decidedAt: '2026-10-07T01:12:00Z' }];
@@ -247,7 +251,7 @@ test('past transfer deadline disables reporting and server 409 requires reload w
     return route.abort();
   });
   await login(page, `/bookings/${bookingId}`); await expect(page.getByRole('button', { name: 'Đã chuyển khoản', exact: true })).toBeDisabled(); expect(reports).toBe(0);
-  current = awaitingTransfer(); await page.getByRole('button', { name: 'Làm mới đơn', exact: true }).click();
+  current = awaitingTransfer(); await revalidateBooking(page);
   await expect(page.getByRole('button', { name: 'Đã chuyển khoản', exact: true })).toBeEnabled(); await page.getByRole('button', { name: 'Đã chuyển khoản', exact: true }).click();
   await page.getByRole('button', { name: 'Gửi báo chuyển khoản', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Đã hết hạn báo chuyển khoản');
@@ -298,12 +302,12 @@ test('401, 403 and 404 revalidation clear cached private booking details and pro
   await login(page, `/bookings/${bookingId}`);
   for (const status of [403, 404, 401]) {
     await expect(page.getByRole('img', { name: 'Biên lai chuyển khoản đã gửi' })).toBeVisible();
-    rejectedStatus = status; await page.getByRole('button', { name: 'Làm mới đơn', exact: true }).click();
+    rejectedStatus = status; await revalidateBooking(page);
     await expect(page.getByRole('alert')).toBeVisible();
     await expect(page.getByText('FT-F06-TEST', { exact: true })).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Mã đơn: BK-F06-DEMO' })).toHaveCount(0);
     await expect(page.getByRole('img', { name: 'Biên lai chuyển khoản đã gửi' })).toHaveCount(0);
-    if (status !== 401) { rejectedStatus = 0; await page.getByRole('button', { name: 'Làm mới đơn', exact: true }).click(); }
+    if (status !== 401) { rejectedStatus = 0; await revalidateBooking(page); }
   }
 });
 
@@ -329,7 +333,7 @@ test('payment detail preserves exact 18-digit amounts and overdue text does not 
   await expect(page.getByText(`Số tiền đã nhận: ${formatted}`, { exact: true })).toBeVisible();
   await expect(page.getByText(`Số tiền đã xác nhận: ${formatted}`, { exact: true })).toBeVisible();
   current = { ...current, status: 'AWAITING_OWNER_CONFIRMATION', version: 4, isOverdue: true };
-  await page.getByRole('button', { name: 'Làm mới đơn', exact: true }).click();
+  await revalidateBooking(page);
   await expect(page.getByText('Đơn đang chờ đối chiếu quá 30 phút.', { exact: false })).toBeVisible();
   await expect(page.getByText('Chủ sân đã được nhắc', { exact: false })).toHaveCount(0);
 });

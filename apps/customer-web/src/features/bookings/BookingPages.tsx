@@ -123,7 +123,7 @@ export function BookingDetail({ id }: { id: string }) {
       <BookingHistory booking={booking} />
       <p>Đơn được tạo: {dateTime(booking.createdAt, booking.timezone)}</p>
       {booking.expiredAt && <p>Hết hạn: {dateTime(booking.expiredAt, booking.timezone)}</p>}
-    </>}<button type="button" onClick={refresh}>Làm mới đơn</button><p><a href="/me/bookings">Đơn của tôi</a></p>
+    </>}<p><a href="/me/bookings">Đơn của tôi</a></p>
   </section></Shell>;
 }
 export function MyBookings() {

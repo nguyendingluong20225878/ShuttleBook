@@ -919,14 +919,12 @@ Danh mục có **220 record logic**: Customer83, Partner112, Admin25; trong đó
 
 <a id="c65"></a>
 
-**C65 — Làm mới đơn** (button)
+**C65 — Làm mới đơn** (đã loại bỏ 20/10/2026)
 
-- **Hành động:** GET /bookings/{id} qua visible polling
-- **Trạng thái:** Luôn có, cả error/loading; không disable
-- **Đang tốt:** Version cũ không ghi đè command mới; 401/403/404 clear private details
-- **Chưa tốt / P2:** Không spinner/disable tại nút hoặc last-updated; liên tiếp click abort/restart đọc đơn
-- **So ALOBO:** PARITY-PARTIAL A03 — cùng nhóm thanh toán/đối chiếu; chi tiết button/state chưa thử bên ALOBO.
-- **Source / evidence:** [apps/customer-web/src/features/bookings/BookingPages.tsx:118](../../apps/customer-web/src/features/bookings/BookingPages.tsx#L118). SOURCE_CONFIRMED action/good; focused runtime NOT RUN; suite tổng xem mục2; historical browser do root tổng hợp
+- **Hành động thay thế:** Trang tự GET /bookings/{id} mỗi 5 giây khi hiển thị và ngay khi cửa sổ được focus.
+- **Trạng thái:** Không còn button thủ công theo quyết định nghiệm thu.
+- **Đang tốt:** Version cũ không ghi đè command mới; 401/403/404 xóa private details; focused browser suite 23/23 PASS.
+- **Source / evidence:** [apps/customer-web/src/features/bookings/BookingPages.tsx](../../apps/customer-web/src/features/bookings/BookingPages.tsx) và tests/web/f06-customer.spec.ts.
 
 <a id="c66"></a>
 

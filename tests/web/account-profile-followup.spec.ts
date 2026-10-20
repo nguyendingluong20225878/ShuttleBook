@@ -6,6 +6,7 @@ for (const portal of ['customer', 'partner'] as const) {
     let displayName: string | null = null;
     let loggedIn = portal === 'customer';
     const code = `BK261014${'a'.repeat(32)}`;
+    const seriesCode = `SR261019${'b'.repeat(32)}`;
     await page.route('**/api/v1/**', async route => {
       const req = route.request(), path = new URL(req.url()).pathname;
       const reply = (data: unknown) => route.fulfill({ contentType: 'application/json',
@@ -25,8 +26,10 @@ for (const portal of ['customer', 'partner'] as const) {
       }
       if (path === '/api/v1/venues') return reply({ items: [], nextCursor: null });
       if (path === '/api/v1/me/notifications' || path === '/api/v1/me/notifications/')
-        return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: [{ id: '019a1234-1111-7111-8111-000000000001',
-          title: 'Cập nhật đơn', body: `${code} · Cơ sở A · 08:00`, readAt: null, createdAt: '2026-10-14T00:00:00Z' }], unreadCount: 1, nextCursor: null }) });
+        return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: [
+          { id: '019a1234-1111-7111-8111-000000000001', title: 'Cập nhật đơn', body: `${code} · Cơ sở A · 08:00`, readAt: null, createdAt: '2026-10-14T00:00:00Z' },
+          { id: '019a1234-1111-7111-8111-000000000002', title: 'Cập nhật lịch cố định', body: `${seriesCode} · Cơ sở A · 5 buổi hàng tuần`, readAt: null, createdAt: '2026-10-19T00:00:00Z' },
+        ], unreadCount: 2, nextCursor: null }) });
       if (path === '/api/v1/partner-onboarding/businesses') return reply([]);
       return reply({});
     });
@@ -66,11 +69,15 @@ for (const portal of ['customer', 'partner'] as const) {
     if (portal === 'customer') {
       await page.getByRole('link', { name: 'Thông báo' }).click();
       await expect(page.getByText(code)).toHaveCount(0);
+      await expect(page.getByText(seriesCode)).toHaveCount(0);
       await expect(page.getByText('Đơn đặt sân · Cơ sở A · 08:00')).toBeVisible();
+      await expect(page.getByText('Lịch cố định · Cơ sở A · 5 buổi hàng tuần')).toBeVisible();
     } else {
       await page.getByRole('link', { name: 'Thông báo' }).click();
       await expect(page.getByText(code)).toHaveCount(0);
+      await expect(page.getByText(seriesCode)).toHaveCount(0);
       await expect(page.getByText('Đơn đặt sân · Cơ sở A · 08:00')).toBeVisible();
+      await expect(page.getByText('Lịch cố định · Cơ sở A · 5 buổi hàng tuần')).toBeVisible();
     }
   });
 }

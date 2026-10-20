@@ -950,15 +950,13 @@ Tiền điều kiện chung: role/scope đúng trong môi trường test mục2;
 
 <a id="c65"></a>
 
-**C65 — Làm mới đơn**
+**C65 — Làm mới đơn (đã loại bỏ 20/10/2026)**
 
-- **Tiền điều kiện/state:** Luôn có, cả error/loading; không disable
-- **Agent có thể tự động hóa:** Đề xuất browser/API: Stale GET sau report không khôi phục form; nhiều click và lỗi403 phải clear ảnh
-- **Bạn thao tác/đánh giá:** Thao tác tay desktop/mobile: Stale GET sau report không khôi phục form; nhiều click và lỗi403 phải clear ảnh
-- **Expected đối chiếu:** GET /bookings/{id} qua visible polling Giữ phần tốt: Version cũ không ghi đè command mới; 401/403/404 clear private details
-- **Điểm cần quan sát hoặc cải thiện:** Không spinner/disable tại nút hoặc last-updated; liên tiếp click abort/restart đọc đơn
-- **Trạng thái hiện tại:** NOT RUN cho testcase focused đề xuất; SOURCE REVIEWED. Regression liên quan xem mục4. Chưa có biên bản tay riêng cho ca này.
-- **Đối chiếu:** [Nhận xét C65](../reviews/ShuttleBook-ui-button-audit-alobo.md#c65) · [apps/customer-web/src/features/bookings/BookingPages.tsx:118](../../apps/customer-web/src/features/bookings/BookingPages.tsx#L118)
+- **Quyết định:** Bỏ nút theo nghiệm thu; trang chi tiết đã tự đọc lại mỗi 5 giây khi đang hiển thị và đọc lại ngay khi cửa sổ được focus.
+- **Kiểm thử tự động:** Stale GET sau report không khôi phục form; 401/403/404 xóa dữ liệu/ảnh riêng tư; focus revalidation cập nhật trạng thái mà không cần nút.
+- **Expected đối chiếu:** Không còn nút “Làm mới đơn”; version cũ không ghi đè command mới; private details được dọn khi mất quyền.
+- **Trạng thái hiện tại:** PASS — desktop focused suite 23/23 ngày 20/10/2026.
+- **Đối chiếu:** [apps/customer-web/src/features/bookings/BookingPages.tsx](../../apps/customer-web/src/features/bookings/BookingPages.tsx)
 
 <a id="c66"></a>
 
