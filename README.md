@@ -97,17 +97,6 @@ Database integration test cần Docker đang chạy. Browser test cần cài Pla
 npm.cmd run setup:browsers
 ~~~
 
-## Dữ liệu không đưa lên Git
-
-Không commit các file hoặc dữ liệu sau:
-
-- **.env**, **.env.staging** và connection string thật
-- mật khẩu, OTP, access key hoặc recovery code
-- PEM, PFX và private key
-- database backup, ảnh chứng từ và presigned URL
-- tài liệu tiến độ, nhật ký triển khai hoặc biên bản nghiệm thu cá nhân
-
-Repository chỉ giữ **.env.example** và **deploy/staging.env.example** với giá trị mẫu.
 
 ## Dùng domain trên máy chủ
 
