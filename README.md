@@ -188,4 +188,3 @@ dotnet build backend/ShuttleBook.slnx --configuration Release
 ```
 
 Theo lựa chọn của chủ repository, `docs/`, `tests/` và `backend/tests/` chỉ ở local và không nằm trong Git. CI kiểm tra build, migration lặp lại an toàn và đóng gói staging; các bộ test riêng chỉ chạy trên máy đang giữ các thư mục đó.
-
