@@ -6,6 +6,7 @@ type MapTilerMap = {
   setZoom: (zoom: number) => void;
   remove: () => void;
   resize?: () => void;
+  on?: (event: 'click', handler: (event: { lngLat: { lng: number; lat: number } }) => void) => void;
 };
 type MapTilerMarker = {
   setLngLat: (position: [number, number]) => MapTilerMarker;
@@ -42,9 +43,10 @@ function loadMapTiler(): Promise<MapTilerSdk> {
   return sdkPromise!;
 }
 
-export function MapTilerPlacePicker({ initial, onChange }: {
-  initial?: VenueLocation | null; onChange?: (location: VenueLocation | null) => void }) {
+export function MapTilerPlacePicker({ initial, city, onChange }: {
+  initial?: VenueLocation | null; city?: 'HN' | 'HCM' | 'OTHER' | ''; onChange?: (location: VenueLocation | null) => void }) {
   const [location, setLocation] = useState<VenueLocation | null>(initial ?? null);
+  const [mapInitial, setMapInitial] = useState<VenueLocation | null>(initial ?? null);
   const addressId = useId();
   const [input, setInput] = useState('');
   const [suggestions, setSuggestions] = useState<GeocodingFeature[]>([]);
@@ -52,10 +54,18 @@ export function MapTilerPlacePicker({ initial, onChange }: {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const mapHost = useRef<HTMLDivElement>(null);
+  const typedAddress = useRef('');
+  const lastCity = useRef(city);
   const mapRef = useRef<MapTilerMap | null>(null);
   const markerRef = useRef<MapTilerMarker | null>(null);
   const apiKey = import.meta.env.VITE_MAPTILER_API_KEY as string | undefined;
   const enabled = Boolean(apiKey);
+
+  useEffect(() => {
+    if (lastCity.current === city) return;
+    lastCity.current = city; typedAddress.current = '';
+    setInput(''); setLocation(null); setMapInitial(null); setCandidate(null); setSuggestions([]); onChange?.(null);
+  }, [city, initial]);
 
   useEffect(() => {
     if (!enabled || !mapHost.current) return;
@@ -67,12 +77,21 @@ export function MapTilerPlacePicker({ initial, onChange }: {
     void loadMapTiler().then(sdk => {
       if (cancelled || !mapHost.current) return;
       sdk.config.apiKey = apiKey!;
-      const center: [number, number] = initial
-        ? [initial.longitude, initial.latitude] : [105.8342, 21.0278];
+      const center: [number, number] = mapInitial
+        ? [mapInitial.longitude, mapInitial.latitude] : city === 'HCM' ? [106.7009, 10.7769] : [105.8342, 21.0278];
       const map = new sdk.Map({ container: mapHost.current, style: 'streets-v2', center,
-        zoom: initial ? 16 : 11 });
-      const marker = new sdk.Marker().setLngLat(center).addTo(map);
-      mapRef.current = map; markerRef.current = marker;
+        zoom: mapInitial ? 16 : 11 });
+      map.on?.('click', event => {
+        const address = typedAddress.current.trim() || mapInitial?.address || '';
+        if (address.length < 8) { setError('Nhập địa chỉ cụ thể trước khi đặt pin thủ công.'); return; }
+        const { lng, lat } = event.lngLat;
+        if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+        setCandidate({ address, longitude: lng, latitude: lat }); setSuggestions([]); setError('');
+        if (markerRef.current) markerRef.current.setLngLat([lng, lat]);
+        else markerRef.current = new sdk.Marker().setLngLat([lng, lat]).addTo(map);
+      });
+      mapRef.current = map;
+      if (mapInitial) markerRef.current = new sdk.Marker().setLngLat(center).addTo(map);
     }).catch(() => { if (!cancelled) setError('Không tải được bản đồ MapTiler. Kiểm tra API key và kết nối mạng.'); });
     return () => {
       cancelled = true;
@@ -80,7 +99,7 @@ export function MapTilerPlacePicker({ initial, onChange }: {
       markerRef.current?.remove(); markerRef.current = null;
       mapRef.current?.remove(); mapRef.current = null;
     };
-  }, [apiKey, enabled, initial?.latitude, initial?.longitude]);
+  }, [apiKey, enabled, mapInitial?.latitude, mapInitial?.longitude, city]);
 
   useEffect(() => {
     if (!enabled || location || input.trim().length < 4) { setSuggestions([]); setLoading(false); return; }
@@ -88,7 +107,9 @@ export function MapTilerPlacePicker({ initial, onChange }: {
     const timer = window.setTimeout(() => {
       setLoading(true); setError('');
       const query = new URLSearchParams({ key: apiKey!, autocomplete: 'true', country: 'vn',
-        language: 'vi,en', limit: '5', proximity: '105.8342,21.0278' });
+        language: 'vi,en', limit: '8' });
+      if (city === 'HN') query.set('proximity', '105.8342,21.0278');
+      if (city === 'HCM') query.set('proximity', '106.7009,10.7769');
       const path = encodeURIComponent(input.trim());
       void fetch(`https://api.maptiler.com/geocoding/${path}.json?${query}`, { signal: controller.signal })
         .then(async response => {
@@ -102,7 +123,7 @@ export function MapTilerPlacePicker({ initial, onChange }: {
         } }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     }, 400);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [apiKey, enabled, input, location]);
+  }, [apiKey, enabled, input, location, city]);
 
   function selectSuggestion(feature: GeocodingFeature) {
     const coordinates = feature.geometry?.coordinates ?? feature.center;
@@ -114,7 +135,10 @@ export function MapTilerPlacePicker({ initial, onChange }: {
     setCandidate(selected); setSuggestions([]); setError('');
     mapRef.current?.setCenter([selected.longitude, selected.latitude]);
     mapRef.current?.setZoom(17);
-    markerRef.current?.setLngLat([selected.longitude, selected.latitude]);
+    if (markerRef.current) markerRef.current.setLngLat([selected.longitude, selected.latitude]);
+    else void loadMapTiler().then(sdk => {
+      if (mapRef.current) markerRef.current = new sdk.Marker().setLngLat([selected.longitude, selected.latitude]).addTo(mapRef.current);
+    });
   }
 
   return <div className="map-picker">
@@ -123,9 +147,11 @@ export function MapTilerPlacePicker({ initial, onChange }: {
       <input id={addressId} value={input} autoComplete="off"
         placeholder="Nhập địa chỉ, ví dụ: 31 ngõ 16 Hoàng Cầu - Hà Nội"
         onChange={event => {
+          typedAddress.current = event.target.value;
           setInput(event.target.value); setLocation(null); setCandidate(null); setError('');
           setSuggestions([]); onChange?.(null);
         }} />
+      <p className="muted">Tên địa điểm có thể trùng. Hãy đối chiếu địa chỉ và pin. Nếu gợi ý sai, nhập địa chỉ cụ thể rồi nhấp vị trí đúng trên bản đồ.</p>
       {loading && <p role="status">Đang tìm địa chỉ…</p>}
       {suggestions.length > 0 && <ul aria-label="Gợi ý địa chỉ MapTiler">{suggestions.map((feature, index) => {
         const address = feature.place_name || feature.matching_place_name!;

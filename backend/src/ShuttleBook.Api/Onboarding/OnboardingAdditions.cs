@@ -10,13 +10,14 @@ namespace ShuttleBook.Api.Onboarding;
 public static partial class OnboardingEndpoints
 {
     private sealed record SensitiveVenueBaseline(string Address, string Contact, string Timezone, double Latitude,
-        double Longitude, string BankCode, string AccountName, string AccountNumber, Guid QrUploadId);
+        double Longitude, string BankCode, string AccountName, string AccountNumber, Guid QrUploadId,
+        string? CityCode = null);
     private sealed record BusinessRevision(long Version, string Name, string LegalName, string Contact);
     private sealed record AdditionCourt(Guid Id, string Name, long Version,
         List<CourtOperatingHour> Hours, List<PricingRule> Prices);
     private sealed record AdditionVenue(Guid Id, string Name, string Address, string Contact, string Timezone,
         double Latitude, double Longitude, long Version, Guid? ImageUploadId, string BankCode, string AccountName,
-        string AccountNumber, Guid QrUploadId, List<AdditionCourt> Courts);
+        string AccountNumber, Guid QrUploadId, List<AdditionCourt> Courts, string? CityCode = null);
     private sealed record AdditionProfile(Guid Id, string Name, string LegalName, string Contact, List<AdditionVenue> Venues);
 
     private static Task<bool> ValidOptionalVenueImage(ShuttleBookDbContext db, Venue venue, CancellationToken ct) =>
@@ -25,7 +26,8 @@ public static partial class OnboardingEndpoints
             u.Purpose == "VENUE_IMAGE" && u.Status == "READY", ct);
 
     private static SensitiveVenueBaseline Baseline(Venue v, VenuePaymentAccount p) =>
-        new(v.Address, v.Contact, v.Timezone, v.Latitude, v.Longitude, p.BankCode, p.AccountName, p.AccountNumber, p.QrUploadId);
+        new(v.Address, v.Contact, v.Timezone, v.Latitude, v.Longitude, p.BankCode, p.AccountName, p.AccountNumber, p.QrUploadId,
+            v.CityCode);
     private static Task<bool> ActiveOwner(ShuttleBookDbContext db, User user, Business business, CancellationToken ct) =>
         user.Status != UserStatus.Active || business.Status != "ACTIVE" ? Task.FromResult(false) :
         db.BusinessMemberships.AnyAsync(m => m.BusinessId == business.Id && m.UserId == user.Id && m.Role == "OWNER" && m.Status == "ACTIVE", ct);
@@ -100,6 +102,8 @@ public static partial class OnboardingEndpoints
         if (!await ActiveOwner(db, user, business, ct) || venue.Status != "DRAFT" ||
             await db.ApprovalRequests.AnyAsync(a => a.BusinessId == business.Id && a.Status == "PENDING", ct))
             return Problem(http, 409, "STATE_CONFLICT");
+        if (!CityMatchesPoint(venue.CityCode, venue.Latitude, venue.Longitude))
+            return Problem(http, 409, "CITY_LOCATION_MISMATCH");
         var courts = await db.Courts.Where(c => c.VenueId == venueId).ToListAsync(ct);
         if (courts.Any(c => c.Status != "INACTIVE")) return Problem(http, 409, "STATE_CONFLICT");
         var profile = await AdditionData(db, business, venue, courts, ct);
@@ -130,7 +134,8 @@ public static partial class OnboardingEndpoints
         }
         return new(business.Id, business.Name, business.LegalName, business.Contact,
             [new(venue.Id, venue.Name, venue.Address, venue.Contact, venue.Timezone, venue.Latitude, venue.Longitude, venue.Version,
-                venue.ImageUploadId, payment.BankCode, payment.AccountName, payment.AccountNumber, payment.QrUploadId, snapshots)]);
+                venue.ImageUploadId, payment.BankCode, payment.AccountName, payment.AccountNumber, payment.QrUploadId, snapshots,
+                venue.CityCode)]);
     }
     private static async Task<IResult> SubmitBusinessRevision(HttpContext http, ShuttleBookDbContext db, Guid businessId, CancellationToken ct)
     {
@@ -181,6 +186,8 @@ public static partial class OnboardingEndpoints
             if (courts.Count != ids.Length || courts.Any(c => c.Status != "PENDING_APPROVAL")) return (Problem(http, 409, "STATE_CONFLICT"), false);
             if (reason is null)
             {
+                if (!CityMatchesPoint(venue.CityCode, venue.Latitude, venue.Longitude))
+                    return (Problem(http, 409, "CITY_LOCATION_MISMATCH"), false);
                 var actual = await AdditionData(db, business, venue, courts, ct);
                 if (actual is null) return (Problem(http, 409, "INCOMPLETE_PROFILE"), false);
                 var equal = JsonSerializer.Serialize(actual.Venues, Json) == JsonSerializer.Serialize(submitted.Venues, Json);

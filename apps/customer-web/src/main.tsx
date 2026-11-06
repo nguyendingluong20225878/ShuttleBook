@@ -4,6 +4,7 @@ import { App } from './App';
 import '@shuttlebook/ui/tokens.css';
 import '@shuttlebook/ui/primitives.css';
 import './styles.css';
+import './discovery.css';
 import { CustomerSessionProvider } from './features/auth/CustomerSession';
 import { CustomerNotificationsProvider } from './features/notifications/CustomerNotifications';
 

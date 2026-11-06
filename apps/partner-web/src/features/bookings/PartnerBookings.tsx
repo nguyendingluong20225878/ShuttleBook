@@ -181,12 +181,12 @@ export function PartnerBookings({ businessId, venues, request, bookingId, openBo
 
   return <section className="partner-bookings" aria-label="Quản lý đơn đặt sân">
     <div className="booking-workspace-intro"><p className="eyebrow">Vận hành đặt sân</p>
-      <h3>Danh sách đơn &amp; đối chiếu</h3><p className="muted">Chọn cơ sở, lọc đơn cần xử lý và xem thông tin giao dịch trước khi xác nhận.</p></div>
+      <h3>Danh sách đơn &amp; đối chiếu</h3></div>
     <div className="panel booking-scope"><label>Cơ sở xem đơn <select aria-label="Cơ sở xem đơn" value={venueId} onChange={event => {
       openBooking(null); setVenueId(event.target.value); setDetail(null); setDraft({ status: '', dateFrom: '', dateTo: '' });
       setFilter({ status: '', dateFrom: '', dateTo: '' });
     }}>{venues.map(venue => <option key={venue.id} value={venue.id}>{venue.name}</option>)}</select></label>
-      <p className="muted">Ngày lọc và giờ chơi theo múi giờ của cơ sở. Lịch cố định xuất hiện nếu có một buổi trong khoảng lọc. Đơn đã báo chuyển tiếp tục giữ sân trong lúc đối chiếu.</p></div>
+      <p className="muted">Giờ chơi theo múi giờ của cơ sở.</p></div>
     {venues.length === 0 ? <div className="panel empty-state"><h3>Chưa có cơ sở</h3><p>Thêm và hoàn tất hồ sơ cơ sở trước khi nhận đơn.</p></div> : <>
       <div className="booking-counts">
         <button type="button" onClick={() => { const next = { ...filter, status: 'AWAITING_OWNER_CONFIRMATION' }; setDraft(next); setFilter(next); }}>

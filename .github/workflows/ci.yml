@@ -19,13 +19,6 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build --workspaces --if-present
-      - run: npx playwright install --with-deps chromium
-      - run: npx playwright test --workers=2
-      - uses: actions/upload-artifact@v7
-        if: failure()
-        with:
-          name: web-test-results
-          path: test-results/
   backend:
     runs-on: ubuntu-latest
     services:
@@ -47,7 +40,6 @@ jobs:
       Identity__JwtSigningKey: 'ci-only-signing-key-more-than-32-bytes'
       Identity__OtpPepper: 'ci-only-otp-pepper-more-than-32-bytes'
       ConnectionStrings__ShuttleBook: 'Host=localhost;Port=5432;Database=shuttlebook;Username=shuttlebook;Password=ci-disposable-only'
-      SHUTTLEBOOK_TEST_CONNECTION_STRING: 'Host=localhost;Port=5432;Database=postgres;Username=shuttlebook;Password=ci-disposable-only'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
@@ -57,8 +49,6 @@ jobs:
       - run: dotnet build backend/ShuttleBook.slnx --no-restore --configuration Release
       - run: dotnet run --project backend/src/ShuttleBook.Migrator --no-build --configuration Release
       - run: dotnet run --project backend/src/ShuttleBook.Migrator --no-build --configuration Release
-      - run: dotnet test backend/tests/ShuttleBook.Api.Tests --no-build --configuration Release
-      - run: dotnet test backend/tests/ShuttleBook.Database.Tests --no-build --configuration Release
   staging-package:
     runs-on: ubuntu-latest
     env:

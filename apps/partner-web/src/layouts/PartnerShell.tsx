@@ -1,15 +1,22 @@
 import { ReactNode, useEffect, useRef, useState } from 'react';
 import { PartnerIcon } from '../components/PartnerIcon';
 import { PartnerPage, partnerMenuPages, partnerPages } from '../features/workspace/navigation';
+import { ConfirmLogoutDialog } from '@shuttlebook/ui/browser-session';
 
 export function PartnerShell({ page, navigate, businessControl, unread, onLogout, logoutBusy, children }: {
   page: PartnerPage; navigate: (page: PartnerPage) => void; businessControl: ReactNode; unread: number;
   onLogout: () => void; logoutBusy: boolean; children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const [confirmingLogout, setConfirmingLogout] = useState(false);
+  const logoutTrigger = useRef<HTMLButtonElement>(null);
   const toggle = useRef<HTMLButtonElement>(null);
+  const more = useRef<HTMLDetailsElement>(null);
+  const moreTrigger = useRef<HTMLElement>(null);
   const title = useRef<HTMLHeadingElement>(null);
   const current = partnerPages.find(item => item.id === page)!;
+  const primaryPages = partnerMenuPages.filter(item => ['overview', 'venues', 'schedule', 'bookings'].includes(item.id));
+  const secondaryPages = partnerMenuPages.filter(item => !primaryPages.includes(item));
   useEffect(() => { title.current?.focus(); }, [page]);
   useEffect(() => {
     if (!open) return;
@@ -19,7 +26,19 @@ export function PartnerShell({ page, navigate, businessControl, unread, onLogout
     window.addEventListener('keydown', escape);
     return () => window.removeEventListener('keydown', escape);
   }, [open]);
-  function go(next: PartnerPage) { setOpen(false); navigate(next); title.current?.focus(); }
+  useEffect(() => {
+    const close = (event: PointerEvent) => {
+      if (more.current?.open && !more.current.contains(event.target as Node)) more.current.open = false;
+    };
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, []);
+  function go(next: PartnerPage) { setOpen(false); if (more.current) more.current.open = false; navigate(next); title.current?.focus(); }
+  const navLink = (item: typeof partnerMenuPages[number]) => <a key={item.id} href={`#/${item.id}`}
+    aria-label={item.label} aria-current={page === item.id ? 'page' : undefined} onClick={() => go(item.id)}>
+    <PartnerIcon name={item.id} /><span>{item.label}</span>
+    {item.id === 'notifications' && unread > 0 && <span className="notice-count" aria-label={`${unread} chưa đọc`}>{unread}</span>}
+  </a>;
   return <div className="partner-shell">
     <a className="skip-link" href="#partner-content" onClick={event => {
       event.preventDefault(); document.getElementById('partner-content')?.focus();
@@ -32,15 +51,17 @@ export function PartnerShell({ page, navigate, businessControl, unread, onLogout
     <aside className={`partner-sidebar ${open ? 'is-open' : ''}`} id="partner-navigation">
       <a className="brand desktop-brand" href="#/overview" onClick={() => go('overview')}><span className="brand-mark"><PartnerIcon name="courts" /></span><span>ShuttleBook<small>Dành cho đối tác</small></span></a>
       <p className="nav-caption">KHÔNG GIAN QUẢN LÝ</p>
-      <nav aria-label="Quản lý đối tác">{partnerMenuPages.map(item => <a key={item.id} href={`#/${item.id}`}
-        aria-label={item.label}
-        aria-current={page === item.id ? 'page' : undefined} onClick={() => go(item.id)}>
-        <PartnerIcon name={item.id} /><span>{item.label}</span>
-        {item.id === 'notifications' && unread > 0 && <span className="notice-count" aria-label={`${unread} chưa đọc`}>{unread}</span>}
-      </a>)}</nav>
+      <nav aria-label="Quản lý đối tác">{primaryPages.map(navLink)}
+        <div className="partner-desktop-extra">{secondaryPages.map(navLink)}</div>
+        <details ref={more} className={`partner-nav-more ${secondaryPages.some(item => item.id === page) ? 'is-current' : ''}`}
+          onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); more.current!.open = false; moreTrigger.current?.focus(); } }}>
+          <summary ref={moreTrigger}>Thêm{unread > 0 && <span className="notice-count" aria-label={`${unread} thông báo chưa đọc`}>{unread > 99 ? '99+' : unread}</span>}</summary>
+          <div className="partner-nav-more-menu">{secondaryPages.map(navLink)}</div>
+        </details>
+      </nav>
       <div className="sidebar-footer"><button type="button" className="owner-profile-link" onClick={() => go('account')}
         aria-label="Mở thông tin cá nhân"><span className="owner-avatar">CS</span><span><strong>Chủ sân</strong><small>Tài khoản đối tác</small></span></button>
-        <button type="button" className="icon-button" aria-label="Đăng xuất" disabled={logoutBusy} onClick={onLogout}><PartnerIcon name="logout" /></button>
+        <button ref={logoutTrigger} type="button" className="icon-button" aria-label="Đăng xuất" disabled={logoutBusy} onClick={() => setConfirmingLogout(true)}><PartnerIcon name="logout" /></button>
       </div>
     </aside>
     <div className="partner-workspace">
@@ -50,5 +71,7 @@ export function PartnerShell({ page, navigate, businessControl, unread, onLogout
         {children}
       </main>
     </div>
+    {confirmingLogout && <ConfirmLogoutDialog onCancel={() => { setConfirmingLogout(false); requestAnimationFrame(() => logoutTrigger.current?.focus()); }}
+      onConfirm={() => { setConfirmingLogout(false); onLogout(); }} />}
   </div>;
 }

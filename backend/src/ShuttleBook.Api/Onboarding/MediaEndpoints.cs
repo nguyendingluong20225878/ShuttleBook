@@ -8,6 +8,7 @@ using Amazon.Runtime;
 using Microsoft.EntityFrameworkCore;
 using ShuttleBook.Api.Identity;
 using ShuttleBook.Api.Bookings;
+using ShuttleBook.Api.Recruitment;
 using ShuttleBook.Infrastructure.Bookings;
 using ShuttleBook.Infrastructure.Data;
 using ShuttleBook.Infrastructure.Identity;
@@ -29,16 +30,21 @@ public static class MediaEndpoints
         uploads.MapPost("/{uploadId:guid}/complete", Complete).RequireAuthorization();
         uploads.MapGet("/{uploadId:guid}/view", View).RequireAuthorization();
         app.MapPost("/api/v1/bookings/{id:guid}/proof-uploads/presign", ProofPresign).RequireAuthorization().RequireRateLimiting("booking-create");
+        app.MapPost("/api/v1/bookings/{id:guid}/recruitment-image/presign", RecruitmentPresign).RequireAuthorization().RequireRateLimiting("recruitment-write");
+        app.MapGet("/api/v1/recruitment-posts/{id:guid}/image", RecruitmentImage).RequireRateLimiting("recruitment-read");
     }
 
     private static Task<IResult> Presign(HttpContext http, ShuttleBookDbContext db,
-        IWebHostEnvironment environment, IConfiguration config, CancellationToken ct) => PresignCore(http, db, environment, config, null, ct);
+        IWebHostEnvironment environment, IConfiguration config, CancellationToken ct) => PresignCore(http, db, environment, config, null, false, ct);
 
     private static Task<IResult> ProofPresign(HttpContext http, ShuttleBookDbContext db,
-        IWebHostEnvironment environment, IConfiguration config, Guid id, CancellationToken ct) => PresignCore(http, db, environment, config, id, ct);
+        IWebHostEnvironment environment, IConfiguration config, Guid id, CancellationToken ct) => PresignCore(http, db, environment, config, id, false, ct);
+
+    private static Task<IResult> RecruitmentPresign(HttpContext http, ShuttleBookDbContext db,
+        IWebHostEnvironment environment, IConfiguration config, Guid id, CancellationToken ct) => PresignCore(http, db, environment, config, id, true, ct);
 
     private static async Task<IResult> PresignCore(HttpContext http, ShuttleBookDbContext db,
-        IWebHostEnvironment environment, IConfiguration config, Guid? bookingId, CancellationToken ct)
+        IWebHostEnvironment environment, IConfiguration config, Guid? bookingId, bool recruitment, CancellationToken ct)
     {
         if (!Local(environment, config) && !S3(config))
             return Error(http, 503, "MEDIA_UNAVAILABLE");
@@ -82,11 +88,25 @@ public static class MediaEndpoints
             if (user?.AccountType != AccountType.Customer || user.Status != UserStatus.Active) return Error(http, 403, "FORBIDDEN");
             var booking = await db.Bookings.AsNoTracking().SingleOrDefaultAsync(x => x.Id == proofBookingId && x.CustomerId == user.Id, ct);
             if (booking is null) return Error(http, 404, "NOT_FOUND");
-            bookingId = await BookingGroup.AnchorId(db, proofBookingId, ct) ?? throw new InvalidOperationException("Missing booking payment scope.");
-            if (booking.Status is not ("AWAITING_TRANSFER" or "NEEDS_REVIEW")) return Error(http, 409, "STATE_CONFLICT");
-            if (booking.Status == "AWAITING_TRANSFER" && booking.PaymentDeadline <= http.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow()) return Error(http, 409, "PAYMENT_DEADLINE_EXPIRED");
+            if (recruitment)
+            {
+                if (booking.BookingType != "CASUAL" || booking.Status != "CONFIRMED" ||
+                    booking.StartsAt <= http.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow())
+                    return Error(http, 409, "BOOKING_NOT_ELIGIBLE");
+                if (await db.RecruitmentPosts.AnyAsync(x => x.BookingId == booking.Id, ct))
+                    return Error(http, 409, "REQUEST_EXISTS");
+                if (await db.MediaUploads.CountAsync(x => x.BookingId == booking.Id &&
+                    x.Purpose == "RECRUITMENT_IMAGE", ct) >= 3)
+                    return Error(http, 409, "LIMIT_REACHED");
+            }
+            else
+            {
+                bookingId = await BookingGroup.AnchorId(db, proofBookingId, ct) ?? throw new InvalidOperationException("Missing booking payment scope.");
+                if (booking.Status is not ("AWAITING_TRANSFER" or "NEEDS_REVIEW")) return Error(http, 409, "STATE_CONFLICT");
+                if (booking.Status == "AWAITING_TRANSFER" && booking.PaymentDeadline <= http.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow()) return Error(http, 409, "PAYMENT_DEADLINE_EXPIRED");
+            }
             venueId = booking.VenueId;
-            input = input with { VenueId = venueId, Purpose = "PAYMENT_PROOF" };
+            input = input with { VenueId = venueId, Purpose = recruitment ? "RECRUITMENT_IMAGE" : "PAYMENT_PROOF" };
         }
         else
         {
@@ -99,7 +119,8 @@ public static class MediaEndpoints
         }
         var upload = new MediaUpload { OwnerUserId = user!.Id, VenueId = venueId, BookingId = bookingId, Purpose = input.Purpose!,
             ContentType = input.ContentType, SizeBytes = input.SizeBytes, Sha256Base64 = input.Sha256Base64!,
-            ObjectKey = bookingId is Guid proofId ? $"payment-proofs/{proofId:N}/{Guid.CreateVersion7():N}" :
+            ObjectKey = recruitment && bookingId is Guid recruitId ? $"recruitment/{recruitId:N}/{Guid.CreateVersion7():N}" :
+                bookingId is Guid proofId ? $"payment-proofs/{proofId:N}/{Guid.CreateVersion7():N}" :
                 $"venues/{venueId:N}/{Guid.CreateVersion7():N}", CreatedAt = DateTimeOffset.UtcNow };
         var expiration = DateTimeOffset.UtcNow.AddMinutes(5);
         string url;
@@ -183,7 +204,7 @@ public static class MediaEndpoints
         if (user is null || user.Status is not (UserStatus.PendingOnboarding or UserStatus.Active)) return Error(http, 403, "FORBIDDEN");
         var upload = await db.MediaUploads.AsNoTracking().SingleOrDefaultAsync(u => u.Id == uploadId && u.OwnerUserId == user.Id, ct);
         if (upload is null || upload.CourtId.HasValue || upload.Purpose == "COURT_IMAGE") return Error(http, 404, "NOT_FOUND");
-        if (upload.Purpose == "PAYMENT_PROOF")
+        if (upload.Purpose is "PAYMENT_PROOF" or "RECRUITMENT_IMAGE")
         {
             if (user.AccountType != AccountType.Customer || user.Status != UserStatus.Active) return Error(http, 403, "FORBIDDEN");
             if (!await db.Bookings.AnyAsync(x => x.Id == upload.BookingId && x.CustomerId == user.Id && x.VenueId == upload.VenueId, ct)) return Error(http, 404, "NOT_FOUND");
@@ -228,7 +249,7 @@ public static class MediaEndpoints
         }
         // Verify bytes first, then serialize only the READY transition and its audit.
         await using var tx = await db.Database.BeginTransactionAsync(ct);
-        if (upload.Purpose != "PAYMENT_PROOF")
+        if (upload.Purpose is not ("PAYMENT_PROOF" or "RECRUITMENT_IMAGE"))
         {
             var scope = await OwnerMediaScope.Resolve(http, db, upload.VenueId, upload.CourtId, true, ct);
             if (scope.Error is not null) return scope.Error;
@@ -259,10 +280,10 @@ public static class MediaEndpoints
             await (from venue in db.Venues join member in db.BusinessMemberships on venue.BusinessId equals member.BusinessId
                 where venue.Id == upload.VenueId && member.UserId == user.Id && member.Role == "OWNER" &&
                     (member.Status == "PENDING" || member.Status == "ACTIVE") select member.Id).AnyAsync(ct);
-        if (upload.Purpose == "PAYMENT_PROOF")
+        if (upload.Purpose is "PAYMENT_PROOF" or "RECRUITMENT_IMAGE")
         {
             // Approval media access never grants access to a customer's private payment evidence.
-            allowed = user.Status == UserStatus.Active &&
+            allowed = user.Status == UserStatus.Active && upload.Purpose == "PAYMENT_PROOF" &&
                 (user.AccountType == AccountType.Customer && upload.OwnerUserId == user.Id &&
                     await db.Bookings.AnyAsync(x => x.Id == upload.BookingId && x.CustomerId == user.Id && x.VenueId == upload.VenueId, ct) ||
                  user.AccountType == AccountType.VenueOperator &&
@@ -295,6 +316,47 @@ public static class MediaEndpoints
         http.Response.Headers.CacheControl = "no-store";
         http.Response.Headers.XContentTypeOptions = "nosniff";
         http.Response.Headers["Referrer-Policy"] = "no-referrer";
+        return Results.File(bytes, upload.ContentType);
+    }
+
+    private static async Task<IResult> RecruitmentImage(HttpContext http, ShuttleBookDbContext db,
+        IWebHostEnvironment environment, IConfiguration config, Guid id, CancellationToken ct)
+    {
+        if (http.Request.Query.Count != 0) return Error(http, 400, "VALIDATION_FAILED");
+        if (!Local(environment, config) && !S3(config)) return Error(http, 503, "MEDIA_UNAVAILABLE");
+        // Keep an OPEN post's photo visible after its last slot is filled. HIDDEN and CLOSED posts remain private.
+        var post = await RecruitmentEndpoints.PublicPosts(db, http.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow(),
+            requireOpenSlots: false)
+            .AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, ct);
+        if (post?.ImageUploadId is not Guid imageId) return Error(http, 404, "NOT_FOUND");
+        var upload = await db.MediaUploads.AsNoTracking().SingleOrDefaultAsync(x => x.Id == imageId &&
+            x.OwnerUserId == post.OwnerUserId && x.BookingId == post.BookingId &&
+            x.Purpose == "RECRUITMENT_IMAGE" && x.Status == "READY", ct);
+        if (upload is null) return Error(http, 404, "NOT_FOUND");
+        byte[] bytes;
+        if (S3(config))
+        {
+            try
+            {
+                var client = http.RequestServices.GetRequiredService<IAmazonS3>();
+                using var response = await client.GetObjectAsync(config["Media:S3Bucket"], upload.ObjectKey, ct);
+                await using var memory = new MemoryStream();
+                await response.ResponseStream.CopyToAsync(memory, ct);
+                if (memory.Length > 5_242_880) return Error(http, 409, "UPLOAD_MISMATCH");
+                bytes = memory.ToArray();
+            }
+            catch (AmazonClientException) { return Error(http, 503, "MEDIA_UNAVAILABLE"); }
+        }
+        else
+        {
+            var path = Path.Combine(environment.ContentRootPath, ".media-local", upload.Id.ToString("N"));
+            if (!File.Exists(path)) return Error(http, 404, "NOT_FOUND");
+            bytes = await File.ReadAllBytesAsync(path, ct);
+        }
+        if (bytes.LongLength != upload.SizeBytes || Convert.ToBase64String(SHA256.HashData(bytes)) != upload.Sha256Base64)
+            return Error(http, 409, "UPLOAD_MISMATCH");
+        http.Response.Headers.CacheControl = "no-store";
+        http.Response.Headers.XContentTypeOptions = "nosniff";
         return Results.File(bytes, upload.ContentType);
     }
 

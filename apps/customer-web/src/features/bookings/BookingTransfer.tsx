@@ -120,6 +120,7 @@ export function BookingTransfer({ booking, now, onBooking, onAccessDenied }: { b
         <label htmlFor={noteId}>Ghi chú (không bắt buộc)</label>
         <textarea id={noteId} rows={3} maxLength={1000} value={note} disabled={pending} onChange={event => setNote(event.target.value)} />
         {error && <p role="alert">{error}</p>}
+        <p className="form-note" role="status">{file ? 'Sẽ gửi kèm ảnh đã chọn.' : 'Không chọn ảnh: vẫn có thể gửi báo chuyển khoản.'}</p>
         <button type="submit" disabled={pending || expired || mustReload || Boolean(fileError)}>{pending ? 'Đang xử lý…' : supplement ? 'Gửi bổ sung bằng chứng' : 'Gửi báo chuyển khoản'}</button>
         {mustReload && <button type="button" disabled={pending} onClick={() => { void reload(); }}>Tải lại để kiểm tra đơn</button>}
       </form>}

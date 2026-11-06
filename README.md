@@ -16,6 +16,8 @@ Việc đặt sân thường diễn ra qua tin nhắn, bảng tính và xác nh�
 
 - **Ba portal theo vai trò:** Customer, Partner và Admin.
 - **Khám phá sân:** tìm theo vị trí/bán kính, xem cơ sở, sân và thời gian còn trống.
+- **Tìm theo lịch và ngân sách:** chọn thành phố, ngày, giờ và ngân sách rồi xem báo giá theo sân.
+- **Tìm người chơi và lịch chơi:** đăng tin gắn với booking, gửi yêu cầu tham gia và theo dõi các buổi chơi.
 - **Đặt sân vãng lai và cố định:** báo giá theo ca 30 phút, giữ chỗ và ngăn đặt trùng bằng PostgreSQL/PostGIS.
 - **Vận hành sân:** chủ sân quản lý cơ sở, sân, lịch mở cửa, giá, giá đặc biệt, bảo trì và tài khoản nhận thanh toán.
 - **Thanh toán chuyển khoản:** khách gửi bằng chứng, chủ sân đối chiếu và xác nhận hoặc từ chối.
@@ -25,7 +27,7 @@ Việc đặt sân thường diễn ra qua tin nhắn, bảng tính và xác nh�
 
 ## 🧪 Closed pilot (AWS staging)
 
-Môi trường staging hiện dành cho nhóm thử nghiệm nhỏ, khoảng 5–10 tài khoản.
+Môi trường staging hiện dành cho nhóm nhỏ, khoảng 5–10 tài khoản.
 
 | Portal | Địa chỉ thử |
 |---|---|
@@ -35,8 +37,6 @@ Môi trường staging hiện dành cho nhóm thử nghiệm nhỏ, khoảng 5�
 - Hai hostname dùng DuckDNS, được EC2 tự cập nhật khi Public IPv4 thay đổi và phục vụ qua HTTPS.
 - Admin không công khai; chỉ truy cập qua SSH tunnel.
 - OTP hiện dùng **Amazon SES Sandbox** ở Region Singapore. Chỉ email đã được xác minh trong SES mới nhận OTP. Hãy verify email của người thử trước khi mời họ.
-
-> Đây là closed pilot, chưa phải môi trường production mở cho mọi người dùng.
 
 ## 🛠 Công nghệ sử dụng
 
@@ -86,10 +86,8 @@ ShuttleBook/
 │   │   ├── ShuttleBook.Worker/         # Xử lý outbox nền
 │   │   ├── ShuttleBook.Migrator/       # Áp dụng migration database
 │   │   └── ShuttleBook.AdminCli/       # Bootstrap và thao tác Admin
-│   └── tests/                  # API và integration test với PostgreSQL thật
 ├── deploy/                     # Dockerfile, Compose và cấu hình staging mẫu
-├── scripts/                    # Script PowerShell cho setup, chạy và test
-├── tests/web/                  # Playwright browser tests
+├── scripts/                    # Script PowerShell cho setup và chạy local
 ├── compose.yaml                # PostgreSQL/PostGIS và Mailpit cho local
 └── .env.example                # Mẫu cấu hình local, không chứa secret
 ```
@@ -181,72 +179,13 @@ docker compose ps
 
 Cho staging Linux, dùng `deploy/compose.staging.yml` cùng `.env.staging` riêng tư tạo từ `deploy/staging.env.example`. Không commit `.env.staging`, PFX/PEM, backup database hoặc cấu hình hạ tầng theo máy chủ.
 
-## 📖 Sử dụng và API
-
-### Luồng sử dụng cơ bản
-
-1. Customer đăng ký, xác minh OTP, tìm sân, nhận báo giá và tạo booking.
-2. Customer báo đã chuyển khoản và tải bằng chứng thanh toán lên private storage.
-3. Partner tạo hồ sơ cơ sở/sân, cấu hình lịch, giá và xác nhận hoặc từ chối thanh toán.
-4. Admin duyệt hồ sơ hoặc yêu cầu chỉnh sửa trước khi cơ sở được public.
-
-### API tiêu biểu
-
-API hiện chưa công bố Swagger/OpenAPI UI. Các endpoint dưới đây là nhóm route quan trọng; request/response chi tiết nằm trong source và test.
-
-| Method | Route | Mô tả |
-|---|---|---|
-| `GET` | `/health/live` | Kiểm tra tiến trình API sống |
-| `GET` | `/health/ready` | Kiểm tra API sẵn sàng, gồm database |
-| `POST` | `/api/v1/auth/register` | Đăng ký Customer |
-| `POST` | `/api/v1/auth/verify-contact` | Xác minh contact Customer bằng OTP |
-| `POST` | `/api/v1/partner-auth/register` | Đăng ký Partner |
-| `POST` | `/api/v1/auth/login` | Đăng nhập qua JWT API |
-| `GET` | `/api/v1/venues/nearby` | Tìm sân theo vị trí và bán kính |
-| `POST` | `/api/v1/availability/quote` | Lấy báo giá booking vãng lai |
-| `POST` | `/api/v1/bookings` | Tạo booking vãng lai |
-| `POST` | `/api/v1/booking-series` | Tạo booking cố định theo kỳ |
-| `POST` | `/api/v1/bookings/{id}/transfer-evidence` | Báo đã chuyển khoản |
-| `POST` | `/api/v1/operator/bookings/{id}/confirm-payment` | Partner xác nhận thanh toán |
-| `GET` | `/api/v1/me/notifications/` | Lấy thông báo của người dùng hiện tại |
-
-Các endpoint có dữ liệu người dùng yêu cầu xác thực và kiểm tra quyền/scope ở backend.
-
-## 🧪 Kiểm thử
+## Kiểm tra mã nguồn
 
 ```powershell
-# TypeScript
 npm.cmd run typecheck
-
-# Build ba frontend
 npm.cmd run build
-
-# API unit/integration tests
-npm.cmd run test:api
-
-# PostgreSQL/PostGIS integration tests (Docker phải đang chạy)
-npm.cmd run test:db
-
-# Cài Chromium cho Playwright, chỉ cần một lần trên mỗi máy
-npm.cmd run setup:browsers
-
-# Browser tests
-npm.cmd run test:web
+dotnet build backend/ShuttleBook.slnx --configuration Release
 ```
 
-CI GitHub Actions chạy typecheck, build, Playwright, migration lặp lại an toàn, API tests, database tests và kiểm tra đóng gói staging.
-
-## 🤝 Đóng góp
-
-1. Fork repository và tạo branch mô tả rõ thay đổi.
-2. Giữ thay đổi trong phạm vi một vấn đề; không đưa secret, dữ liệu cá nhân hoặc output sinh tự động vào commit.
-3. Chạy các lệnh test phù hợp trong mục **Kiểm thử**.
-4. Mở Pull Request, mô tả mục tiêu, cách kiểm tra và rủi ro còn lại.
-
-Repository chưa quy định commit convention riêng. Hãy dùng message ngắn, dạng mệnh lệnh và nêu rõ phạm vi, ví dụ `fix: validate payment evidence upload`.
-
-## 📄 Giấy phép
-
-Repository hiện **chưa có file LICENSE**. Không tự suy diễn quyền sử dụng, phân phối hoặc đóng góp ngoài những gì chủ repository cho phép.
-
+Theo lựa chọn của chủ repository, `docs/`, `tests/` và `backend/tests/` chỉ ở local và không nằm trong Git. CI kiểm tra build, migration lặp lại an toàn và đóng gói staging; các bộ test riêng chỉ chạy trên máy đang giữ các thư mục đó.
 

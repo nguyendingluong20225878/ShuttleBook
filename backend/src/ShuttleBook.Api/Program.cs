@@ -20,6 +20,7 @@ using Amazon;
 using Amazon.S3;
 using ShuttleBook.Api.Discovery;
 using ShuttleBook.Api.Bookings;
+using ShuttleBook.Api.Recruitment;
 
 var builder = WebApplication.CreateBuilder(args);
 if (builder.Configuration["DataProtection:KeysPath"] is { Length: > 0 } keysPath)
@@ -154,6 +155,12 @@ builder.Services.AddRateLimiter(options =>
     options.AddPolicy("booking-create", context => RateLimitPartition.GetFixedWindowLimiter(
         context.User.FindFirst("sub")?.Value ?? "unknown", _ => new FixedWindowRateLimiterOptions
         { PermitLimit = 30, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
+    options.AddPolicy("recruitment-read", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new FixedWindowRateLimiterOptions
+        { PermitLimit = 120, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
+    options.AddPolicy("recruitment-write", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.User.FindFirst("sub")?.Value ?? "unknown", _ => new FixedWindowRateLimiterOptions
+        { PermitLimit = 30, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
     options.AddPolicy("auth-verify", context => RateLimitPartition.GetFixedWindowLimiter(
         context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new FixedWindowRateLimiterOptions
     {
@@ -217,8 +224,10 @@ app.MapCourtOperationsEndpoints();
 app.MapPartnerCalendarEndpoints();
 app.MapPublicVenuesEndpoints();
 app.MapBookingEndpoints();
+app.MapPlayScheduleEndpoints();
 app.MapSeriesEndpoints();
 app.MapPaymentEndpoints();
+app.MapRecruitmentEndpoints();
 
 app.Run();
 

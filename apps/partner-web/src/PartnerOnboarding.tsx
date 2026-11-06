@@ -15,14 +15,18 @@ type Row = { id: string; name: string; status: string };
 type Court = { id: string; name: string; status: string; version: number; hours: object[]; prices: object[] };
 type Venue = { id: string; name: string; status: string; version: number; address: string; contact: string;
   imageUploadId?: string;
-  latitude: number; longitude: number; timezone: string;
-  paymentAccount?: { accountName?: string; maskedAccountNumber: string }; courts: Court[] };
+  latitude: number; longitude: number; timezone: string; cityCode: 'HN' | 'HCM' | null;
+  paymentAccount?: { bankCode?: string; accountName?: string; maskedAccountNumber: string }; courts: Court[] };
 type Approval = { id?: string; kind?: string; status: string; reason?: string; venueId?: string; courtId?: string };
 type Detail = Row & { version: number; legalName: string; contact: string;
   approval?: Approval; approvals?: Approval[]; venues: Venue[] };
 type Envelope<T> = { data: T };
 const base = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5080';
 const defaultTimezone = 'Asia/Ho_Chi_Minh';
+const cityLabel = (code: string | null) => code === 'HN' ? 'Hà Nội' : code === 'HCM' ? 'TP.HCM' : 'Khác/chưa xác định';
+const cityMatchesPin = (code: string | null, latitude: number, longitude: number) => code === 'HN'
+  ? latitude >= 20.4 && latitude <= 21.45 && longitude >= 105.25 && longitude <= 106.25
+  : code === 'HCM' ? latitude >= 10.3 && latitude <= 11.25 && longitude >= 106.3 && longitude <= 107.15 : true;
 const days = ['Chủ nhật', 'Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy'];
 
 function courtNumberOf(name: string): string {
@@ -80,12 +84,15 @@ export function PartnerOnboarding({ sendRequest, onLogout, logoutBusy }: {
   const [legalName, setLegalName] = useState('');
   const [contact, setContact] = useState('');
   const [venueName, setVenueName] = useState('');
+  const [venueCity, setVenueCity] = useState('');
+  const [draftCities, setDraftCities] = useState<Record<string, 'HN' | 'HCM' | 'OTHER'>>({});
   const [address, setAddress] = useState('');
   const [venueContact, setVenueContact] = useState('');
   const [latitude, setLatitude] = useState('');
   const [longitude, setLongitude] = useState('');
   const [createPickerKey, setCreatePickerKey] = useState(0);
   const [accountName, setAccountName] = useState('');
+  const [bankCode, setBankCode] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
   const [qrFile, setQrFile] = useState<File | null>(null);
   const [imageVenue, setImageVenue] = useState('');
@@ -103,6 +110,7 @@ export function PartnerOnboarding({ sendRequest, onLogout, logoutBusy }: {
       const error = await response.json().catch(() => ({})) as { code?: string };
       const failure = new PartnerApiError(error.code ?? 'REQUEST_FAILED', response.status);
       const friendly = ({ VALIDATION_FAILED: 'Thông tin chưa hợp lệ. Kiểm tra ngày, giờ và giá đã nhập.',
+        CITY_LOCATION_MISMATCH: 'Thành phố không khớp với vị trí ghim trên bản đồ. Hãy kiểm tra lại thành phố và địa chỉ cơ sở.',
         PRICE_UNAVAILABLE: 'Khoảng giờ này chưa có giá đầy đủ hoặc nằm ngoài giờ mở. Kiểm tra lịch và bảng giá đã lưu.',
         SLOT_CONFLICT: 'Khoảng giờ bị trùng với đơn, báo giá đang giữ hoặc bảo trì. Chọn khoảng khác và tải lại lịch.',
         FORBIDDEN: 'Bạn không có quyền thực hiện thao tác này.', NOT_FOUND: 'Không tìm thấy mục này trong quyền quản lý của bạn.',
@@ -130,7 +138,7 @@ export function PartnerOnboarding({ sendRequest, onLogout, logoutBusy }: {
       if (target !== loadedBusiness.current) {
         setImageVenue('');
         setImageFile(null); setQrFile(null); setAccountName(''); setAccountNumber('');
-        setVenueName(''); setVenueContact(''); setAddress(''); setLatitude(''); setLongitude('');
+        setVenueName(''); setVenueCity(''); setVenueContact(''); setAddress(''); setLatitude(''); setLongitude('');
         setCreatePickerKey(value => value + 1);
         setRevisionVenue('');
         loadedBusiness.current = target ?? '';
@@ -274,47 +282,84 @@ export function PartnerOnboarding({ sendRequest, onLogout, logoutBusy }: {
       </form>}
       {visited.has('venues') && editableBusiness && <form hidden={page !== 'venues'} onSubmit={event => submit(event, async () => {
         if (!address || !latitude || !longitude) throw new Error('Chọn và xác nhận địa chỉ trên MapTiler.');
+        if (!cityMatchesPin(venueCity, Number(latitude), Number(longitude)))
+          throw new Error('Thành phố không khớp với vị trí ghim. Hãy chọn lại địa chỉ hoặc thành phố.');
         await request(`/partner-onboarding/businesses/${detail.id}/venues`, 'POST',
-          { name: venueName, address, contact: venueContact, timezone: defaultTimezone,
+          { name: venueName, address, cityCode: venueCity === 'OTHER' ? null : venueCity,
+            contact: venueContact, timezone: defaultTimezone,
             latitude: Number(latitude), longitude: Number(longitude) });
-        setVenueName(''); setAddress(''); setLatitude(''); setLongitude(''); setCreatePickerKey(value => value + 1);
+        setVenueName(''); setVenueCity(''); setAddress(''); setLatitude(''); setLongitude(''); setCreatePickerKey(value => value + 1);
         setVenueContact(''); await load(detail.id);
       })}>
         <h3>Thêm cơ sở</h3>
         <label>Tên <input required value={venueName} onChange={e => setVenueName(e.target.value)} /></label>
-        <MapTilerPlacePicker key={createPickerKey} onChange={value => {
+        <label>Thành phố <select required value={venueCity} onChange={e => setVenueCity(e.target.value)}>
+          <option value="">Chọn theo địa chỉ cơ sở</option><option value="HN">Hà Nội</option>
+          <option value="HCM">TP.HCM</option><option value="OTHER">Tỉnh/thành khác</option>
+        </select></label>
+        <MapTilerPlacePicker key={createPickerKey} city={venueCity as 'HN' | 'HCM' | 'OTHER' | ''} onChange={value => {
           setAddress(value?.address ?? ''); setLatitude(value ? String(value.latitude) : '');
           setLongitude(value ? String(value.longitude) : '');
         }} />
+        {latitude && longitude && !cityMatchesPin(venueCity, Number(latitude), Number(longitude)) &&
+          <p role="alert" className="feedback error">Vị trí ghim không thuộc khu vực thành phố đã chọn.</p>}
         <label>Liên hệ cơ sở <input required value={venueContact} onChange={e => setVenueContact(e.target.value)} /></label>
         <button disabled={busy}>Lưu cơ sở</button>
       </form>}
       {detail.venues.map(v => <article className="venue-detail-card" id={`partner-venue-${v.id}`} hidden={!['venues', 'courts', 'media', 'payments'].includes(page)} key={v.id}>
         <h3>{v.name} · {statusLabel(v.status)}</h3><p>{v.address} · {v.contact}</p>
+        <p>Thành phố hiển thị: {cityLabel(v.cityCode)}</p>
         <p>Ảnh: {v.imageUploadId ? 'Đã tải' : 'Chưa có'} · QR: {v.paymentAccount ? 'Đã khai báo' : 'Chưa có'}</p>
         {page === 'venues' && v.imageUploadId && <VenueImagePreview key={`${v.id}-${v.imageUploadId}`} uploadId={v.imageUploadId} name={v.name} request={request} />}
         {page === 'venues' && v.imageUploadId && (draftVenue(v) || publishedVenue(v)) && <button type="button" disabled={busy}
           aria-label={`Gỡ ảnh cơ sở ${v.name}`} onClick={() => void run(async () => {
             await request(`/operator/venues/${v.id}/image`, 'DELETE', undefined, v.version); await load(detail.id);
           })}>Gỡ ảnh</button>}
-        {page === 'payments' && v.paymentAccount && <p>Số tài khoản: {v.paymentAccount.maskedAccountNumber}</p>}
+        {page === 'payments' && v.paymentAccount && <p>Ngân hàng: {v.paymentAccount.bankCode || 'Chưa khai báo'} · Số tài khoản: {v.paymentAccount.maskedAccountNumber}</p>}
         {itemApproval(v.id)?.status === 'CHANGES_REQUESTED' && <p className="feedback error">Admin yêu cầu bổ sung cơ sở: {itemApproval(v.id)?.reason}</p>}
         {v.status === 'PENDING_APPROVAL' && <p className="feedback">Cơ sở đang chờ duyệt; khách chưa thể thấy và đặt sân tại đây.</p>}
         {visited.has('venues') && draftVenue(v) && <form hidden={page !== 'venues'} key={v.version} onSubmit={event => submit(event, async () => {
           const fields = new FormData(event.currentTarget);
           if (!fields.get('address') || !fields.get('latitude') || !fields.get('longitude'))
             throw new Error('Chọn và xác nhận địa chỉ trên MapTiler.');
+          if (!cityMatchesPin(String(fields.get('cityCode') ?? ''), Number(fields.get('latitude')), Number(fields.get('longitude'))))
+            throw new Error('Thành phố không khớp với vị trí ghim.');
           await request(`/partner-onboarding/venues/${v.id}`, 'PUT', {
             name: String(fields.get('name') ?? ''), address: String(fields.get('address') ?? ''),
+            cityCode: fields.get('cityCode') === 'OTHER' ? null : String(fields.get('cityCode') ?? ''),
             contact: String(fields.get('contact') ?? ''),
             timezone: v.timezone, latitude: Number(fields.get('latitude')),
             longitude: Number(fields.get('longitude')) }, v.version);
           await load(detail.id);
         })}>
           <label>Tên <input name="name" required defaultValue={v.name} /></label>
-          <MapTilerPlacePicker initial={{ address: v.address, latitude: v.latitude, longitude: v.longitude }} />
+          <label>Thành phố <select name="cityCode" required value={draftCities[v.id] ?? v.cityCode ?? 'OTHER'}
+            onChange={event => setDraftCities(previous => ({ ...previous, [v.id]: event.target.value as 'HN' | 'HCM' | 'OTHER' }))}>
+            <option value="HN">Hà Nội</option><option value="HCM">TP.HCM</option>
+            <option value="OTHER">Tỉnh/thành khác hoặc chưa xác định</option>
+          </select></label>
+          <MapTilerPlacePicker city={draftCities[v.id] ?? v.cityCode ?? 'OTHER'}
+            initial={{ address: v.address, latitude: v.latitude, longitude: v.longitude }} />
           <label>Liên hệ cơ sở <input name="contact" required defaultValue={v.contact} /></label>
           <button disabled={busy}>Sửa cơ sở</button>
+        </form>}
+        {page === 'venues' && publishedVenue(v) && !pendingApproval &&
+          ((v.cityCode !== 'HN' && cityMatchesPin('HN', v.latitude, v.longitude)) ||
+           (v.cityCode !== 'HCM' && cityMatchesPin('HCM', v.latitude, v.longitude))) &&
+          <form key={`city-${v.id}-${v.version}`}
+          onSubmit={event => submit(event, async () => {
+            const fields = new FormData(event.currentTarget);
+            if (fields.get('cityCode') === v.cityCode) throw new Error('Hãy chọn thành phố khác thành phố đang hiển thị.');
+            await request(`/partner-onboarding/venues/${v.id}/city-revisions`, 'POST',
+              { cityCode: String(fields.get('cityCode') ?? '') });
+            await load(detail.id);
+          })}>
+          <h4>Thành phố hiển thị với khách</h4>
+          <label>Thành phố <select name="cityCode" required defaultValue={v.cityCode ?? ''}>
+            <option value="">Chọn thành phố</option><option value="HN" disabled={!cityMatchesPin('HN', v.latitude, v.longitude)}>Hà Nội</option>
+            <option value="HCM" disabled={!cityMatchesPin('HCM', v.latitude, v.longitude)}>TP.HCM</option>
+          </select></label>
+          <button disabled={busy}>Gửi duyệt thành phố</button>
         </form>}
         {page === 'venues' && publishedVenue(v) && !pendingApproval && <form className="venue-contact-form" key={`contact-${v.id}-${v.version}`}
           onSubmit={event => submit(event, async () => {
@@ -331,7 +376,7 @@ export function PartnerOnboarding({ sendRequest, onLogout, logoutBusy }: {
           account={v.paymentAccount} busy={busy || loading} save={fields => run(async () => {
             const qrUploadId = await upload(fields.file, v.id, 'QR');
             await request(`/partner-onboarding/venues/${v.id}/payment-account`, 'PUT', {
-              accountName: fields.accountName, accountNumber: fields.accountNumber, qrUploadId });
+              bankCode: fields.bankCode, accountName: fields.accountName, accountNumber: fields.accountNumber, qrUploadId });
             await load(detail.id);
           }, 'Đã lưu QR dùng chung cho cơ sở.')} /></div>}
         <section className="venue-courts-block" hidden={page !== 'venues' && page !== 'courts'} aria-label={`Các sân tại ${v.name}`}>
@@ -357,13 +402,6 @@ export function PartnerOnboarding({ sendRequest, onLogout, logoutBusy }: {
               : 'Đã thêm sân. Lưu giờ và giá để sân tự công bố.')}>Thêm sân</button>
         </div>}
         </section>
-        {page === 'venues' && draftVenue(v) && <div className="venue-submit-row">
-          <p>Trước khi gửi duyệt: lưu QR nhận tiền, thêm sân và thiết lập giờ/giá. Ảnh cơ sở là tùy chọn.</p>
-          {detail.status === 'ACTIVE' ? <button type="button" disabled={busy || pendingApproval}
-            aria-label={`Gửi duyệt cơ sở ${v.name}`} onClick={() => void run(async () => {
-              await request(`/partner-onboarding/venues/${v.id}/submit`, 'POST'); await load(detail.id);
-            })}>Gửi duyệt cơ sở</button> : <span className="muted">Nút gửi hồ sơ doanh nghiệp ở cuối trang.</span>}
-        </div>}
       </article>)}
       {editableBusiness && detail.venues.length > 0 && <>
         <form hidden={page !== 'venues' && page !== 'media'} onSubmit={event => submit(event, async () => {
@@ -381,6 +419,13 @@ export function PartnerOnboarding({ sendRequest, onLogout, logoutBusy }: {
           <input aria-label="Ảnh cơ sở" required type="file" accept="image/png,image/jpeg,image/webp" onChange={e => setImageFile(e.target.files?.[0] ?? null)} />
           <button disabled={busy}>Tải ảnh</button>
         </form>
+        {page === 'venues' && detail.status === 'ACTIVE' && detail.venues.some(draftVenue) && <div className="venue-submit-row panel">
+          <p>Ảnh cơ sở là tùy chọn. Kiểm tra QR, sân, giờ và giá trước khi gửi duyệt.</p>
+          {detail.venues.filter(draftVenue).map(venue => <button key={venue.id} type="button" disabled={busy || pendingApproval}
+            aria-label={`Gửi duyệt cơ sở ${venue.name}`} onClick={() => void run(async () => {
+              await request(`/partner-onboarding/venues/${venue.id}/submit`, 'POST'); await load(detail.id);
+            })}>Gửi duyệt cơ sở {venue.name}</button>)}
+        </div>}
       </>}
       {page === 'venues' && detail.status === 'DRAFT' && <section className="panel venue-final-submit">
         <h3>Hoàn tất hồ sơ doanh nghiệp</h3>
@@ -395,7 +440,6 @@ export function PartnerOnboarding({ sendRequest, onLogout, logoutBusy }: {
         <a className="button secondary" href="#/venues" onClick={() => navigate('venues')}>Đến mục Cơ sở</a>
       </section>}
       {page === 'payments' && <div className="panel"><h3>Thay đổi tài khoản & QR</h3>
-        <p>Mỗi cơ sở dùng một QR chung cho tất cả sân. QR ban đầu được thiết lập tại Cơ sở & sân trước khi gửi duyệt.</p>
         <a className="button secondary" href="#/venues">Thiết lập cơ sở</a>
         {pendingApproval && <p className="feedback">Đang có hồ sơ chờ Admin duyệt. Tài khoản/QR hiện hành tiếp tục được dùng; chờ kết quả trước khi gửi thay đổi mới.</p>}
       </div>}
@@ -405,7 +449,7 @@ export function PartnerOnboarding({ sendRequest, onLogout, logoutBusy }: {
         if (!qrFile) throw new Error('Chọn QR mới.');
         const qrUploadId = await upload(qrFile, revisionVenue, 'QR');
         await request(`/partner-onboarding/venues/${revisionVenue}/payment-account/revisions`, 'POST', {
-          accountName, accountNumber, qrUploadId });
+          bankCode: bankCode.trim(), accountName, accountNumber, qrUploadId });
         setAccountNumber(''); setQrFile(null); await load(detail.id);
       })}>
         <h3>Đề nghị đổi tài khoản hoặc QR</h3>
@@ -413,9 +457,9 @@ export function PartnerOnboarding({ sendRequest, onLogout, logoutBusy }: {
         <label>Cơ sở <select required value={revisionVenue} onChange={e => {
           const venue = detail.venues.find(v => v.id === e.target.value);
           setRevisionVenue(e.target.value);
-          setAccountName(venue?.paymentAccount?.accountName ?? ''); setAccountNumber(''); setQrFile(null);
+          setBankCode(venue?.paymentAccount?.bankCode ?? ''); setAccountName(venue?.paymentAccount?.accountName ?? ''); setAccountNumber(''); setQrFile(null);
         }}><option value="">Chọn</option>{detail.venues.filter(publishedVenue).map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
-        {revisionVenue && <p className="muted">QR đề nghị áp dụng cho mọi sân tại {detail.venues.find(v => v.id === revisionVenue)?.name}.</p>}
+        <label>Ngân hàng <input required minLength={2} maxLength={32} placeholder="Ví dụ: MB Bank" value={bankCode} onChange={e => setBankCode(e.target.value)} /></label>
         <label>Tên tài khoản <input required value={accountName} onChange={e => setAccountName(e.target.value)} /></label>
         <label>Số tài khoản <input required inputMode="numeric" value={accountNumber} onChange={e => setAccountNumber(e.target.value)} /></label>
         <input key={revisionVenue} aria-label="QR mới" required type="file" accept="image/png,image/jpeg,image/webp" onChange={e => setQrFile(e.target.files?.[0] ?? null)} />

@@ -39,6 +39,15 @@ function contactPhone(contact: string) {
 }
 
 export function VenueDetailPage({ venueId }: { venueId: string }) {
+  const suggestionParams = new URLSearchParams(location.search);
+  const suggestedStart = suggestionParams.get('startsAt') ?? '';
+  const suggestedDuration = Number(suggestionParams.get('durationMinutes'));
+  const suggestedCourtId = suggestionParams.get('suggestedCourtId') ?? '';
+  const suggestedDate = suggestionParams.get('date');
+  const suggestion = /^([01]\d|2[0-3]):(00|30)$/.test(suggestedStart) &&
+    Number.isInteger(suggestedDuration) && suggestedDuration >= 30 && suggestedDuration <= 480 &&
+    suggestedDuration % 30 === 0 && /^[0-9a-f-]{36}$/i.test(suggestedCourtId)
+    ? { courtId: suggestedCourtId, startsAt: suggestedStart, durationMinutes: suggestedDuration } : undefined;
   const [venue, setVenue] = useState<VenueDetail | null>(null);
   const [date, setDate] = useState('');
   const [schedule, setSchedule] = useState<VenueSchedule | null>(null);
@@ -104,21 +113,24 @@ export function VenueDetailPage({ venueId }: { venueId: string }) {
           ? <a href={`tel:${contactPhone(venue.contact)}`}>{venue.contact}</a>
           : venue.contact.trim() || 'Chưa có thông tin liên hệ'}</p>
         <p>{venue.courts.length} sân đang hoạt động</p></div>
-    </section><div className="booking-mode" role="group" aria-label="Hình thức đặt sân"><span>Hình thức đặt</span>
-      <button type="button" aria-pressed={bookingMode === 'casual'} onClick={() => { setBookingMode('casual');
-        const url = new URL(location.href); url.searchParams.set('mode', 'casual'); history.pushState(null, '', url); }}>Vãng lai</button>
-      <button type="button" aria-pressed={bookingMode === 'fixed'} onClick={() => { setBookingMode('fixed');
-        const url = new URL(location.href); url.searchParams.set('mode', 'fixed'); history.pushState(null, '', url); }}>Cố định hằng tuần</button>
-      {bookingMode === 'fixed' && <p>Mỗi buổi tối thiểu 2 giờ, kỳ tối thiểu 1 tháng. Chọn khung giờ ở bảng rồi kiểm tra toàn kỳ.</p>}
+    </section><div className="booking-steps" aria-label="Các bước đặt sân">
+      <span><b>1</b> Chọn ngày</span><span><b>2</b> Chọn sân và giờ</span><span><b>3</b> Xem báo giá rồi đặt</span>
     </div><section className="schedule-controls" aria-label="Chọn lịch">
       <label htmlFor="schedule-date">Ngày chơi</label><input id="schedule-date" type="date" value={date}
         min={todayInZone(venue.timezone)} onChange={event => { setDate(event.target.value);
           setSchedule(null); rememberDate(event.target.value); }} />
       <button type="button" onClick={() => setRetry(value => value + 1)}>Làm mới lịch</button>
       {scheduleLoading && <span role="status">Đang cập nhật lịch…</span>}
-    </section>
+    </section><div className="booking-mode" role="group" aria-label="Hình thức đặt sân"><span>Hình thức đặt</span>
+      <button type="button" aria-pressed={bookingMode === 'casual'} onClick={() => { setBookingMode('casual');
+        const url = new URL(location.href); url.searchParams.set('mode', 'casual'); history.pushState(null, '', url); }}>Vãng lai</button>
+      <button type="button" aria-pressed={bookingMode === 'fixed'} onClick={() => { setBookingMode('fixed');
+        const url = new URL(location.href); url.searchParams.set('mode', 'fixed'); history.pushState(null, '', url); }}>Cố định hằng tuần</button>
+      {bookingMode === 'fixed' && <p>Mỗi buổi tối thiểu 2 giờ, kỳ tối thiểu 1 tháng. Chọn khung giờ ở bảng rồi kiểm tra toàn kỳ.</p>}
+    </div>
     {scheduleError && <p role="alert">{scheduleError}</p>}
-    {schedule && schedule.date === date && <ScheduleGrid schedule={schedule} bookingMode={bookingMode} />}
+    {schedule && schedule.date === date && <ScheduleGrid schedule={schedule} bookingMode={bookingMode}
+      suggestion={bookingMode === 'casual' && date === suggestedDate ? suggestion : undefined} />}
     </>}
   </CustomerShell>;
 }

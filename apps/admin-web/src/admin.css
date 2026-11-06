@@ -124,7 +124,7 @@ footer { color: var(--admin-muted); font-size: 12px; }
 .admin-notice-detail { border-top: 1px solid var(--admin-border); margin-top: 12px; padding-top: 6px; }
 .admin-notice-count { margin-left: auto; border-radius: 999px; background: #087d75; color: white; padding: 3px 7px; font-size: 12px; line-height: 1.3; }
 @media (max-width: 1100px) {
-  .admin-workspace { grid-template-columns: 224px minmax(0, 1fr); }
+  .admin-workspace { display: block; }
   .admin-workspace-content { padding: 28px 24px 20px; }
 }
 @media (max-width: 800px) {
@@ -134,8 +134,9 @@ footer { color: var(--admin-muted); font-size: 12px; }
   .admin-mobile-header .admin-brand small { display: none; }
   .admin-mobile-actions { display: flex; gap: 8px; }
   .admin-mobile-actions > .admin-button-secondary { font-size: 12px; padding: 10px; }
-  .admin-sidebar { display: none; position: static; height: auto; padding: 12px 20px 20px; border-right: 0; border-bottom: 1px solid var(--admin-border); }
+  .admin-sidebar { display: none; position: static; height: auto; padding: 12px 20px 20px; border-right: 0; border-bottom: 1px solid var(--admin-border); flex-direction: column; align-items: stretch; }
   .admin-sidebar.is-open { display: flex; }
+  .admin-sidebar nav { display: grid; overflow: visible; }
   .admin-sidebar-brand, .admin-sidebar-footer, .admin-nav-label { display: none; }
   .admin-workspace-content { padding: 24px 20px 20px; }
   .admin-page-heading { margin-bottom: 20px; }
@@ -184,3 +185,66 @@ footer { color: var(--admin-muted); font-size: 12px; }
 .admin-comparison-hint { display: none; color: var(--admin-muted); font-size: 12px; }
 .admin-revision-diff:focus-visible { outline: 3px solid var(--admin-primary); outline-offset: 3px; }
 @media (max-width: 800px) { .admin-comparison-hint { display: block; } }
+
+@media (min-width: 801px) {
+  .admin-workspace { display: block; }
+  .admin-sidebar { position: sticky; top: 0; z-index: 10; width: 100%; height: auto; min-height: 72px; padding: 10px clamp(16px,3vw,40px); border: 0; border-bottom: 1px solid var(--admin-border); flex-direction: row; align-items: center; gap: clamp(14px,2vw,30px); }
+  .admin-sidebar-brand { flex: none; padding: 0; font-size: 19px; }
+  .admin-sidebar-brand small,.admin-nav-label { display: none; }
+  .admin-sidebar nav { display: flex; flex: 1; min-width: 0; gap: 2px; align-items: center; overflow-x: auto; scrollbar-width: thin; }
+  .admin-sidebar nav a { flex: none; white-space: nowrap; min-height: 44px; padding: 8px 11px; font-size: 13px; }
+  .admin-sidebar nav a[aria-current] { box-shadow: inset 0 -3px var(--admin-primary); }
+  .admin-sidebar-footer { flex: none; margin: 0; padding: 0; border: 0; display: flex; align-items: center; gap: 10px; }
+  .admin-sidebar-footer .admin-account { display: none; }
+}
+
+.admin-nav-more { position: relative; min-width: 0; }
+.admin-desktop-extra { display: none; }
+.admin-nav-more > summary { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 8px 11px;
+  border-radius: 9px; color: var(--admin-muted); font-size: 13px; font-weight: 650; cursor: pointer; list-style: none; white-space: nowrap; }
+.admin-nav-more > summary::-webkit-details-marker { display: none; }
+.admin-nav-more > summary::after { content: '⌄'; }
+.admin-nav-more.is-current > summary, .admin-nav-more[open] > summary { background: #e1f2ef; color: #115e59; }
+.admin-nav-more-menu { position: absolute; top: calc(100% + 8px); right: 0; z-index: 20; min-width: 230px; display: grid; gap: 3px;
+  padding: 8px; border: 1px solid var(--admin-border); border-radius: 12px; background: #fff; box-shadow: 0 16px 34px #173d2d26; }
+.admin-sidebar nav .admin-nav-more-menu a { min-height: 44px; font-size: 13px; }
+dialog.admin-approval-detail { width: min(960px, calc(100vw - 32px)); max-width: none; max-height: calc(100dvh - 32px); margin: auto;
+  padding: 24px; overflow: auto; border: 1px solid var(--admin-border); border-radius: 16px; background: #fff; color: var(--sb-color-text); box-shadow: 0 22px 65px #102e2b45; }
+dialog.admin-approval-detail::backdrop { background: #102e2bb8; }
+.admin-detail-close { flex: none; min-width: 44px; min-height: 44px; font-size: 26px; line-height: 1; }
+dialog.admin-image-dialog { width: min(860px, calc(100vw - 24px)); max-width: none; max-height: calc(100dvh - 24px); margin: auto; padding: 16px;
+  overflow: auto; border: 1px solid var(--admin-border); border-radius: 16px; background: #fff; color: var(--sb-color-text); box-shadow: 0 22px 65px #102e2b45; }
+dialog.admin-image-dialog::backdrop { background: #102e2bd9; }
+dialog.admin-image-dialog header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 12px; }
+dialog.admin-image-dialog header button { min-width: 44px; min-height: 44px; font-size: 26px; }
+dialog.admin-image-dialog img { display: block; max-width: 100%; max-height: calc(100dvh - 120px); width: auto; height: auto; margin: auto; object-fit: contain; }
+dialog.admin-approval-detail .admin-detail-heading { position: sticky; top: -24px; z-index: 1; padding: 12px 0 14px; background: #fff; border-bottom: 1px solid var(--admin-border); }
+dialog.admin-approval-detail h3:focus { outline: none; }
+@media (max-width: 600px) {
+  dialog.admin-approval-detail .admin-revision-diff { overflow: visible; border: 0; }
+  dialog.admin-approval-detail .admin-revision-diff table { display: block; width: 100%; min-width: 0; }
+  dialog.admin-approval-detail .admin-revision-diff thead { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+  dialog.admin-approval-detail .admin-revision-diff tbody,
+  dialog.admin-approval-detail .admin-revision-diff tr,
+  dialog.admin-approval-detail .admin-revision-diff th,
+  dialog.admin-approval-detail .admin-revision-diff td { display: block; width: 100%; }
+  dialog.admin-approval-detail .admin-revision-diff tr { margin-bottom: 10px; overflow: hidden; border: 1px solid var(--admin-border); border-radius: 10px; }
+  dialog.admin-approval-detail .admin-revision-diff th { background: #edf5f3; }
+  dialog.admin-approval-detail .admin-revision-diff td { display: grid; grid-template-columns: minmax(95px, .7fr) minmax(0, 1fr); gap: 8px; }
+  dialog.admin-approval-detail .admin-revision-diff td::before { content: attr(data-label); color: var(--admin-muted); font-weight: 700; }
+}
+@media (max-width: 520px) { dialog.admin-approval-detail { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); padding: 16px; }
+  dialog.admin-approval-detail .admin-detail-heading { top: -16px; } }
+@media (min-width: 801px) {
+  .admin-sidebar nav { overflow: visible; }
+  .admin-sidebar nav .admin-nav-more-menu a { white-space: nowrap; }
+}
+@media (max-width: 800px) {
+  .admin-nav-more > summary { width: 100%; }
+  .admin-nav-more-menu { position: static; min-width: 0; box-shadow: none; margin-top: 6px; }
+}
+@media (min-width: 1000px) {
+  .admin-desktop-extra { display: contents; }
+  .admin-nav-more { display: none; }
+}

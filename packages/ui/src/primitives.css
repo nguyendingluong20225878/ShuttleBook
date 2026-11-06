@@ -26,3 +26,20 @@
   border-color: #efbfb8;
   background: #fff2f0;
 }
+.sb-confirm-dialog {
+  width: min(420px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  border: 1px solid #b4d1c0;
+  border-radius: 16px;
+  padding: 24px;
+  background: #fff;
+  color: #153c2c;
+  box-shadow: 0 18px 55px #102a1f40;
+}
+.sb-confirm-dialog::backdrop { background: #102a1fa8; }
+.sb-confirm-dialog h2 { margin: 0 0 8px; font-size: 1.25rem; }
+.sb-confirm-dialog p { margin: 0 0 22px; line-height: 1.5; }
+.sb-confirm-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.sb-confirm-actions button { min-height: 44px; padding: 8px 16px; border: 1px solid var(--sb-color-primary); border-radius: 10px; background: #fff; color: var(--sb-color-primary-hover); font: inherit; cursor: pointer; }
+.sb-confirm-actions button:last-child { background: var(--sb-color-primary); color: #fff; }
+.sb-confirm-actions button:focus-visible { outline: 3px solid var(--sb-color-focus); outline-offset: 2px; }

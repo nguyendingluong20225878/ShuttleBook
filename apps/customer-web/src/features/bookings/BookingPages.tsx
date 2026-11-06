@@ -62,11 +62,16 @@ export function BookingReview() {
   }
   return <Shell><section className="booking-panel sb-panel"><h1>Xác nhận đặt vãng lai</h1><a href={`/venues/${venueId}?date=${date}`}>Quay lại lịch các sân</a>
     {loading && <p role="status">Đang lấy báo giá…</p>}{error && <p className="sb-notice sb-notice--error" role="alert">{error}</p>}
-    {quote && <><h2>{quote.venueName} · {quote.courtName}</h2><p>Ngày {quote.date}</p>
+    {quote && <><h2>{quote.venueName} · {quote.courtName}</h2>
+      {quote.slots.length > 0 && <p className="booking-when">Ngày giờ chơi: <strong>{quote.date} · {quote.slots[0].startsAt}–{quote.slots[quote.slots.length - 1].endsAt}</strong>
+        <span> (giờ tại cơ sở)</span></p>}
+      <div className="booking-review-summary">
+        <p className="booking-total">Tổng tiền: {money(quote.amountExact ?? quote.amount)}</p>
+        <p className="booking-price-note">Đây là giá được tính lại khi giữ chỗ. Hãy kiểm tra trước khi tạo đơn.</p>
+      </div>
       <PriceBreakdown slots={quote.slots} />
-      <p className="booking-total">Tổng tiền: {money(quote.amountExact ?? quote.amount)}</p><div className="quote-hold-notice"><p>{now < Date.parse(quote.expiresAt) ? 'Đang giữ chỗ tạm cho bạn' : 'Đã hết thời gian giữ chỗ tạm'}: <strong>{remaining(quote.expiresAt, now)}</strong></p>
-        <p>Các ca trong báo giá được khóa đến hết thời gian trên. Nếu bạn chưa tạo đơn, các ca sẽ tự trở về trống. Bạn chỉ có thể lấy báo giá khác sau khi thời gian giữ chỗ kết thúc.</p></div>
-      <p>Sau khi tạo đơn thành công, sân tiếp tục được giữ {quote.holdMinutes} phút để bạn chuyển khoản.</p>
+      <div className="quote-hold-notice"><p>{now < Date.parse(quote.expiresAt) ? 'Đang giữ chỗ tạm cho bạn' : 'Đã hết thời gian giữ chỗ tạm'}: <strong>{remaining(quote.expiresAt, now)}</strong></p>
+        {now < Date.parse(quote.expiresAt) && <p>Các ca sẽ tự trở về trống khi hết giờ nếu chưa tạo đơn. Tạo đơn xong, bạn có {quote.holdMinutes} phút để chuyển khoản.</p>}</div>
       <button type="button" className="primary-action sb-action" onClick={() => { void create(); }} disabled={submitting || (expired && !canRetry)}>{submitting ? 'Đang tạo đơn…' : 'Xác nhận tạo đơn'}</button>
       {canRetry && !submitting && <p role="status">Chưa xác định được kết quả tạo đơn. Bạn có thể xác nhận lại cùng yêu cầu đã gửi hoặc xem Đơn của tôi. Không lấy báo giá mới khi chưa kiểm tra đơn cũ.</p>}
       {expired && <p role="status">{canRetry ? 'Báo giá đã hết hạn. Việc gửi lại chỉ kiểm tra yêu cầu cũ; máy chủ sẽ trả đơn đã tạo hoặc xác nhận yêu cầu không còn hợp lệ.' : 'Báo giá đã hết hạn và chỗ tạm đã được giải phóng. Hãy lấy báo giá mới trước khi tiếp tục.'}</p>}</>}
@@ -102,9 +107,10 @@ export function BookingDetail({ id }: { id: string }) {
       <p className="booking-total">{booking.series ? 'Số tiền cả kỳ' : 'Số tiền'}: {money(booking.amountExact ?? booking.payment.expectedAmountExact ?? booking.amount)}</p>
       {booking.status === 'AWAITING_TRANSFER' && <><p>Hạn chuyển khoản: {dateTime(booking.paymentDeadline, booking.timezone)}</p>
         <p>Thời gian giữ chỗ còn: <strong>{remaining(booking.paymentDeadline, now)}</strong></p>
-        {booking.payment.qrUrl && <PrivateImage path={booking.payment.qrUrl} className="booking-qr" alt="QR nhận tiền của cơ sở cho đơn đặt sân" />}
+        {booking.payment.qrUrl && <PrivateImage path={booking.payment.qrUrl} className="booking-qr" alt="QR nhận tiền của cơ sở cho đơn đặt sân"
+          fallback={<span>QR chưa hiển thị. Hãy thử tải lại ảnh; nếu vẫn lỗi, <a href={`/venues/${booking.venueId}`}>xem thông tin liên hệ cơ sở</a> để xác nhận cách chuyển khoản trước hạn trên. Đừng chuyển tiền theo số tài khoản bị che.</span>} />}
         <p>Chủ tài khoản: {booking.payment.accountName}</p>
-        <p>Số tài khoản: {booking.payment.maskedAccountNumber}</p><p>Nội dung chuyển khoản: <strong>{booking.payment.transferContent}</strong></p>
+        <p>Ngân hàng: <strong>{booking.payment.bankCode || 'Xem trên QR'}</strong></p><p>Số tài khoản: {booking.payment.maskedAccountNumber}</p>
         {now >= Date.parse(booking.paymentDeadline) && <p role="status">Đã qua hạn chuyển khoản. Đang cập nhật trạng thái từ máy chủ.</p>}</>}
       {['AWAITING_OWNER_CONFIRMATION', 'NEEDS_REVIEW'].includes(booking.status) && <div className="payment-notice">
         <p>Sân vẫn được giữ trong lúc chủ sân đối chiếu giao dịch.</p>
@@ -114,7 +120,8 @@ export function BookingDetail({ id }: { id: string }) {
       </div>}
       {booking.status === 'CONFIRMED' && <div className="payment-notice"><p>Đặt sân thành công. Lịch sân của bạn đã được xác nhận.</p>
         {booking.payment.confirmedAt && <p>Xác nhận lúc: {dateTime(booking.payment.confirmedAt, booking.timezone)}</p>}
-        {(booking.payment.confirmedAmountExact ?? booking.payment.confirmedAmount) != null && <p>Số tiền đã nhận: {money(booking.payment.confirmedAmountExact ?? booking.payment.confirmedAmount!)}</p>}</div>}
+        {(booking.payment.confirmedAmountExact ?? booking.payment.confirmedAmount) != null && <p>Số tiền đã nhận: {money(booking.payment.confirmedAmountExact ?? booking.payment.confirmedAmount!)}</p>}
+        {!booking.series && Date.parse(booking.startsAt) > now && <p><a href={`/me/teams?bookingId=${booking.bookingId}`}>Đội thiếu người? Đăng tìm người chơi</a></p>}</div>}
       {booking.status === 'EXPIRED' && <p>{booking.series ? 'Toàn bộ các buổi trong kỳ đã được giải phóng do chưa báo chuyển trong thời hạn giữ chỗ.' : 'Khung giờ đã được giải phóng do chưa báo chuyển trong thời hạn giữ chỗ.'}</p>}
       {booking.status === 'PAYMENT_REJECTED' && <p>{booking.series ? 'Chủ sân không xác nhận giao dịch. Toàn bộ các buổi đã được giải phóng; vui lòng liên hệ cơ sở để đối chiếu nếu cần.' : 'Chủ sân không xác nhận giao dịch. Khung giờ đã được giải phóng; vui lòng liên hệ cơ sở để đối chiếu nếu cần.'}</p>}
       {['AWAITING_TRANSFER', 'NEEDS_REVIEW'].includes(booking.status) && <BookingTransfer key={`${booking.bookingId}-${booking.status}`} booking={booking} now={now}

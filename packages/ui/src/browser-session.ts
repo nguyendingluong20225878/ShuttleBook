@@ -183,3 +183,4 @@ export function useBrowserSession(portal: Portal, base: string) {
   }, [base, expire, refresh]);
   return { session, request, logout, login, completeLogin, refresh, restoring, restoreError, retryRestore, message, expire };
 }
+export { ConfirmLogoutDialog } from './ConfirmLogoutDialog';

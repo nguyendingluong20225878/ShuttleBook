@@ -8,10 +8,10 @@ type BusinessRevision = { name: string; legalName: string; contact: string; vers
 type Approval = { id: string; kind: string; status: string; snapshot: string; reason?: string; current?: (CurrentRevision & Partial<BusinessRevision>) | null };
 type ApprovalPage = { items: Row[]; nextCursor: string | null; totalCount: number; pendingCount: number };
 type Revision = { address: string; contact: string; timezone: string; latitude: number; longitude: number;
-  accountName: string; accountNumber: string; qrUploadId: string };
+  cityCode?: string | null; bankCode?: string; accountName: string; accountNumber: string; qrUploadId: string };
 type Snapshot = { name: string; legalName: string; contact: string; venues: Array<{
-  name: string; address: string; contact: string; latitude: number; longitude: number; timezone: string; imageUploadId?: string | null;
-  accountName: string; accountNumber: string; qrUploadId: string;
+  name: string; address: string; cityCode?: string | null; contact: string; latitude: number; longitude: number; timezone: string; imageUploadId?: string | null;
+  bankCode?: string; accountName: string; accountNumber: string; qrUploadId: string;
   courts: Array<{ name: string; hours: Array<{ dayOfWeek: number; opensAt: string; closesAt: string }>;
     prices: Array<{ dayOfWeek: number; startsAt: string; endsAt: string; pricePerSlot: number }> }> }> };
 type Envelope<T> = { data: T };
@@ -19,6 +19,7 @@ const base = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5080';
 const weekday = (day: number) => day === 0 ? 'Chủ nhật' : `Thứ ${day + 1}`;
 const formatTime = (time: string) => time.slice(0, 5);
 const formatDate = (value: string) => new Date(value).toLocaleString('vi-VN');
+const cityLabel = (value?: string | null) => value === 'HN' ? 'Hà Nội' : value === 'HCM' ? 'TP.HCM' : 'Khác/chưa xác định';
 const approvalKinds: Record<string, string> = { ONBOARDING: 'Hồ sơ mới', VENUE_REVISION: 'Thay đổi cơ sở',
   VENUE_ADDITION: 'Cơ sở mới', BUSINESS_REVISION: 'Thay đổi doanh nghiệp' };
 
@@ -44,6 +45,10 @@ export function AdminApprovals({ accessToken, onSummary }: { accessToken: string
   const [message, setMessage] = useState('');
   const [images, setImages] = useState<Record<string, string>>({});
   const [imageBusy, setImageBusy] = useState<string | null>(null);
+  const [imagePreview, setImagePreview] = useState<{ id: string; label: string } | null>(null);
+  const [imageError, setImageError] = useState('');
+  const imageDialog = useRef<HTMLDialogElement | null>(null);
+  const imageTrigger = useRef<HTMLButtonElement | null>(null);
   const imageUrls = useRef<Record<string, string>>({});
   const controller = useRef<AbortController | null>(null);
   const detailController = useRef<AbortController | null>(null);
@@ -52,12 +57,16 @@ export function AdminApprovals({ accessToken, onSummary }: { accessToken: string
   const cacheGeneration = useRef(0);
   const reasonId = useId();
   const comparisonHintId = useId();
+  const detailTitleId = useId();
+  const dialog = useRef<HTMLDialogElement | null>(null);
+  const dialogTitle = useRef<HTMLHeadingElement | null>(null);
+  const detailTrigger = useRef<HTMLButtonElement | null>(null);
 
   function clearImages() {
     imageController.current?.abort();
     Object.values(imageUrls.current).forEach(url => URL.revokeObjectURL(url));
     imageUrls.current = {};
-    setImages({}); setImageBusy(null);
+    setImages({}); setImageBusy(null); setImagePreview(null); setImageError('');
   }
   function denyAccess() {
     cacheGeneration.current++;
@@ -141,7 +150,7 @@ export function AdminApprovals({ accessToken, onSummary }: { accessToken: string
     imageController.current?.abort();
     const active = new AbortController(); imageController.current = active;
     const generation = cacheGeneration.current;
-    setImageBusy(id); setError('');
+    setImageBusy(id); setImageError('');
     try {
       const response = await fetch(`${base}/api/v1/uploads/${encodeURIComponent(id)}/view`,
         { headers: { Authorization: `Bearer ${accessToken}` }, signal: active.signal });
@@ -156,7 +165,7 @@ export function AdminApprovals({ accessToken, onSummary }: { accessToken: string
       imageUrls.current = { ...imageUrls.current, [id]: blobUrl };
       setImages(imageUrls.current);
     } catch (failure) {
-      if (mounted.current && !active.signal.aborted && generation === cacheGeneration.current) setError(failure instanceof Error ? failure.message : 'Không xem được ảnh.');
+      if (mounted.current && !active.signal.aborted && generation === cacheGeneration.current) setImageError(failure instanceof Error ? failure.message : 'Không xem được ảnh.');
     } finally { if (mounted.current && !active.signal.aborted && generation === cacheGeneration.current) setImageBusy(null); }
   }
   async function decide(path: string, body?: object) {
@@ -167,6 +176,7 @@ export function AdminApprovals({ accessToken, onSummary }: { accessToken: string
       await request(`/${selected.id}/${path}`, 'POST', body);
       if (!mounted.current || generation !== cacheGeneration.current) return;
       setSelected(null); setReason(''); setConfirming(false); clearImages(); await reload(); setMessage('Đã lưu quyết định.');
+      requestAnimationFrame(() => document.getElementById('admin-approvals-title')?.focus());
     } catch (failure) { if (mounted.current && generation === cacheGeneration.current) setError(failure instanceof Error ? failure.message : 'Có lỗi xảy ra.'); }
     finally { if (mounted.current && generation === cacheGeneration.current) { setBusy(false); setConfirming(false); } }
   }
@@ -188,10 +198,33 @@ export function AdminApprovals({ accessToken, onSummary }: { accessToken: string
 
   const reasonLength = reason.trim().length;
   const current = selected?.current;
+  const detailReady = Boolean(selected && (profile || revision || businessRevision));
+  useEffect(() => {
+    if (!detailReady || !dialog.current) return;
+    const currentDialog = dialog.current;
+    if (!currentDialog.open) currentDialog.showModal();
+    requestAnimationFrame(() => dialogTitle.current?.focus());
+    return () => {
+      if (currentDialog.open) currentDialog.close();
+      requestAnimationFrame(() => {
+        if (detailTrigger.current?.isConnected) detailTrigger.current.focus();
+        else document.getElementById('admin-approvals-title')?.focus();
+      });
+    };
+  }, [selected?.id, detailReady]);
+  useEffect(() => {
+    if (!imagePreview || !imageDialog.current) return;
+    const node = imageDialog.current;
+    if (!node.open) node.showModal();
+    return () => { if (node.open) node.close(); };
+  }, [imagePreview?.id]);
+  function closeDetail() { if (busy) return; setSelected(null); setReason(''); setConfirming(false); clearImages(); }
+  function closeImage() { imageController.current?.abort(); setImageBusy(null); setImagePreview(null);
+    requestAnimationFrame(() => imageTrigger.current?.focus()); }
   const imageButton = (id: string, label: string) => <button type="button" className="admin-button-secondary" disabled={!!imageBusy || busy}
-    onClick={() => void viewImage(id)}>{imageBusy === id ? 'Đang tải ảnh…' : label}</button>;
+    onClick={event => { imageTrigger.current = event.currentTarget; setImagePreview({ id, label }); void viewImage(id); }}>{label}</button>;
   return <section className="admin-panel admin-approvals sb-panel" aria-labelledby="admin-approvals-title" aria-busy={loading || busy || detailLoading}>
-    <header className="admin-panel-heading"><div><h2 id="admin-approvals-title">Hồ sơ chờ duyệt</h2><p>Hồ sơ ban đầu, cơ sở/sân mới và thay đổi thông tin quan trọng. Ảnh, lịch và giá vận hành do Partner tự quản lý.</p></div>
+    <header className="admin-panel-heading"><div><h2 id="admin-approvals-title" tabIndex={-1}>Hồ sơ chờ duyệt</h2><p>Hồ sơ ban đầu, cơ sở/sân mới và thay đổi thông tin quan trọng. Ảnh, lịch và giá vận hành do Partner tự quản lý.</p></div>
       <button type="button" className="admin-button-secondary" disabled={busy || loading} onClick={() => void reload()}><AdminIcon name="refresh" />Tải lại danh sách</button></header>
     <form className="admin-approval-filters" onSubmit={event => { event.preventDefault(); setQuery({ q: search.trim(), kind }); }}>
       <label>Tìm tên doanh nghiệp<input className="sb-field" type="search" value={search} maxLength={120} disabled={busy} onChange={event => setSearch(event.target.value)} /></label>
@@ -207,7 +240,7 @@ export function AdminApprovals({ accessToken, onSummary }: { accessToken: string
       <div className="admin-state"><AdminIcon name="approvals" /><p>{query.q || query.kind ? 'Không có hồ sơ phù hợp bộ lọc.' : 'Chưa có hồ sơ chờ duyệt.'}</p></div> : null}
     <ul className="admin-approval-list">{rows.map(row => <li key={row.id}>
       <button type="button" className={`admin-approval-row ${selected?.id === row.id ? 'is-selected' : ''}`} disabled={busy || detailLoading}
-        onClick={() => void viewApproval(row.id)}>
+        onClick={event => { detailTrigger.current = event.currentTarget; void viewApproval(row.id); }}>
         <span className="admin-approval-row-content"><strong>{row.businessName}</strong><span className="admin-row-meta">
           <span className="admin-badge">{approvalKinds[row.kind] ?? row.kind}</span><time dateTime={row.submittedAt}>{formatDate(row.submittedAt)}</time>
         </span></span><AdminIcon name="arrow" />
@@ -216,31 +249,34 @@ export function AdminApprovals({ accessToken, onSummary }: { accessToken: string
     {next && <button type="button" className="admin-button-secondary" disabled={loading || busy} onClick={() => void reload(next)}>Xem thêm hồ sơ</button>}
     {detailLoading && <p role="status" className="admin-state">Đang tải chi tiết hồ sơ…</p>}
     {selected && !profile && !revision && !businessRevision && <p role="alert" className="admin-error">Không đọc được thông tin hồ sơ. Vui lòng tải lại danh sách và chọn hồ sơ một lần nữa.</p>}
-    {selected && (profile || revision || businessRevision) && <div className="admin-approval-detail">
-      <header className="admin-detail-heading"><div><p className="admin-eyebrow">{approvalKinds[selected.kind] ?? 'CHI TIẾT HỒ SƠ'}</p><h3>{profile?.name ?? 'Thông tin đề nghị thay đổi'}</h3></div>
-        <button type="button" className="admin-button-secondary" disabled={busy} onClick={() => { setSelected(null); setReason(''); setConfirming(false); clearImages(); }}>Đóng chi tiết</button></header>
+    {selected && (profile || revision || businessRevision) && <dialog ref={dialog} className="admin-approval-detail" aria-labelledby={detailTitleId}
+      onCancel={event => { event.preventDefault(); closeDetail(); }}>
+      <header className="admin-detail-heading"><div><p className="admin-eyebrow">{approvalKinds[selected.kind] ?? 'CHI TIẾT HỒ SƠ'}</p><h3 id={detailTitleId} ref={dialogTitle} tabIndex={-1}>{profile?.name ?? 'Thông tin đề nghị thay đổi'}</h3></div>
+        <button type="button" className="admin-icon-button admin-detail-close" disabled={busy} onClick={closeDetail} aria-label="Đóng chi tiết">×</button></header>
+      {error && <p className="admin-error" role="alert">{error}</p>}
       {revision && <article className="admin-venue-card">
         <h4>{current?.venueName ?? 'Thông tin cơ sở'}{current && <small> · Phiên bản đang công bố {current.version}</small>}</h4>
         {!current && <p className="admin-guidance">Chưa tải được thông tin đang công bố để đối chiếu. Vui lòng tải lại hồ sơ trước khi phê duyệt.</p>}
-        <p id={comparisonHintId} className="admin-comparison-hint">Vuốt ngang bảng để xem thông tin đề nghị thay đổi; dùng phím mũi tên khi bảng được chọn.</p>
+        <p id={comparisonHintId} className="admin-comparison-hint">Đối chiếu giá trị đang công bố và đề nghị thay đổi của từng trường.</p>
         <div className="admin-revision-diff" role="region" tabIndex={0} aria-label="Đối chiếu thông tin cơ sở" aria-describedby={comparisonHintId}>
           <table><thead><tr><th scope="col">Thông tin</th><th scope="col">Đang công bố</th><th scope="col">Đề nghị thay đổi</th></tr></thead>
             <tbody>{([
-              ['Địa chỉ', current?.address, revision.address], ['Liên hệ', current?.contact, revision.contact],
+              ['Địa chỉ', current?.address, revision.address],
+              ['Thành phố hiển thị', current ? cityLabel(current.cityCode) : undefined, cityLabel(revision.cityCode)],
+              ['Liên hệ', current?.contact, revision.contact],
               ['Múi giờ', current?.timezone, revision.timezone],
               ['Tọa độ', current ? `${current.latitude}, ${current.longitude}` : undefined, `${revision.latitude}, ${revision.longitude}`],
+              ['Ngân hàng', current?.bankCode || 'Chưa khai báo', revision.bankCode || 'Chưa khai báo'],
               ['Tên tài khoản', current?.accountName, revision.accountName],
               ['Số tài khoản', current?.accountNumber, revision.accountNumber],
             ] as Array<[string, string | undefined, string]>).map(([label, oldValue, proposed]) => <tr key={label} className={oldValue !== undefined && oldValue !== proposed ? 'is-changed' : ''}>
-              <th scope="row">{label}{oldValue !== undefined && oldValue !== proposed && <small>Đã thay đổi</small>}</th><td>{oldValue ?? 'Chưa có dữ liệu'}</td><td>{proposed}</td>
+              <th scope="row">{label}{oldValue !== undefined && oldValue !== proposed && <small>Đã thay đổi</small>}</th><td data-label="Đang công bố">{oldValue ?? 'Chưa có dữ liệu'}</td><td data-label="Đề nghị thay đổi">{proposed}</td>
             </tr>)}</tbody>
           </table>
         </div>
         <div className="admin-qr-comparison">
-          {current?.qrUploadId && <section><h5>QR đang công bố</h5>{imageButton(current.qrUploadId, 'Xem QR đang công bố')}
-            {images[current.qrUploadId] && <img className="admin-private-image" src={images[current.qrUploadId]} alt="QR đang công bố" width="240" />}</section>}
-          <section><h5>QR đề nghị thay đổi</h5>{imageButton(revision.qrUploadId, 'Xem QR mới')}
-            {images[revision.qrUploadId] && <img className="admin-private-image" src={images[revision.qrUploadId]} alt="QR mới" width="240" />}</section>
+          {current?.qrUploadId && <section><h5>QR đang công bố</h5>{imageButton(current.qrUploadId, 'Xem QR đang công bố')}</section>}
+          <section><h5>QR đề nghị thay đổi</h5>{imageButton(revision.qrUploadId, 'Xem QR mới')}</section>
         </div>
       </article>}
       {businessRevision && <article className="admin-venue-card">
@@ -250,7 +286,7 @@ export function AdminApprovals({ accessToken, onSummary }: { accessToken: string
           <table><thead><tr><th scope="col">Thông tin</th><th scope="col">Đang công bố</th><th scope="col">Đề nghị thay đổi</th></tr></thead>
             <tbody>{([['Tên hiển thị', current?.name, businessRevision.name], ['Tên pháp lý', current?.legalName, businessRevision.legalName],
               ['Liên hệ', current?.contact, businessRevision.contact]] as Array<[string, string | undefined, string]>).map(([label, previous, proposed]) =>
-                <tr key={label} className={previous !== undefined && previous !== proposed ? 'is-changed' : ''}><th scope="row">{label}</th><td>{previous ?? 'Chưa có dữ liệu'}</td><td>{proposed}</td></tr>)}
+                <tr key={label} className={previous !== undefined && previous !== proposed ? 'is-changed' : ''}><th scope="row">{label}</th><td data-label="Đang công bố">{previous ?? 'Chưa có dữ liệu'}</td><td data-label="Đề nghị thay đổi">{proposed}</td></tr>)}
             </tbody></table>
         </div>
       </article>}
@@ -258,12 +294,11 @@ export function AdminApprovals({ accessToken, onSummary }: { accessToken: string
         <dl className="admin-facts"><div><dt>Tên pháp lý</dt><dd>{profile.legalName}</dd></div><div><dt>Liên hệ</dt><dd>{profile.contact}</dd></div></dl>
         {profile.venues.map((venue, index) => <article className="admin-venue-card" key={index}>
           <h4>{venue.name}</h4>
-          <dl className="admin-facts"><div><dt>Địa chỉ</dt><dd>{venue.address}</dd></div><div><dt>Liên hệ</dt><dd>{venue.contact}</dd></div>
+          <dl className="admin-facts"><div><dt>Địa chỉ</dt><dd>{venue.address}</dd></div>
+            <div><dt>Thành phố hiển thị</dt><dd>{cityLabel(venue.cityCode)}</dd></div><div><dt>Liên hệ</dt><dd>{venue.contact}</dd></div>
             <div><dt>Múi giờ</dt><dd>{venue.timezone}</dd></div><div><dt>Tọa độ</dt><dd>{venue.latitude}, {venue.longitude}</dd></div>
-            <div><dt>Tài khoản nhận tiền</dt><dd>{venue.accountName} · {venue.accountNumber}</dd></div></dl>
+            <div><dt>Tài khoản nhận tiền</dt><dd>{venue.bankCode || 'Chưa khai báo ngân hàng'} · {venue.accountName} · {venue.accountNumber}</dd></div></dl>
           <div className="admin-actions">{venue.imageUploadId ? imageButton(venue.imageUploadId, 'Xem ảnh cơ sở') : <p className="muted">Cơ sở chưa có ảnh (tùy chọn).</p>}{imageButton(venue.qrUploadId, 'Xem QR')}</div>
-          <div className="admin-image-list">{venue.imageUploadId && images[venue.imageUploadId] && <img className="admin-private-image" src={images[venue.imageUploadId]} alt={`Ảnh ${venue.name}`} width="240" />}
-            {images[venue.qrUploadId] && <img className="admin-private-image" src={images[venue.qrUploadId]} alt={`QR ${venue.name}`} width="240" />}</div>
           {venue.courts.map((court, courtIndex) => <section className="admin-court-card" key={courtIndex}>
             <h5>{court.name}</h5>
             <div className="admin-court-config"><div><h6>Giờ hoạt động</h6>
@@ -294,8 +329,15 @@ export function AdminApprovals({ accessToken, onSummary }: { accessToken: string
           <button type="button" className="admin-button-secondary" disabled={busy || reasonLength < 10 || reasonLength > 1000}
             onClick={() => void decide('request-changes', { reason: reason.trim() })}>Yêu cầu chỉnh sửa</button></div>
       </div>}
-    </div>}
-    {error && <p className="admin-error" role="alert">{error}</p>}
+    </dialog>}
+    {imagePreview && <dialog ref={imageDialog} className="admin-image-dialog" aria-label={imagePreview.label}
+      onCancel={event => { event.preventDefault(); closeImage(); }}>
+      <header><strong>{imagePreview.label}</strong><button type="button" className="admin-icon-button" aria-label="Đóng ảnh" onClick={closeImage}>×</button></header>
+      {imageBusy === imagePreview.id && <p role="status">Đang tải ảnh…</p>}
+      {imageError && <p role="alert">{imageError} <button type="button" onClick={() => void viewImage(imagePreview.id)}>Thử lại</button></p>}
+      {images[imagePreview.id] && <img src={images[imagePreview.id]} alt={imagePreview.label} />}
+    </dialog>}
+    {error && !detailReady && <p className="admin-error" role="alert">{error}</p>}
     {message && <p role="status" className="admin-success">{message}</p>}
   </section>;
 }

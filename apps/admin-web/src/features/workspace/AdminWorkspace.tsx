@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { AdminApprovals } from '../../AdminApprovals';
 import { AdminNotifications } from '../../AdminNotifications';
+import { AdminRecruitment } from '../../AdminRecruitment';
 import { AdminIcon } from '../../components/AdminIcon';
 import { AdminShell } from '../../layouts/AdminShell';
 import { useAdminNavigation } from './navigation';
@@ -23,8 +24,9 @@ export function AdminWorkspace({ accessToken, busy, onLogout }: { accessToken: s
       <p className="admin-guidance">Duyệt hồ sơ đối tác và theo dõi cảnh báo đối chiếu. Quyết định xác nhận tiền thuộc chủ sân.</p>
     </section>}
     <div className="admin-panels">
-      <div hidden={page === 'notifications'}><AdminApprovals accessToken={accessToken} onSummary={setApprovals} /></div>
-      <div hidden={page === 'approvals'}><AdminNotifications accessToken={accessToken} onSummary={setNotices} /></div>
+      <div hidden={page !== 'overview' && page !== 'approvals'}><AdminApprovals accessToken={accessToken} onSummary={setApprovals} /></div>
+      <div hidden={page !== 'overview' && page !== 'notifications'}><AdminNotifications accessToken={accessToken} onSummary={setNotices} /></div>
+      {page === 'recruitment' && <AdminRecruitment accessToken={accessToken} />}
     </div>
   </AdminShell>;
 }

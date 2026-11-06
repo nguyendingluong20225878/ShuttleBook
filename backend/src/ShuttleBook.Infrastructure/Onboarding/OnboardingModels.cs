@@ -28,6 +28,7 @@ public sealed class Venue
     public Guid BusinessId { get; set; }
     public string Name { get; set; } = "";
     public string Address { get; set; } = "";
+    public string? CityCode { get; set; }
     public string Contact { get; set; } = "";
     public string Timezone { get; set; } = "Asia/Ho_Chi_Minh";
     public double Latitude { get; set; }

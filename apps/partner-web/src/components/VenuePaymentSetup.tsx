@@ -1,9 +1,10 @@
 import { useState } from 'react';
 
 export function VenuePaymentSetup({ venueId, venueName, account, busy, save }: {
-  venueId: string; venueName: string; account?: { accountName?: string; maskedAccountNumber: string };
-  busy: boolean; save: (fields: { accountName: string; accountNumber: string; file: File }) => Promise<boolean>;
+  venueId: string; venueName: string; account?: { bankCode?: string; accountName?: string; maskedAccountNumber: string };
+  busy: boolean; save: (fields: { bankCode: string; accountName: string; accountNumber: string; file: File }) => Promise<boolean>;
 }) {
+  const [bank, setBank] = useState(account?.bankCode ?? '');
   const [name, setName] = useState(account?.accountName ?? '');
   const [number, setNumber] = useState('');
   const [file, setFile] = useState<File | null>(null);
@@ -11,14 +12,15 @@ export function VenuePaymentSetup({ venueId, venueName, account, busy, save }: {
   return <form className="venue-payment-setup" aria-label={`Thiết lập QR cho ${venueName}`} onSubmit={event => {
     event.preventDefault();
     if (!file) return;
-    void save({ accountName: name, accountNumber: number, file }).then(saved => {
+    void save({ bankCode: bank.trim(), accountName: name, accountNumber: number, file }).then(saved => {
       if (saved) { setNumber(''); setFile(null); setFileKey(value => value + 1); }
     });
   }}>
     <div className="venue-setup-heading"><h4>QR nhận tiền của cơ sở</h4>
-      <p>Mọi sân trong cơ sở dùng chung một QR. Lưu tài khoản và QR trước khi gửi hồ sơ duyệt.</p>
-      {account && <p>Đã lưu: {account.accountName ? `${account.accountName} · ` : ''}{account.maskedAccountNumber}</p>}
+      {account && <p>Đã lưu: {account.bankCode ? `${account.bankCode} · ` : ''}{account.accountName ? `${account.accountName} · ` : ''}{account.maskedAccountNumber}</p>}
     </div>
+    <label htmlFor={`payment-bank-${venueId}`}>Ngân hàng
+      <input id={`payment-bank-${venueId}`} placeholder="Ví dụ: MB Bank" minLength={2} maxLength={32} required value={bank} onChange={e => setBank(e.target.value)} /></label>
     <label htmlFor={`payment-name-${venueId}`}>Tên tài khoản
       <input id={`payment-name-${venueId}`} minLength={2} maxLength={160} required value={name} onChange={e => setName(e.target.value)} /></label>
     <label htmlFor={`payment-number-${venueId}`}>Số tài khoản

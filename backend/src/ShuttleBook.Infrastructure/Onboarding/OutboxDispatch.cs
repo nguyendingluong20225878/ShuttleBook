@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using ShuttleBook.Infrastructure.Bookings;
 using ShuttleBook.Infrastructure.Data;
 using ShuttleBook.Infrastructure.Identity;
+using ShuttleBook.Infrastructure.Recruitment;
 
 namespace ShuttleBook.Infrastructure.Onboarding;
 
@@ -16,6 +17,8 @@ public static class OutboxDispatch
     public static readonly string[] OwnerEvents = ["PAYMENT_TRANSFER_REPORTED", "PAYMENT_EVIDENCE_SUPPLEMENTED", "PAYMENT_CONFIRMATION_OVERDUE"];
     private static readonly string[] CustomerEvents = ["BOOKING_CREATED", "BOOKING_EXPIRED", "PAYMENT_NEEDS_REVIEW", "PAYMENT_CONFIRMED", "PAYMENT_REJECTED"];
     private static readonly string[] ApprovalEvents = ["APPROVAL_SUBMITTED", "APPROVAL_APPROVED", "APPROVAL_CHANGES_REQUESTED"];
+    public static readonly string[] RecruitmentEvents = ["RECRUITMENT_REQUESTED", "RECRUITMENT_ACCEPTED",
+        "RECRUITMENT_DECLINED", "RECRUITMENT_WITHDRAWN", "RECRUITMENT_CLOSED", "RECRUITMENT_HIDDEN"];
 
     public static async Task<bool> ProcessOne(ShuttleBookDbContext db, DateTimeOffset now, CancellationToken ct)
     {
@@ -53,6 +56,18 @@ public static class OutboxDispatch
             {
                 recipients = message.TargetUserId is Guid userId ? [userId] :
                     await db.Users.Where(u => u.AccountType == AccountType.Admin && u.Status == UserStatus.Active).Select(u => u.Id).ToArrayAsync(ct);
+            }
+            else if (RecruitmentEvents.Contains(message.EventType))
+            {
+                var post = await db.RecruitmentPosts.AsNoTracking().SingleOrDefaultAsync(x => x.Id == message.EntityId, ct)
+                    ?? throw new InvalidOperationException("Recruitment post missing.");
+                var target = message.TargetUserId ?? throw new InvalidOperationException("Recruitment recipient missing.");
+                var ownerEvent = message.EventType is "RECRUITMENT_REQUESTED" or "RECRUITMENT_WITHDRAWN" or "RECRUITMENT_HIDDEN";
+                var related = ownerEvent ? post.OwnerUserId == target :
+                    await db.RecruitmentRequests.AnyAsync(x => x.PostId == post.Id && x.ApplicantUserId == target, ct);
+                if (!related || !await db.Users.AnyAsync(u => u.Id == target && u.AccountType == AccountType.Customer, ct))
+                    throw new InvalidOperationException("Invalid recruitment recipient.");
+                recipients = [target];
             }
             else throw new InvalidOperationException("Unknown outbox event.");
             if (recipients.Length == 0) throw new InvalidOperationException("No eligible recipient.");
@@ -117,6 +132,12 @@ public static class OutboxDispatch
             "PAYMENT_CONFIRMED" => ("Đơn đặt sân đã xác nhận", info),
             "PAYMENT_REJECTED" => ("Sân không xác nhận được giao dịch", reason),
             "PAYMENT_CONFIRMATION_OVERDUE" => ("Đơn quá hạn đối chiếu", info + ". Khung giờ vẫn được giữ; cần xử lý đối chiếu."),
+            "RECRUITMENT_REQUESTED" => ("Có người xin tham gia", "Mở Tìm người chơi để xem yêu cầu mới cho lịch của bạn."),
+            "RECRUITMENT_ACCEPTED" => ("Bạn đã được nhận vào lịch chơi", "Mở Yêu cầu của tôi để xem sân và giờ chơi."),
+            "RECRUITMENT_DECLINED" => ("Yêu cầu tham gia chưa được nhận", "Mở Yêu cầu của tôi để xem trạng thái mới."),
+            "RECRUITMENT_WITHDRAWN" => ("Người chơi đã rút yêu cầu", "Mở bài tìm người của bạn để xem số suất hiện tại."),
+            "RECRUITMENT_CLOSED" => ("Bài tìm người đã đóng", "Bạn vẫn có thể xem thông tin lịch chơi trong Yêu cầu của tôi."),
+            "RECRUITMENT_HIDDEN" => ("Bài tìm người đã bị ẩn", "Mở bài của bạn để xem trạng thái; liên hệ quản trị nếu cần."),
             _ => throw new InvalidOperationException("Unknown outbox event.")
         };
     }
