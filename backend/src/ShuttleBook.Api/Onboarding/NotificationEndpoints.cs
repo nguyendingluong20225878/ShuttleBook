@@ -43,12 +43,15 @@ public static class NotificationEndpoints
         {
             n.Id, n.Title, n.Body, n.CreatedAt, n.ReadAt,
             bookingId = n.EventType.StartsWith("BOOKING_") || n.EventType.StartsWith("PAYMENT_") ? (Guid?)n.EntityId : null,
+            recruitmentPostId = n.EventType.StartsWith("RECRUITMENT_") ? (Guid?)n.EntityId : null,
             profileBusinessId = user.AccountType == AccountType.VenueOperator && ProfileEvents.Contains(n.EventType) ? n.ProfileBusinessId : null,
             action = n.EventType == "APPROVAL_SUBMITTED" && user.AccountType == AccountType.Admin ? "ADMIN_APPROVAL" :
                 ProfileEvents.Contains(n.EventType) && user.AccountType == AccountType.VenueOperator && n.ProfileBusinessId != null ? "PARTNER_PROFILE" :
                 n.EventType == "PAYMENT_CONFIRMATION_OVERDUE" && user.AccountType == AccountType.Admin ? "ADMIN_PAYMENT_ALERT" :
                 OwnerEvents.Contains(n.EventType) && user.AccountType == AccountType.VenueOperator ? "OPERATOR_BOOKING" :
-                user.AccountType == AccountType.Customer && (n.EventType.StartsWith("BOOKING_") || n.EventType.StartsWith("PAYMENT_")) ? "CUSTOMER_BOOKING" : null
+                user.AccountType == AccountType.Customer && (n.EventType.StartsWith("BOOKING_") || n.EventType.StartsWith("PAYMENT_")) ? "CUSTOMER_BOOKING" :
+                user.AccountType == AccountType.Customer && n.EventType.StartsWith("RECRUITMENT_") ?
+                    n.EventType is "RECRUITMENT_REQUESTED" or "RECRUITMENT_WITHDRAWN" or "RECRUITMENT_HIDDEN" ? "CUSTOMER_RECRUITMENT_POST" : "CUSTOMER_RECRUITMENT_REQUEST" : null
         });
         await transaction.CommitAsync(ct);
         http.Response.Headers.CacheControl = "no-store";

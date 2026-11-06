@@ -7,7 +7,7 @@ import { navigate } from '../../routes/navigation';
 import { CustomerShell } from '../../components/CustomerShell';
 
 type Notification = { id: string; title: string; body: string; readAt: string | null; createdAt?: string;
-  bookingId?: string | null; action?: string | null };
+  bookingId?: string | null; recruitmentPostId?: string | null; action?: string | null };
 type Page = { data: Notification[]; unreadCount: number; nextCursor: string | null };
 type Notifications = { items: Notification[]; unreadCount: number; nextCursor: string | null; error: string; loading: boolean;
   refresh: () => void; more: () => Promise<void>; markRead: (id: string) => Promise<string | null> };
@@ -116,6 +116,8 @@ export function CustomerNotificationsPage() {
         {selected === item.id && <div className="notification-item-actions" role="region" aria-label={`Chi tiết: ${noticeText(item.title)}`}>
           <p>{noticeText(item.body)}</p>{opening === item.id && <span role="status">Đang mở thông báo…</span>}
           {bookingLink(item) && <a href={bookingLink(item)!}>Xem đơn đặt sân</a>}
+          {item.action === 'CUSTOMER_RECRUITMENT_POST' && <a href="/me/teams">Xem bài tìm người</a>}
+          {item.action === 'CUSTOMER_RECRUITMENT_REQUEST' && <a href="/me/team-requests">Xem yêu cầu tham gia</a>}
         </div>}
       </li>)}</ul>
       {notifications.nextCursor && <button type="button" disabled={notifications.loading || !!opening} onClick={() => { void notifications.more(); }}>Xem thêm thông báo</button>}

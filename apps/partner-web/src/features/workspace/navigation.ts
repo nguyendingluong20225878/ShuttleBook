@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 export const partnerPages = [
-  { id: 'overview', label: 'Tổng quan', description: 'Theo dõi hồ sơ và chuẩn bị cơ sở của bạn.' },
+  { id: 'overview', label: 'Tổng quan', description: 'Theo dõi hoạt động và thông tin cơ sở của bạn.' },
   { id: 'profile', label: 'Hồ sơ doanh nghiệp', description: 'Thông tin doanh nghiệp và trạng thái xét duyệt.' },
   { id: 'account', label: 'Thông tin cá nhân', description: 'Xem và chỉnh sửa tên hiển thị của tài khoản chủ sân.' },
   { id: 'venues', label: 'Cơ sở & sân', description: 'Thêm cơ sở, sân và ảnh nhận diện ở cùng một nơi.' },

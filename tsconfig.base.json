@@ -6,11 +6,10 @@
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
     "strict": true,
-    "noEmit": true,
-    "isolatedModules": true,
-    "resolveJsonModule": true,
     "skipLibCheck": true,
+    "noEmit": true,
     "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true
+    "resolveJsonModule": true,
+    "types": ["vite/client"]
   }
 }

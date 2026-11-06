@@ -18,7 +18,7 @@ public static partial class OnboardingEndpoints
 
     private sealed record BusinessInput(string? Name, string? LegalName, string? Contact);
     private sealed record VenueInput(string? Name, string? Address, string? Contact, string? Timezone,
-        double Latitude, double Longitude);
+        double Latitude, double Longitude, string? CityCode = "__OMITTED__");
     private sealed record CourtInput(string? Name);
     private sealed record HourInput(int DayOfWeek, string? OpensAt, string? ClosesAt);
     private sealed record PriceInput(int DayOfWeek, string? StartsAt, string? EndsAt, long PricePerSlot);
@@ -27,10 +27,12 @@ public static partial class OnboardingEndpoints
     private sealed record ImageInput(Guid UploadId);
     private sealed record ReasonInput(string? Reason);
     private sealed record RevisionInput(string? Address, string? Contact, string? Timezone, double Latitude, double Longitude,
-        string? BankCode, string? AccountName, string? AccountNumber, Guid QrUploadId);
+        string? BankCode, string? AccountName, string? AccountNumber, Guid QrUploadId,
+        string? CityCode = "__OMITTED__");
+    private sealed record CityRevisionInput(string? CityCode);
     private sealed record RevisionSnapshot(long Version, string Address, string Contact, string Timezone, double Latitude,
         double Longitude, string BankCode, string AccountName, string AccountNumber, Guid QrUploadId,
-        SensitiveVenueBaseline? Baseline = null);
+        SensitiveVenueBaseline? Baseline = null, string? CityCode = null);
 
     public static void MapOnboardingEndpoints(this WebApplication app)
     {
@@ -51,6 +53,7 @@ public static partial class OnboardingEndpoints
         partner.MapPut("/venues/{venueId:guid}/payment-account", SetPaymentAccount);
         partner.MapPost("/businesses/{businessId:guid}/submit", Submit);
         partner.MapPost("/venues/{venueId:guid}/revisions", SubmitRevision);
+        partner.MapPost("/venues/{venueId:guid}/city-revisions", SubmitCityRevision);
         partner.MapPost("/venues/{venueId:guid}/payment-account/revisions", SubmitPaymentRevision);
         partner.MapPost("/venues/{venueId:guid}/submit", SubmitVenueAddition);
         partner.MapPost("/courts/{courtId:guid}/confirm", ConfirmCourt);
@@ -120,9 +123,9 @@ public static partial class OnboardingEndpoints
         var lastApproval = approvals.FirstOrDefault();
         return Ok(http, new { business.Id, business.Name, business.LegalName, business.Contact, business.Status,
             business.Version, approval = lastApproval, approvals,
-            venues = venues.Select(v => new { v.Id, v.Name, v.Address, v.Contact, v.Timezone, v.Latitude, v.Longitude, v.Status,
+            venues = venues.Select(v => new { v.Id, v.Name, v.Address, v.CityCode, v.Contact, v.Timezone, v.Latitude, v.Longitude, v.Status,
                 v.ImageUploadId, v.Version, paymentAccount = accounts.Where(p => p.VenueId == v.Id)
-                    .Select(p => new { p.AccountName, maskedAccountNumber = Mask(p.AccountNumber), p.QrUploadId }).FirstOrDefault(),
+                    .Select(p => new { p.BankCode, p.AccountName, maskedAccountNumber = Mask(p.AccountNumber), p.QrUploadId }).FirstOrDefault(),
                 courts = CourtNumbers.Order(courts.Where(c => c.VenueId == v.Id)).Select(c => new { c.Id, c.Name, c.Status, c.Version,
                     hours = hours.Where(h => h.CourtId == c.Id).Select(h => new { h.DayOfWeek, h.OpensAt, h.ClosesAt }),
                     prices = prices.Where(p => p.CourtId == c.Id).Select(p => new { p.DayOfWeek, p.StartsAt, p.EndsAt, p.PricePerSlot }) }) }) });
@@ -153,9 +156,11 @@ public static partial class OnboardingEndpoints
 
     private static async Task<IResult> CreateVenue(HttpContext http, ShuttleBookDbContext db, Guid businessId, CancellationToken ct)
     {
-        var (input, error) = await Read<VenueInput>(http, ["name", "address", "contact", "timezone", "latitude", "longitude"], ct);
+        var (input, error) = await Read<VenueInput>(http, ["name", "address", "contact", "timezone", "latitude", "longitude", "cityCode"], ct, ["cityCode"]);
         if (error is not null) return error;
         if (!ValidVenue(input!)) return Problem(http, 400, "VALIDATION_FAILED");
+        if (!CityMatchesPoint(input!.CityCode, input.Latitude, input.Longitude))
+            return Problem(http, 400, "CITY_LOCATION_MISMATCH");
         var user = await UserAsync(http, db, ct);
         if (!Partner(user)) return Problem(http, 403, "FORBIDDEN");
         await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -166,6 +171,7 @@ public static partial class OnboardingEndpoints
             return Problem(http, 409, "STATE_CONFLICT");
         var now = DateTimeOffset.UtcNow;
         var venue = new Venue { BusinessId = businessId, Name = input!.Name!.Trim(), Address = input.Address!.Trim(),
+            CityCode = input.CityCode == "__OMITTED__" ? null : input.CityCode,
             Contact = input.Contact!.Trim(),
             Timezone = input.Timezone!.Trim(), Latitude = input.Latitude, Longitude = input.Longitude,
             CreatedAt = now, UpdatedAt = now };
@@ -178,7 +184,7 @@ public static partial class OnboardingEndpoints
 
     private static async Task<IResult> UpdateVenue(HttpContext http, ShuttleBookDbContext db, Guid venueId, CancellationToken ct)
     {
-        var (input, error) = await Read<VenueInput>(http, ["name", "address", "contact", "timezone", "latitude", "longitude"], ct);
+        var (input, error) = await Read<VenueInput>(http, ["name", "address", "contact", "timezone", "latitude", "longitude", "cityCode"], ct, ["cityCode"]);
         if (error is not null) return error;
         if (!ValidVenue(input!)) return Problem(http, 400, "VALIDATION_FAILED");
         var user = await UserAsync(http, db, ct);
@@ -190,9 +196,12 @@ public static partial class OnboardingEndpoints
             .SingleAsync(ct);
         await db.Entry(venue).ReloadAsync(ct);
         if (!await DraftVenue(db, user!, business, venue, ct)) return Problem(http, 409, "STATE_CONFLICT");
+        if (!CityMatchesPoint(input!.CityCode == "__OMITTED__" ? venue.CityCode : input.CityCode,
+                input.Latitude, input.Longitude)) return Problem(http, 400, "CITY_LOCATION_MISMATCH");
         var versionError = CheckVersion(http, venue.Version);
         if (versionError is not null) return versionError;
         venue!.Name = input!.Name!.Trim(); venue.Address = input.Address!.Trim();
+        if (input.CityCode != "__OMITTED__") venue.CityCode = input.CityCode;
         venue.Contact = input.Contact!.Trim(); venue.Timezone = input.Timezone!.Trim();
         venue.Latitude = input.Latitude; venue.Longitude = input.Longitude; venue.Version++; venue.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
@@ -391,7 +400,7 @@ public static partial class OnboardingEndpoints
         Audit(db, user!.Id, "venue.payment_account_updated", "venue", venueId, http);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
-        return Ok(http, new { venueId, account.AccountName,
+        return Ok(http, new { venueId, account.BankCode, account.AccountName,
             maskedAccountNumber = Mask(account.AccountNumber), account.QrUploadId });
     }
 
@@ -429,6 +438,8 @@ public static partial class OnboardingEndpoints
         var snapshotVenues = new List<object>();
         foreach (var venue in venues)
         {
+            if (!CityMatchesPoint(venue.CityCode, venue.Latitude, venue.Longitude))
+                return Problem(http, 409, "CITY_LOCATION_MISMATCH");
             if (venue.Status != "DRAFT" || !TextOk(venue.Contact, 3, 160) || !await ValidOptionalVenueImage(db, venue, ct))
                 return Problem(http, 409, "INCOMPLETE_PROFILE");
             var payment = await db.VenuePaymentAccounts.SingleOrDefaultAsync(p => p.VenueId == venue.Id, ct);
@@ -445,7 +456,7 @@ public static partial class OnboardingEndpoints
                 if (!ValidStoredSchedule(hours, prices)) return Problem(http, 409, "INCOMPLETE_PROFILE");
                 snapshotCourts.Add(new { court.Id, court.Name, hours, prices });
             }
-            snapshotVenues.Add(new { venue.Id, venue.Name, venue.Address, venue.Contact, venue.Latitude, venue.Longitude,
+            snapshotVenues.Add(new { venue.Id, venue.Name, venue.Address, venue.CityCode, venue.Contact, venue.Latitude, venue.Longitude,
                 venue.Timezone, venue.ImageUploadId, payment.BankCode, payment.AccountName,
                 payment.AccountNumber, payment.QrUploadId, courts = snapshotCourts });
             venue.Status = "PENDING_APPROVAL";
@@ -465,6 +476,42 @@ public static partial class OnboardingEndpoints
     private static Task<IResult> SubmitRevision(HttpContext http, ShuttleBookDbContext db, Guid venueId, CancellationToken ct) =>
         SubmitRevisionCore(http, db, venueId, ct, paymentOnly: false);
 
+    private static async Task<IResult> SubmitCityRevision(HttpContext http, ShuttleBookDbContext db, Guid venueId,
+        CancellationToken ct)
+    {
+        var (input, error) = await Read<CityRevisionInput>(http, ["cityCode"], ct);
+        if (error is not null) return error;
+        if (input!.CityCode is not ("HN" or "HCM")) return Problem(http, 400, "VALIDATION_FAILED");
+        var user = await UserAsync(http, db, ct);
+        if (user?.AccountType != AccountType.VenueOperator || user.Status != UserStatus.Active)
+            return Problem(http, 403, "FORBIDDEN");
+        await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        var venue = await db.Venues.AsNoTracking().SingleOrDefaultAsync(v => v.Id == venueId, ct);
+        if (venue is null || !await db.BusinessMemberships.AnyAsync(m => m.BusinessId == venue.BusinessId &&
+            m.UserId == user.Id && m.Role == "OWNER" && m.Status == "ACTIVE", ct))
+            return Problem(http, 404, "NOT_FOUND");
+        var business = await db.Businesses.FromSqlInterpolated($"SELECT * FROM businesses WHERE id = {venue.BusinessId} FOR UPDATE").SingleAsync(ct);
+        venue = await db.Venues.FromSqlInterpolated($"SELECT * FROM venues WHERE id = {venueId} FOR UPDATE").SingleAsync(ct);
+        if (venue.Status != "PUBLISHED" || business.Status != "ACTIVE" || venue.CityCode == input.CityCode)
+            return Problem(http, 409, "STATE_CONFLICT");
+        if (await db.ApprovalRequests.AnyAsync(a => a.BusinessId == business.Id && a.Status == "PENDING", ct))
+            return Problem(http, 409, "STATE_CONFLICT");
+        if (!CityMatchesPoint(input.CityCode, venue.Latitude, venue.Longitude))
+            return Problem(http, 400, "CITY_LOCATION_MISMATCH");
+        var payment = await db.VenuePaymentAccounts.SingleAsync(p => p.VenueId == venue.Id, ct);
+        var snapshot = new RevisionSnapshot(venue.Version, venue.Address, venue.Contact, venue.Timezone,
+            venue.Latitude, venue.Longitude, payment.BankCode, payment.AccountName, payment.AccountNumber,
+            payment.QrUploadId, Baseline(venue, payment), input.CityCode);
+        var approval = new ApprovalRequest { BusinessId = business.Id, VenueId = venue.Id,
+            Kind = "VENUE_REVISION", SubmittedBy = user.Id, Snapshot = JsonSerializer.Serialize(snapshot, Json),
+            SubmittedAt = DateTimeOffset.UtcNow };
+        db.ApprovalRequests.Add(approval);
+        Outbox(db, "APPROVAL_SUBMITTED", null, approval.Id, null);
+        Audit(db, user.Id, "venue.city_revision_submitted", "venue", venue.Id, http);
+        await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
+        return Ok(http, new { approval.Id, approval.Kind, approval.Status, venueId });
+    }
+
     private static Task<IResult> SubmitPaymentRevision(HttpContext http, ShuttleBookDbContext db, Guid venueId, CancellationToken ct) =>
         SubmitRevisionCore(http, db, venueId, ct, paymentOnly: true);
 
@@ -481,7 +528,7 @@ public static partial class OnboardingEndpoints
         else
         {
             var (revision, error) = await Read<RevisionInput>(http,
-                ["address", "contact", "timezone", "latitude", "longitude", "bankCode", "accountName", "accountNumber", "qrUploadId"], ct, ["bankCode"]);
+                ["address", "contact", "timezone", "latitude", "longitude", "bankCode", "accountName", "accountNumber", "qrUploadId", "cityCode"], ct, ["bankCode", "cityCode"]);
             if (error is not null) return error;
             input = revision!;
         }
@@ -489,7 +536,7 @@ public static partial class OnboardingEndpoints
             !TextOk(input.Timezone, 3, 80) ||
             !TimeZoneInfo.TryFindSystemTimeZoneById(input.Timezone!.Trim(), out _) ||
             !double.IsFinite(input.Latitude) || !double.IsFinite(input.Longitude) ||
-            input.Latitude is < -90 or > 90 || input.Longitude is < -180 or > 180)) ||
+            input.Latitude is < -90 or > 90 || input.Longitude is < -180 or > 180 || !ValidCity(input.CityCode))) ||
             !LegacyBankCodeOk(input.BankCode) || !TextOk(input.AccountName, 2, 160) ||
             !TextOk(input.AccountNumber, 6, 40) || !input.AccountNumber!.All(char.IsDigit))
             return Problem(http, 400, "VALIDATION_FAILED");
@@ -507,7 +554,10 @@ public static partial class OnboardingEndpoints
         venue = await db.Venues.FromSqlInterpolated($"SELECT * FROM venues WHERE id = {venueId} FOR UPDATE").SingleAsync(ct);
         if (venue.Status != "PUBLISHED" || business.Status != "ACTIVE") return Problem(http, 409, "STATE_CONFLICT");
         if (paymentOnly) input = input with { Address = venue.Address, Contact = venue.Contact,
-            Timezone = venue.Timezone, Latitude = venue.Latitude, Longitude = venue.Longitude };
+            Timezone = venue.Timezone, Latitude = venue.Latitude, Longitude = venue.Longitude,
+            CityCode = venue.CityCode };
+        if (!CityMatchesPoint(input.CityCode == "__OMITTED__" ? venue.CityCode : input.CityCode,
+                input.Latitude, input.Longitude)) return Problem(http, 400, "CITY_LOCATION_MISMATCH");
         if (!await db.MediaUploads.AnyAsync(u => u.Id == input.QrUploadId && u.OwnerUserId == user.Id &&
             u.VenueId == venue.Id && u.Purpose == "QR" && u.Status == "READY", ct))
             return Problem(http, 400, "VALIDATION_FAILED");
@@ -517,7 +567,8 @@ public static partial class OnboardingEndpoints
         var snapshot = new RevisionSnapshot(venue.Version, input.Address!.Trim(), input.Contact!.Trim(),
             input.Timezone!.Trim(), input.Latitude,
             input.Longitude, input.BankCode?.Trim().ToUpperInvariant() ?? currentPayment.BankCode, input.AccountName!.Trim(),
-            input.AccountNumber!, input.QrUploadId, Baseline(venue, currentPayment));
+            input.AccountNumber!, input.QrUploadId, Baseline(venue, currentPayment),
+            input.CityCode == "__OMITTED__" ? venue.CityCode : input.CityCode);
         var approval = new ApprovalRequest { BusinessId = business.Id, VenueId = venue.Id,
             Kind = "VENUE_REVISION", SubmittedBy = user.Id, Snapshot = JsonSerializer.Serialize(snapshot, Json),
             SubmittedAt = DateTimeOffset.UtcNow };
@@ -596,8 +647,8 @@ public static partial class OnboardingEndpoints
             current = await (from venue in db.Venues.AsNoTracking()
                 where venue.Id == venueId && venue.BusinessId == approval.BusinessId
                 join payment in db.VenuePaymentAccounts.AsNoTracking() on venue.Id equals payment.VenueId
-                select new { venueName = venue.Name, venue.Version, venue.Address, venue.Contact, venue.Timezone,
-                    venue.Latitude, venue.Longitude, payment.AccountName, payment.AccountNumber,
+                select new { venueName = venue.Name, venue.Version, venue.Address, venue.CityCode, venue.Contact, venue.Timezone,
+                    venue.Latitude, venue.Longitude, payment.BankCode, payment.AccountName, payment.AccountNumber,
                     payment.QrUploadId }).SingleOrDefaultAsync(ct);
         }
         return Ok(http, new { approval.Id, approval.BusinessId, approval.VenueId, approval.CourtId, approval.Kind, approval.Status,
@@ -607,25 +658,8 @@ public static partial class OnboardingEndpoints
 
     private static bool LegacyBankCodeOk(string? value) => value is null || TextOk(value, 2, 32);
 
-    // Sanitize the display projection, never the persisted approval/baseline used by approval checks.
-    private static string ApprovalSnapshotForDisplay(string snapshot)
-    {
-        var node = JsonNode.Parse(snapshot);
-        RemoveLegacyBankCode(node);
-        return node?.ToJsonString() ?? "null";
-    }
-
-    private static void RemoveLegacyBankCode(JsonNode? node)
-    {
-        if (node is JsonObject obj)
-        {
-            foreach (var key in obj.Select(p => p.Key).ToArray())
-                if (string.Equals(key, "bankCode", StringComparison.OrdinalIgnoreCase)) obj.Remove(key);
-                else RemoveLegacyBankCode(obj[key]);
-        }
-        else if (node is JsonArray array)
-            foreach (var item in array) RemoveLegacyBankCode(item);
-    }
+    // Only the scoped Admin approval endpoint calls this projection.
+    private static string ApprovalSnapshotForDisplay(string snapshot) => snapshot;
 
     private static async Task<IResult> Approve(HttpContext http, ShuttleBookDbContext db, Guid requestId, CancellationToken ct)
     {
@@ -653,12 +687,15 @@ public static partial class OnboardingEndpoints
                 $"SELECT * FROM venues WHERE id = {approval.VenueId.Value} FOR UPDATE").SingleAsync(ct);
             var payment = await db.VenuePaymentAccounts.SingleAsync(p => p.VenueId == venue.Id, ct);
             if (venue.BusinessId != approval.BusinessId || venue.Status != "PUBLISHED" ||
+                !CityMatchesPoint(proposed.CityCode, proposed.Latitude, proposed.Longitude) ||
                 !await ActiveSubmittedOwner(db, approval, currentBusiness, ct) ||
                 (proposed.Baseline is null ? venue.Version != proposed.Version : Baseline(venue, payment) != proposed.Baseline) ||
                 !await db.MediaUploads.AnyAsync(u => u.Id == proposed.QrUploadId && u.VenueId == venue.Id &&
-                    u.OwnerUserId == approval.SubmittedBy && u.Purpose == "QR" && u.Status == "READY", ct))
+                    (u.Id == payment.QrUploadId || u.OwnerUserId == approval.SubmittedBy) &&
+                    u.Purpose == "QR" && u.Status == "READY", ct))
                 return Problem(http, 409, "VERSION_CONFLICT");
-            venue.Address = proposed.Address; venue.Contact = proposed.Contact; venue.Timezone = proposed.Timezone;
+            venue.Address = proposed.Address; venue.CityCode = proposed.CityCode;
+            venue.Contact = proposed.Contact; venue.Timezone = proposed.Timezone;
             venue.Latitude = proposed.Latitude; venue.Longitude = proposed.Longitude; venue.Version++;
             venue.UpdatedAt = DateTimeOffset.UtcNow;
             payment.BankCode = proposed.BankCode; payment.AccountName = proposed.AccountName;
@@ -684,6 +721,8 @@ public static partial class OnboardingEndpoints
         if (courts.Count == 0) return Problem(http, 409, "INCOMPLETE_PROFILE");
         foreach (var venue in venues)
         {
+            if (!CityMatchesPoint(venue.CityCode, venue.Latitude, venue.Longitude))
+                return Problem(http, 409, "CITY_LOCATION_MISMATCH");
             if (!TextOk(venue.Contact, 3, 160) || !await ValidOptionalVenueImage(db, venue, ct))
                 return Problem(http, 409, "INCOMPLETE_PROFILE");
             var payment = await db.VenuePaymentAccounts.SingleOrDefaultAsync(p => p.VenueId == venue.Id, ct);
@@ -802,11 +841,20 @@ public static partial class OnboardingEndpoints
         return await DraftVenue(db, user, business, venue, ct);
     }
 
+    private static bool ValidCity(string? city) => city is null or "HN" or "HCM" or "__OMITTED__";
+    // Conservative regional guard: catches an HN pin labelled HCM (and vice versa).
+    // Administrative border accuracy still belongs to the human approval step.
+    private static bool CityMatchesPoint(string? city, double latitude, double longitude) => city switch
+    {
+        "HN" => latitude is >= 20.4 and <= 21.45 && longitude is >= 105.25 and <= 106.25,
+        "HCM" => latitude is >= 10.3 and <= 11.25 && longitude is >= 106.3 and <= 107.15,
+        _ => true
+    };
     private static bool ValidVenue(VenueInput input) => TextOk(input.Name, 2, 160) && TextOk(input.Address, 8, 400) &&
         TextOk(input.Contact, 3, 160) && TextOk(input.Timezone, 3, 80) &&
         TimeZoneInfo.TryFindSystemTimeZoneById(input.Timezone!.Trim(), out _) &&
         double.IsFinite(input.Latitude) && double.IsFinite(input.Longitude) &&
-        input.Latitude is >= -90 and <= 90 && input.Longitude is >= -180 and <= 180;
+        input.Latitude is >= -90 and <= 90 && input.Longitude is >= -180 and <= 180 && ValidCity(input.CityCode);
     private static bool TextOk(string? value, int min, int max) => value is not null &&
         value.Trim().Length >= min && value.Trim().Length <= max;
     private static IResult? CheckVersion(HttpContext http, long version)
@@ -876,6 +924,9 @@ public static partial class OnboardingEndpoints
             {
                 if (!fields.Contains(property.Name)) return (default, Problem(http, 400, "UNSUPPORTED_FIELD"));
                 if (!seen.Add(property.Name)) return (default, Problem(http, 400, "VALIDATION_FAILED"));
+                if (property.Name == "cityCode" && property.Value.ValueKind == JsonValueKind.String &&
+                    property.Value.GetString() == "__OMITTED__")
+                    return (default, Problem(http, 400, "VALIDATION_FAILED"));
             }
             if (fields.Any(field => !seen.Contains(field) && optionalFields?.Contains(field) != true))
                 return (default, Problem(http, 400, "VALIDATION_FAILED"));

@@ -6,6 +6,8 @@ export type VenueSummary = {
   longitude: number;
   distanceMeters?: number;
   imageUrl: string | null;
+  matchedCourtId?: string;
+  estimatedTotalVnd?: number;
 };
 
 export type CourtSummary = {

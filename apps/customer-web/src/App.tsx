@@ -9,19 +9,19 @@ import { SeriesReview } from './features/bookings/SeriesReview';
 import { AccountProfile } from '@shuttlebook/ui/account-profile';
 import { CustomerShell } from './components/CustomerShell';
 import { useCustomerSession } from './features/auth/CustomerSession';
+import { TeamExplore, TeamDetail, MyTeams, MyTeamRequests } from './features/teams/TeamsPages';
+import { PlaySchedulePage } from './features/schedule/PlaySchedulePage';
 
 function CustomerProfilePage() {
   const { session, request, setDisplayName } = useCustomerSession();
   if (!session) return <CustomerShell><section className="panel account-profile"><h1>Thông tin cá nhân</h1>
     <p>Đăng nhập để xem và chỉnh sửa thông tin.</p><a href="/login">Đăng nhập</a></section></CustomerShell>;
-  return <CustomerShell title="Thông tin cá nhân" eyebrow="SHUTTLEBOOK / TÀI KHOẢN"
-    description="Thông tin dùng khi bạn đặt sân và theo dõi đơn.">
+  return <CustomerShell title="Thông tin cá nhân" eyebrow="SHUTTLEBOOK / TÀI KHOẢN">
     <div className="customer-profile-layout">
       <AccountProfile request={request} onSaved={setDisplayName} variant="customer" />
       <aside className="customer-profile-aside" aria-label="Hướng dẫn tài khoản">
         <span className="customer-profile-aside-icon" aria-hidden="true">✓</span>
         <h2>Tài khoản của bạn</h2>
-        <p>Tên hiển thị giúp bạn nhận ra tài khoản đang sử dụng. Email hoặc số điện thoại đăng nhập được giữ nguyên để bảo vệ việc xác minh.</p>
         <a href="/me/bookings">Xem đơn đặt sân <span aria-hidden="true">→</span></a>
       </aside>
     </div></CustomerShell>;
@@ -44,11 +44,18 @@ export function App() {
   if (path === '/booking-review') return <BookingReview key={url} />;
   if (path === '/series-review') return <SeriesReview key={url} />;
   if (path === '/me/bookings') return <MyBookings />;
+  if (path === '/me/play-schedule') return <PlaySchedulePage key={url} view={new URLSearchParams(url.split('?')[1] ?? '').get('view') === 'past' ? 'past' : 'upcoming'} />;
   if (path === '/me/notifications') return <CustomerNotificationsPage />;
   if (path === '/me/profile') return <CustomerProfilePage />;
+  if (path === '/teams') return <TeamExplore />;
+  if (path === '/me/teams') return <MyTeams key={url} />;
+  if (path === '/me/team-requests') return <MyTeamRequests />;
+  const team = /^\/teams\/([^/]+)\/?$/.exec(path);
+  if (team) return <TeamDetail key={team[1]} id={team[1]} />;
   const booking = /^\/bookings\/([^/]+)\/?$/.exec(path);
   if (booking) return <BookingDetail key={booking[1]} id={booking[1]} />;
-  if (path === '/venues' || path === '/venues/') return <VenueSearchPage />;
+  if (path === '/' || path === '/venues' || path === '/venues/') return <VenueSearchPage />;
+  if (path === '/register' || path === '/register/') return <CustomerIdentity />;
   const detail = /^\/venues\/([^/]+)\/?$/.exec(path);
   if (detail) return <VenueDetailPage venueId={decodeURIComponent(detail[1])} />;
   return <CustomerIdentity />;

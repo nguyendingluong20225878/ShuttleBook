@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using ShuttleBook.Infrastructure.Identity;
 using ShuttleBook.Infrastructure.Onboarding;
 using ShuttleBook.Infrastructure.Bookings;
+using ShuttleBook.Infrastructure.Recruitment;
 
 namespace ShuttleBook.Infrastructure.Data;
 
@@ -33,12 +34,16 @@ public sealed class ShuttleBookDbContext(DbContextOptions<ShuttleBookDbContext> 
     public DbSet<BookingIdempotency> BookingIdempotency => Set<BookingIdempotency>();
     public DbSet<PaymentEvidence> PaymentEvidence => Set<PaymentEvidence>();
     public DbSet<PaymentDecision> PaymentDecisions => Set<PaymentDecision>();
+    public DbSet<RecruitmentPost> RecruitmentPosts => Set<RecruitmentPost>();
+    public DbSet<RecruitmentRequest> RecruitmentRequests => Set<RecruitmentRequest>();
+    public DbSet<RecruitmentReport> RecruitmentReports => Set<RecruitmentReport>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasPostgresExtension("postgis");
         modelBuilder.HasPostgresExtension("btree_gist");
         BookingModelConfiguration.Configure(modelBuilder);
+        RecruitmentModelConfiguration.Configure(modelBuilder);
 
         modelBuilder.Entity<User>(entity =>
         {
@@ -149,11 +154,13 @@ public sealed class ShuttleBookDbContext(DbContextOptions<ShuttleBookDbContext> 
         });
         modelBuilder.Entity<Venue>(entity =>
         {
-            entity.ToTable("venues"); entity.HasKey(x => x.Id);
+            entity.ToTable("venues", table => table.HasCheckConstraint("ck_venues_city_code",
+                "city_code IS NULL OR city_code IN ('HN', 'HCM')")); entity.HasKey(x => x.Id);
             entity.Property(x => x.Id).HasColumnName("id");
             entity.Property(x => x.BusinessId).HasColumnName("business_id");
             entity.Property(x => x.Name).HasColumnName("name").HasMaxLength(160);
             entity.Property(x => x.Address).HasColumnName("address").HasMaxLength(400);
+            entity.Property(x => x.CityCode).HasColumnName("city_code").HasMaxLength(3);
             entity.Property(x => x.Contact).HasColumnName("contact").HasMaxLength(160);
             entity.Property(x => x.Timezone).HasColumnName("timezone").HasMaxLength(80);
             entity.Property(x => x.Latitude).HasColumnName("latitude");
@@ -165,6 +172,7 @@ public sealed class ShuttleBookDbContext(DbContextOptions<ShuttleBookDbContext> 
             entity.Property(x => x.UpdatedAt).HasColumnName("updated_at");
             entity.HasOne<Business>().WithMany().HasForeignKey(x => x.BusinessId).OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(x => x.BusinessId);
+            entity.HasIndex(x => new { x.CityCode, x.Status, x.Name, x.Id });
         });
         modelBuilder.Entity<Court>(entity =>
         {
@@ -260,7 +268,7 @@ public sealed class ShuttleBookDbContext(DbContextOptions<ShuttleBookDbContext> 
         modelBuilder.Entity<MediaUpload>(entity =>
         {
             entity.ToTable("media_uploads", t => t.HasCheckConstraint("ck_media_booking_purpose",
-                "(purpose='PAYMENT_PROOF' AND booking_id IS NOT NULL AND court_id IS NULL) OR (purpose IN ('QR','VENUE_IMAGE') AND booking_id IS NULL AND court_id IS NULL) OR (purpose='COURT_IMAGE' AND booking_id IS NULL AND court_id IS NOT NULL)")); entity.HasKey(x => x.Id);
+                "(purpose IN ('PAYMENT_PROOF','RECRUITMENT_IMAGE') AND booking_id IS NOT NULL AND court_id IS NULL) OR (purpose IN ('QR','VENUE_IMAGE') AND booking_id IS NULL AND court_id IS NULL) OR (purpose='COURT_IMAGE' AND booking_id IS NULL AND court_id IS NOT NULL)")); entity.HasKey(x => x.Id);
             entity.Property(x => x.Id).HasColumnName("id");
             entity.Property(x => x.OwnerUserId).HasColumnName("owner_user_id");
             entity.Property(x => x.VenueId).HasColumnName("venue_id");

@@ -12,7 +12,7 @@ using ShuttleBook.Infrastructure.Onboarding;
 
 namespace ShuttleBook.Api.Discovery;
 
-public static class PublicVenuesEndpoints
+public static partial class PublicVenuesEndpoints
 {
     private sealed class NearbyRow
     {
@@ -28,6 +28,7 @@ public static class PublicVenuesEndpoints
     {
         var venues = app.MapGroup("/api/v1/venues");
         venues.MapGet("/nearby", Nearby);
+        venues.MapGet("/price-search", PriceSearch);
         venues.MapGet("/{venueId:guid}/availability", Availability);
         venues.MapGet("/{venueId:guid}/image", Image);
         venues.MapGet("/{venueId:guid}", Detail);
@@ -36,11 +37,14 @@ public static class PublicVenuesEndpoints
 
     private static async Task<IResult> List(HttpContext http, ShuttleBookDbContext db, CancellationToken ct)
     {
-        if (!OnlyQuery(http, "q", "limit", "cursor") || !TryPage(http, out var page))
+        if (!OnlyQuery(http, "q", "city", "limit", "cursor") || !TryPage(http, out var page))
             return Error(http, 400, "VALIDATION_FAILED");
         var q = http.Request.Query["q"].ToString().Trim();
-        if (q.Length > 120) return Error(http, 400, "VALIDATION_FAILED");
+        var city = http.Request.Query["city"].ToString();
+        if (q.Length > 120 || (http.Request.Query.ContainsKey("city") && city is not ("HN" or "HCM")))
+            return Error(http, 400, "VALIDATION_FAILED");
         var venues = PublicQuery(db);
+        if (city.Length > 0) venues = venues.Where(v => v.CityCode == city);
         if (q.Length > 0)
         {
             var pattern = $"%{q.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_")}%";
@@ -87,7 +91,7 @@ public static class PublicVenuesEndpoints
             {
                 row.Id, byId[row.Id].Name, byId[row.Id].Address,
                 byId[row.Id].Latitude, byId[row.Id].Longitude,
-                row.DistanceMeters, imageUrl = ImageUrl(byId[row.Id], images)
+                row.DistanceMeters, byId[row.Id].CityCode, imageUrl = ImageUrl(byId[row.Id], images)
             }), nextCursor = hasMore ? Cursor(page.Offset + page.Limit) : null });
     }
 
@@ -101,7 +105,7 @@ public static class PublicVenuesEndpoints
             .OrderBy(c => c.Name).ThenBy(c => c.Id).ToListAsync(ct);
         courts = CourtNumbers.Order(courts).ToList();
         var images = await ReadyImages(db, [venue], ct);
-        return Ok(http, new { venue.Id, venue.Name, venue.Address, venue.Contact,
+        return Ok(http, new { venue.Id, venue.Name, venue.Address, venue.CityCode, venue.Contact,
             venue.Latitude, venue.Longitude, venue.Timezone, imageUrl = ImageUrl(venue, images),
             courts = courts.Select(c => new { c.Id, c.Name, c.BookingBlockMinutes,
                 c.MinimumBookingMinutes, c.HoldMinutes }) });
@@ -258,7 +262,7 @@ public static class PublicVenuesEndpoints
 
     private static object Summary(Venue venue, HashSet<(Guid Id, Guid VenueId)> images) => new
     {
-        venue.Id, venue.Name, venue.Address, venue.Latitude, venue.Longitude,
+        venue.Id, venue.Name, venue.Address, venue.CityCode, venue.Latitude, venue.Longitude,
         imageUrl = ImageUrl(venue, images)
     };
     private static string? ImageUrl(Venue venue, HashSet<(Guid Id, Guid VenueId)> images) =>

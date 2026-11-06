@@ -66,7 +66,7 @@ export function CustomerIdentity() {
   }, []);
 
   const navigate = (next: Page, state: object | null = null) => {
-    go(`${next === 'register' ? '/' : `/${next}`}${location.search}`, false, state);
+    go(`/${next}${location.search}`, false, state);
     if (next === 'register' && !import.meta.env.DEV && contactType === 'phone') { setContactType('email'); setContact(''); }
     setPage(next); setMessage('');
   };
@@ -150,7 +150,6 @@ export function CustomerIdentity() {
     {sessionMessage && !session && <p role="status">{sessionMessage}</p>}
     {session ? <section>
       <h2>Xin chào khách hàng</h2>
-      <p>Bạn đã đăng nhập. Chọn cơ sở để đặt sân hoặc xem trạng thái các đơn hiện có.</p>
       <div className="identity-actions"><a className="primary-link" href="/venues">Tìm sân &amp; xem lịch</a>
         <a className="secondary-link" href="/me/bookings">Xem đơn của tôi</a><a className="secondary-link" href="/me/notifications">Xem thông báo</a></div>
     </section> : <>

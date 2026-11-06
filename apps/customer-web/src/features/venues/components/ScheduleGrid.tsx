@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CourtSchedule, ScheduleSlot, VenueSchedule } from '../types';
 import { navigate } from '../../../routes/navigation';
 
@@ -8,8 +8,12 @@ const money = new Intl.NumberFormat('vi-VN');
 function minutes(time: string) { const [hour, minute] = time.split(':').map(Number); return hour * 60 + minute; }
 function label(total: number) { return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`; }
 
-export function ScheduleGrid({ schedule, bookingMode = 'casual' }: { schedule: VenueSchedule; bookingMode?: 'casual' | 'fixed' }) {
+type Suggestion = { courtId: string; startsAt: string; durationMinutes: number };
+export function ScheduleGrid({ schedule, bookingMode = 'casual', suggestion }: {
+  schedule: VenueSchedule; bookingMode?: 'casual' | 'fixed'; suggestion?: Suggestion }) {
   const [selection, setSelection] = useState<Selection>(null);
+  const scroll = useRef<HTMLDivElement>(null);
+  const [moreHours, setMoreHours] = useState(false);
   const courts = schedule.courts;
   const axis = useMemo(() => {
     const all = courts.flatMap(court => court.slots);
@@ -21,6 +25,12 @@ export function ScheduleGrid({ schedule, bookingMode = 'casual' }: { schedule: V
     return times;
   }, [schedule.courts]);
   const axisEnd = axis.length > 0 ? label(minutes(axis[axis.length - 1]) + 30) : '';
+  useEffect(() => {
+    const update = () => { const element = scroll.current;
+      setMoreHours(Boolean(element && element.scrollLeft + element.clientWidth < element.scrollWidth - 2)); };
+    update(); window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, [axis.length]);
 
   useEffect(() => {
     if (!selection) return;
@@ -55,8 +65,23 @@ export function ScheduleGrid({ schedule, bookingMode = 'casual' }: { schedule: V
   const minimum = selectedCourt ? Math.max(bookingMode === 'fixed' ? 120 : 0, selectedCourt.minimumBookingMinutes) : 0;
   const valid = Boolean(selectedCourt && duration >= minimum);
   const total = selectedSlots.reduce((sum, slot) => sum + (slot.pricePerSlot ?? 0), 0);
+  const suggestedCourt = courts.find(court => court.courtId === suggestion?.courtId);
+  const suggestionStart = suggestion ? minutes(suggestion.startsAt) : -1;
+  const suggestionSlots = suggestedCourt?.slots.filter(slot => minutes(slot.startsAt) >= suggestionStart &&
+    minutes(slot.startsAt) < suggestionStart + (suggestion?.durationMinutes ?? 0)) ?? [];
+  const suggestionReady = Boolean(suggestion && suggestedCourt &&
+    suggestionSlots.length === suggestion.durationMinutes / 30 &&
+    suggestionSlots.every((slot, index) => slot.status === 'AVAILABLE' &&
+      minutes(slot.startsAt) === suggestionStart + index * 30) &&
+    suggestion.durationMinutes >= suggestedCourt.minimumBookingMinutes);
 
   return <section className="schedule-section" aria-label="Lịch các sân">
+    {suggestion && <div className="suggested-slot" role="status">
+      {suggestionReady ? <><span>Giờ tìm được vẫn còn trống. Kiểm tra giá mới trước khi tiếp tục.</span>
+        <button type="button" onClick={() => setSelection({ courtId: suggestion.courtId,
+          starts: suggestionSlots.map(slot => slot.startsAt) })}>Chọn lịch gợi ý</button></>
+        : <span>Lịch gợi ý đã thay đổi. Hãy chọn sân và giờ còn trống bên dưới.</span>}
+    </div>}
     <div className="schedule-intro"><div><h2>Lịch theo sân và giờ</h2>
       <p>Giờ chơi theo cơ sở. Giá hiển thị cho từng ca 30 phút.</p></div>
       <div className="schedule-legend" aria-label="Chú giải trạng thái">
@@ -65,8 +90,13 @@ export function ScheduleGrid({ schedule, bookingMode = 'casual' }: { schedule: V
         <span><i className="legend-dot closed" /> Ngoài giờ/chưa có giá</span>
         <span><i className="legend-dot selected" /> Đang chọn</span>
       </div></div>
-    {axis.length === 0 ? <p>Ngày này chưa có giờ hoạt động cho các sân.</p> : <div className="schedule-scroll" tabIndex={0}
-      aria-label="Bảng lịch sân, cuộn ngang để xem các giờ khác">
+    {axis.length === 0 ? <p>Ngày này chưa có giờ hoạt động cho các sân.</p> : <>
+      <div className="schedule-mobile-tools"><p id="schedule-scroll-help">Vuốt ngang hoặc dùng bàn phím để xem thêm giờ.</p>
+        {moreHours && <button type="button" onClick={() => scroll.current?.scrollBy({ left: Math.max(112, scroll.current.clientWidth - 156), behavior: 'smooth' })}>Giờ tiếp →</button>}
+      </div>
+      <div className="schedule-scroll" ref={scroll} tabIndex={0} onScroll={() => {
+        const element = scroll.current; setMoreHours(Boolean(element && element.scrollLeft + element.clientWidth < element.scrollWidth - 2));
+      }} aria-label="Bảng lịch sân, cuộn ngang để xem các giờ khác" aria-describedby="schedule-scroll-help">
       <table className="schedule-grid" style={{ width: `calc(var(--court-column-width) + ${axis.length} * var(--slot-column-width))` }}>
         <colgroup><col className="court-column" /><col className="slot-column" span={axis.length} /></colgroup>
         <thead><tr><th className="court-heading" scope="col">Sân / giờ</th>
@@ -95,7 +125,7 @@ export function ScheduleGrid({ schedule, bookingMode = 'casual' }: { schedule: V
                 : <span className="slot-label" aria-label={`${court.name}, ${time}, ${text}`}>
                   {status === 'CLOSED' ? '—' : text}</span>}</td>;
           })}</tr>;
-        })}</tbody></table></div>}
+        })}</tbody></table></div></>}
     {selectedCourt && selectedSlots.length > 0 && <div className="selection-summary" role="status">
       <strong>{selectedCourt.name}: {selectedSlots[0].startsAt}–{selectedSlots[selectedSlots.length - 1].endsAt}</strong>
       <span>{duration} phút · Giá tham khảo {money.format(total)}đ</span>

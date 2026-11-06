@@ -29,6 +29,9 @@ playwright-report/
 coverage/
 artifacts/
 *.log
+tests/
+backend/tests/
+/scripts/Test-Recruitment-Live.ps1
 
 # Editors and OS
 .vs/

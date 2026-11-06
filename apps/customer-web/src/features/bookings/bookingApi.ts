@@ -7,12 +7,12 @@ export type PaymentEvidence = { evidenceId: string; kind: string; bankReference:
   reportedAt: string; proofUrl: string | null };
 export type PaymentDecision = { decisionId: string; resolution: string; reasonCode: string | null; reason: string | null;
   confirmedAmount: number | null; confirmedAmountExact?: string | null; bankReference: string | null; note: string | null; decidedAt: string };
-export type Booking = { bookingId: string; bookingNo: string; status: string; version: number; venueName: string; courtName: string;
+export type Booking = { bookingId: string; bookingNo: string; status: string; version: number; venueId: string; venueName: string; courtName: string;
   bookingType?: string; series?: BookingSeries | null;
-  date: string; localStart: string; localEnd: string; timezone: string; amount: number; amountExact?: string; paymentDeadline: string;
+  date: string; localStart: string; localEnd: string; startsAt: string; timezone: string; amount: number; amountExact?: string; paymentDeadline: string;
   createdAt: string; expiredAt: string | null; slots: Slot[]; evidence?: PaymentEvidence[]; decisions?: PaymentDecision[];
   isOverdue?: boolean; confirmationDueAt?: string | null;
-  payment: { paymentId?: string; status: string; accountName: string; maskedAccountNumber: string;
+  payment: { paymentId?: string; status: string; bankCode?: string; accountName: string; maskedAccountNumber: string;
     qrUrl: string | null; transferContent: string; expectedAmount?: number; expectedAmountExact?: string; firstReportedAt?: string | null;
     lastReportedAt?: string | null; confirmedAmount?: number | null; confirmedAmountExact?: string | null; confirmedAt?: string | null; confirmedBy?: string | null } };
 export const money = (amount: number | string | bigint) => `${new Intl.NumberFormat('vi-VN').format(typeof amount === 'string' ? BigInt(amount) : amount)}đ`;

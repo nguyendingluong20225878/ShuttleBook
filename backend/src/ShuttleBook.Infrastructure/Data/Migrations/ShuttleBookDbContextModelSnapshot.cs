@@ -1436,7 +1436,7 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
 
                     b.ToTable("media_uploads", null, t =>
                         {
-                            t.HasCheckConstraint("ck_media_booking_purpose", "(purpose='PAYMENT_PROOF' AND booking_id IS NOT NULL AND court_id IS NULL) OR (purpose IN ('QR','VENUE_IMAGE') AND booking_id IS NULL AND court_id IS NULL) OR (purpose='COURT_IMAGE' AND booking_id IS NULL AND court_id IS NOT NULL)");
+                            t.HasCheckConstraint("ck_media_booking_purpose", "(purpose IN ('PAYMENT_PROOF','RECRUITMENT_IMAGE') AND booking_id IS NOT NULL AND court_id IS NULL) OR (purpose IN ('QR','VENUE_IMAGE') AND booking_id IS NULL AND court_id IS NULL) OR (purpose='COURT_IMAGE' AND booking_id IS NULL AND court_id IS NOT NULL)");
                         });
                 });
 
@@ -1609,6 +1609,11 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("business_id");
 
+                    b.Property<string>("CityCode")
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("city_code");
+
                     b.Property<string>("Contact")
                         .IsRequired()
                         .HasMaxLength(160)
@@ -1661,7 +1666,12 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
 
                     b.HasIndex("BusinessId");
 
-                    b.ToTable("venues", (string)null);
+                    b.HasIndex("CityCode", "Status", "Name", "Id");
+
+                    b.ToTable("venues", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_venues_city_code", "city_code IS NULL OR city_code IN ('HN', 'HCM')");
+                        });
                 });
 
             modelBuilder.Entity("ShuttleBook.Infrastructure.Onboarding.VenuePaymentAccount", b =>
@@ -1703,6 +1713,243 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("venue_payment_accounts", (string)null);
+                });
+
+            modelBuilder.Entity("ShuttleBook.Infrastructure.Recruitment.RecruitmentPost", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("BookingId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("booking_id");
+
+                    b.Property<string>("Caption")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("caption");
+
+                    b.Property<int?>("CommonContributionVnd")
+                        .HasColumnType("integer")
+                        .HasColumnName("common_contribution_vnd");
+
+                    b.Property<string>("ContributionMode")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("contribution_mode");
+
+                    b.Property<string>("ContactName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("contact_name");
+
+                    b.Property<string>("ContactPhone")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("contact_phone");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int?>("FemaleContributionVnd")
+                        .HasColumnType("integer")
+                        .HasColumnName("female_contribution_vnd");
+
+                    b.Property<Guid?>("ImageUploadId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("image_upload_id");
+
+                    b.Property<string>("Level")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("level");
+
+                    b.Property<int?>("MaleContributionVnd")
+                        .HasColumnType("integer")
+                        .HasColumnName("male_contribution_vnd");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("owner_user_id");
+
+                    b.Property<bool>("PublishContactPhone")
+                        .HasColumnType("boolean")
+                        .HasColumnName("publish_contact_phone");
+
+                    b.Property<bool>("SharePhoneWithAccepted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("share_phone_with_accepted");
+
+                    b.Property<int>("SlotsNeeded")
+                        .HasColumnType("integer")
+                        .HasColumnName("slots_needed");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BookingId")
+                        .IsUnique();
+
+                    b.HasIndex("ImageUploadId");
+
+                    b.HasIndex("Status")
+                        .HasFilter("status = 'OPEN'");
+
+                    b.HasIndex("BookingId", "OwnerUserId");
+
+                    b.HasIndex("OwnerUserId", "Status");
+
+                    b.HasIndex("Status", "CreatedAt", "Id");
+
+                    b.ToTable("recruitment_posts", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_recruitment_post_valid", "slots_needed BETWEEN 1 AND 8 AND level IN ('ANY','BEGINNER','INTERMEDIATE','ADVANCED','NEWBIE','Y_MINUS','Y','Y_PLUS','TBY_MINUS','TBY','TBY_PLUS','TB_MINUS','TB','TB_PLUS','TBK_MINUS','TBK','TBK_PLUS') AND status IN ('OPEN','CLOSED','HIDDEN') AND version > 0 AND char_length(caption) <= 1000 AND char_length(contact_name) <= 100 AND (contact_phone IS NULL OR char_length(contact_phone) <= 20) AND NOT (publish_contact_phone AND share_phone_with_accepted) AND (NOT (publish_contact_phone OR share_phone_with_accepted) OR contact_phone IS NOT NULL) AND contribution_mode IN ('UNSPECIFIED','COMMON','BY_GENDER') AND ((contribution_mode = 'UNSPECIFIED' AND common_contribution_vnd IS NULL AND male_contribution_vnd IS NULL AND female_contribution_vnd IS NULL) OR (contribution_mode = 'COMMON' AND common_contribution_vnd IS NOT NULL AND common_contribution_vnd BETWEEN 0 AND 2000000 AND male_contribution_vnd IS NULL AND female_contribution_vnd IS NULL) OR (contribution_mode = 'BY_GENDER' AND common_contribution_vnd IS NULL AND male_contribution_vnd IS NOT NULL AND male_contribution_vnd BETWEEN 0 AND 2000000 AND female_contribution_vnd IS NOT NULL AND male_contribution_vnd BETWEEN 0 AND 2000000))");
+                        });
+                });
+
+            modelBuilder.Entity("ShuttleBook.Infrastructure.Recruitment.RecruitmentReport", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("PostId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("post_id");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("reason");
+
+                    b.Property<Guid>("ReporterUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reporter_user_id");
+
+                    b.Property<DateTimeOffset?>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("resolved_at");
+
+                    b.Property<Guid?>("ResolvedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("resolved_by");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReporterUserId");
+
+                    b.HasIndex("ResolvedBy");
+
+                    b.HasIndex("PostId", "ReporterUserId")
+                        .IsUnique();
+
+                    b.HasIndex("Status", "CreatedAt");
+
+                    b.ToTable("recruitment_reports", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_recruitment_report_valid", "reason IN ('SPAM','MISLEADING','UNSAFE') AND status IN ('OPEN','DISMISSED','RESOLVED') AND ((status='OPEN' AND resolved_at IS NULL AND resolved_by IS NULL) OR (status<>'OPEN' AND resolved_at IS NOT NULL AND resolved_by IS NOT NULL))");
+                        });
+                });
+
+            modelBuilder.Entity("ShuttleBook.Infrastructure.Recruitment.RecruitmentRequest", b =>
+                {
+                    b.Property<string>("ContactPhone")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("contact_phone");
+
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ApplicantUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("applicant_user_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Level")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("level");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("message");
+
+                    b.Property<Guid>("PostId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("post_id");
+
+                    b.Property<bool>("SharePhoneWithAccepted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("share_phone_with_accepted");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApplicantUserId", "Id");
+
+                    b.HasIndex("PostId", "ApplicantUserId")
+                        .IsUnique();
+
+                    b.HasIndex("PostId", "Status");
+
+                    b.ToTable("recruitment_requests", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_recruitment_request_valid", "level IN ('BEGINNER','INTERMEDIATE','ADVANCED','UNSPECIFIED') AND status IN ('PENDING','ACCEPTED','DECLINED','WITHDRAWN') AND version > 0 AND char_length(message) <= 500 AND (contact_phone IS NULL OR char_length(contact_phone) <= 20) AND (share_phone_with_accepted = false OR contact_phone IS NOT NULL)");
+                        });
                 });
 
             modelBuilder.Entity("ShuttleBook.Infrastructure.Bookings.Booking", b =>
@@ -2080,6 +2327,56 @@ namespace ShuttleBook.Infrastructure.Data.Migrations
                     b.HasOne("ShuttleBook.Infrastructure.Onboarding.Venue", null)
                         .WithMany()
                         .HasForeignKey("VenueId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ShuttleBook.Infrastructure.Recruitment.RecruitmentPost", b =>
+                {
+                    b.HasOne("ShuttleBook.Infrastructure.Onboarding.MediaUpload", null)
+                        .WithMany()
+                        .HasForeignKey("ImageUploadId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ShuttleBook.Infrastructure.Bookings.Booking", null)
+                        .WithMany()
+                        .HasForeignKey("BookingId", "OwnerUserId")
+                        .HasPrincipalKey("Id", "CustomerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ShuttleBook.Infrastructure.Recruitment.RecruitmentReport", b =>
+                {
+                    b.HasOne("ShuttleBook.Infrastructure.Recruitment.RecruitmentPost", null)
+                        .WithMany()
+                        .HasForeignKey("PostId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ShuttleBook.Infrastructure.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("ReporterUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ShuttleBook.Infrastructure.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("ResolvedBy")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("ShuttleBook.Infrastructure.Recruitment.RecruitmentRequest", b =>
+                {
+                    b.HasOne("ShuttleBook.Infrastructure.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("ApplicantUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ShuttleBook.Infrastructure.Recruitment.RecruitmentPost", null)
+                        .WithMany()
+                        .HasForeignKey("PostId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

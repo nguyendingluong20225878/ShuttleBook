@@ -13,3 +13,7 @@ node_modules
 .local
 .nuget
 deploy/secrets
+docs
+tests
+backend/tests
+artifacts

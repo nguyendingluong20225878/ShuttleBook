@@ -91,7 +91,6 @@ export function PartnerCalendar({ venue, courtId, date, chooseDate, request, ope
       <button type="button" aria-label="Ngày sau" onClick={() => chooseDate(shiftedDate(date, 1))}>›</button>
       <button type="button" onClick={() => chooseDate(venueToday(venue.timezone))}>Hôm nay</button>
     </div><button type="button" disabled={loading} onClick={() => setReload(value => value + 1)}>Tải lại lịch</button></div>
-    <p className="muted">Cập nhật khi đang xem, khoảng 15 giây/lần. Chọn đơn để mở đối chiếu thanh toán.</p>
     {loading && <p role="status">Đang tải lịch sân…</p>}
     {error && <p className="feedback error" role="alert">{data ? 'Chưa cập nhật. Đang hiển thị bản tải trước. ' : ''}{error}</p>}
     {denied && <p>Bạn không còn quyền xem lịch này. Dữ liệu của phiên trước đã được xóa.</p>}

@@ -16,6 +16,8 @@ Việc đặt sân thường diễn ra qua tin nhắn, bảng tính và xác nh�
 
 - **Ba portal theo vai trò:** Customer, Partner và Admin.
 - **Khám phá sân:** tìm theo vị trí/bán kính, xem cơ sở, sân và thời gian còn trống.
+- **Tìm theo lịch và ngân sách:** chọn thành phố, ngày, giờ và ngân sách rồi xem báo giá theo sân.
+- **Tìm người chơi và lịch chơi:** đăng tin gắn với booking, gửi yêu cầu tham gia và theo dõi các buổi chơi.
 - **Đặt sân vãng lai và cố định:** báo giá theo ca 30 phút, giữ chỗ và ngăn đặt trùng bằng PostgreSQL/PostGIS.
 - **Vận hành sân:** chủ sân quản lý cơ sở, sân, lịch mở cửa, giá, giá đặc biệt, bảo trì và tài khoản nhận thanh toán.
 - **Thanh toán chuyển khoản:** khách gửi bằng chứng, chủ sân đối chiếu và xác nhận hoặc từ chối.
@@ -25,7 +27,7 @@ Việc đặt sân thường diễn ra qua tin nhắn, bảng tính và xác nh�
 
 ## 🧪 Closed pilot (AWS staging)
 
-Môi trường staging hiện dành cho nhoms nhỏ, khoảng 5–10 tài khoản.
+Môi trường staging hiện dành cho nhóm nhỏ, khoảng 5–10 tài khoản.
 
 | Portal | Địa chỉ thử |
 |---|---|
@@ -35,7 +37,7 @@ Môi trường staging hiện dành cho nhoms nhỏ, khoảng 5–10 tài khoả
 - Hai hostname dùng DuckDNS, được EC2 tự cập nhật khi Public IPv4 thay đổi và phục vụ qua HTTPS.
 - Admin không công khai; chỉ truy cập qua SSH tunnel.
 - OTP hiện dùng **Amazon SES Sandbox** ở Region Singapore. Chỉ email đã được xác minh trong SES mới nhận OTP. Hãy verify email của người thử trước khi mời họ.
-  
+
 ## 🛠 Công nghệ sử dụng
 
 | Nhóm | Công nghệ |
@@ -84,10 +86,8 @@ ShuttleBook/
 │   │   ├── ShuttleBook.Worker/         # Xử lý outbox nền
 │   │   ├── ShuttleBook.Migrator/       # Áp dụng migration database
 │   │   └── ShuttleBook.AdminCli/       # Bootstrap và thao tác Admin
-│   └── tests/                  # API và integration test với PostgreSQL thật
 ├── deploy/                     # Dockerfile, Compose và cấu hình staging mẫu
-├── scripts/                    # Script PowerShell cho setup, chạy và test
-├── tests/web/                  # Playwright browser tests
+├── scripts/                    # Script PowerShell cho setup và chạy local
 ├── compose.yaml                # PostgreSQL/PostGIS và Mailpit cho local
 └── .env.example                # Mẫu cấu hình local, không chứa secret
 ```
@@ -179,3 +179,12 @@ docker compose ps
 
 Cho staging Linux, dùng `deploy/compose.staging.yml` cùng `.env.staging` riêng tư tạo từ `deploy/staging.env.example`. Không commit `.env.staging`, PFX/PEM, backup database hoặc cấu hình hạ tầng theo máy chủ.
 
+## Kiểm tra mã nguồn
+
+```powershell
+npm.cmd run typecheck
+npm.cmd run build
+dotnet build backend/ShuttleBook.slnx --configuration Release
+```
+
+Theo lựa chọn của chủ repository, `docs/`, `tests/` và `backend/tests/` chỉ ở local và không nằm trong Git. CI kiểm tra build, migration lặp lại an toàn và đóng gói staging; các bộ test riêng chỉ chạy trên máy đang giữ các thư mục đó.
