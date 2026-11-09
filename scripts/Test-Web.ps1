@@ -21,6 +21,8 @@ try {
             }
         } finally { $socket.Dispose() }
     }
+    & npm.cmd run build --workspaces --if-present
+    if ($LASTEXITCODE -ne 0) { throw 'Web build failed before browser tests.' }
     $env:SHUTTLEBOOK_EXTERNAL_WEB = '1'
     foreach ($portal in $portals) {
         $port = 5173 + [array]::IndexOf($portals, $portal)

@@ -132,7 +132,7 @@
   .city-choice-grid button { min-height: 135px; }
   .customer-app-shell .search-panel .input-row button { padding-inline: 11px; white-space: nowrap; }
   .customer-discovery .customer-workspace > main { padding-top: 16px; }
-  .customer-discovery .customer-feature-hero { gap: 8px; margin-bottom: 12px; }
+  .customer-discovery .customer-feature-hero { gap: 8px; margin-bottom: 4px; }
   .customer-discovery .customer-feature-hero h1 { font-size: 21px; }
   .customer-discovery .customer-feature-hero-copy p { font-size: .63rem; letter-spacing: .06em; }
   .customer-discovery .search-panel { padding: 10px 12px; }
