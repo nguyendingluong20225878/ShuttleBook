@@ -17,6 +17,16 @@ type Quote = { quoteId: string; expiresAt: string; courtId: string; venueId: str
   date: string; timezone: string; startsAt: string; endsAt: string; amount: number; amountExact?: string; slots: Slot[]; holdMinutes: number };
 function useNow() { const [now, setNow] = useState(Date.now()); useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []); return now; }
 function remaining(deadline: string, now: number) { const seconds = Math.max(0, Math.ceil((Date.parse(deadline) - now) / 1000)); return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`; }
+function bookingListAction(item: Booking) {
+  if (item.status === 'AWAITING_TRANSFER') return 'Xem hạn chuyển khoản';
+  if (item.status === 'NEEDS_REVIEW') return 'Bổ sung bằng chứng';
+  if (item.status === 'AWAITING_OWNER_CONFIRMATION') return 'Theo dõi xác nhận';
+  if (item.status === 'CONFIRMED') return 'Xem đơn đã xác nhận';
+  if (item.status === 'EXPIRED') return 'Xem đơn đã hết hạn';
+  if (item.status === 'PAYMENT_REJECTED') return 'Xem phản hồi';
+  return 'Xem đơn';
+}
+function shortDate(value: string) { return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value.split('-').reverse().join('/') : value; }
 function useRequiredSession() {
   const auth = useCustomerSession();
   useEffect(() => { if (!auth.session && location.pathname !== '/login') navigate(`/login?returnTo=${encodeURIComponent(location.pathname + location.search)}`, true); }, [auth.session]);
@@ -62,17 +72,17 @@ export function BookingReview() {
   }
   return <Shell><section className="booking-panel sb-panel"><h1>Xác nhận đặt vãng lai</h1><a href={`/venues/${venueId}?date=${date}`}>Quay lại lịch các sân</a>
     {loading && <p role="status">Đang lấy báo giá…</p>}{error && <p className="sb-notice sb-notice--error" role="alert">{error}</p>}
-    {quote && <><h2>{quote.venueName} · {quote.courtName}</h2>
-      {quote.slots.length > 0 && <p className="booking-when">Ngày giờ chơi: <strong>{quote.date} · {quote.slots[0].startsAt}–{quote.slots[quote.slots.length - 1].endsAt}</strong>
-        <span> (giờ tại cơ sở)</span></p>}
-      <div className="booking-review-summary">
-        <p className="booking-total">Tổng tiền: {money(quote.amountExact ?? quote.amount)}</p>
-        <p className="booking-price-note">Đây là giá được tính lại khi giữ chỗ. Hãy kiểm tra trước khi tạo đơn.</p>
-      </div>
-      <PriceBreakdown slots={quote.slots} />
-      <div className="quote-hold-notice"><p>{now < Date.parse(quote.expiresAt) ? 'Đang giữ chỗ tạm cho bạn' : 'Đã hết thời gian giữ chỗ tạm'}: <strong>{remaining(quote.expiresAt, now)}</strong></p>
-        {now < Date.parse(quote.expiresAt) && <p>Các ca sẽ tự trở về trống khi hết giờ nếu chưa tạo đơn. Tạo đơn xong, bạn có {quote.holdMinutes} phút để chuyển khoản.</p>}</div>
+    {quote && <><div className="booking-review-card" role="group" aria-label="Tóm tắt báo giá">
+      <div className="booking-review-venue"><h2>{quote.venueName}</h2><p>{quote.courtName}</p></div>
+      {quote.slots.length > 0 && <p className="booking-review-when"><span>Ngày giờ chơi tại cơ sở</span>
+        <strong>{shortDate(quote.date)} · {quote.slots[0].startsAt}–{quote.slots[quote.slots.length - 1].endsAt}</strong></p>}
+      <div className="booking-review-total"><span>Tổng tiền theo báo giá mới nhất</span><strong>{money(quote.amountExact ?? quote.amount)}</strong></div>
+      <div className="quote-hold-notice"><p>{expired ? 'Đã hết thời gian giữ chỗ tạm' : 'Thời gian giữ chỗ tạm còn'}: <strong>{remaining(quote.expiresAt, now)}</strong></p>
+        {!expired && <p>Chỗ sẽ được giải phóng nếu chưa tạo đơn trước khi hết giờ. Sau khi tạo đơn, bạn có {quote.holdMinutes} phút để chuyển khoản.</p>}</div>
       <button type="button" className="primary-action sb-action" onClick={() => { void create(); }} disabled={submitting || (expired && !canRetry)}>{submitting ? 'Đang tạo đơn…' : 'Xác nhận tạo đơn'}</button>
+      <p className="booking-price-note">Giá đã được tính lại; xem chi tiết từng ca bên dưới trước khi xác nhận.</p>
+    </div>
+      <PriceBreakdown slots={quote.slots} />
       {canRetry && !submitting && <p role="status">Chưa xác định được kết quả tạo đơn. Bạn có thể xác nhận lại cùng yêu cầu đã gửi hoặc xem Đơn của tôi. Không lấy báo giá mới khi chưa kiểm tra đơn cũ.</p>}
       {expired && <p role="status">{canRetry ? 'Báo giá đã hết hạn. Việc gửi lại chỉ kiểm tra yêu cầu cũ; máy chủ sẽ trả đơn đã tạo hoặc xác nhận yêu cầu không còn hợp lệ.' : 'Báo giá đã hết hạn và chỗ tạm đã được giải phóng. Hãy lấy báo giá mới trước khi tiếp tục.'}</p>}</>}
     <button type="button" className="sb-action" disabled={loading || submitting || canRetry || Boolean(quote && !expired)} onClick={() => { if (!intent.current?.attempted) setRetry(value => value + 1); }}>Lấy báo giá mới</button>
@@ -111,7 +121,7 @@ export function BookingDetail({ id }: { id: string }) {
           fallback={<span>QR chưa hiển thị. Hãy thử tải lại ảnh; nếu vẫn lỗi, <a href={`/venues/${booking.venueId}`}>xem thông tin liên hệ cơ sở</a> để xác nhận cách chuyển khoản trước hạn trên. Đừng chuyển tiền theo số tài khoản bị che.</span>} />}
         <p>Chủ tài khoản: {booking.payment.accountName}</p>
         <p>Ngân hàng: <strong>{booking.payment.bankCode || 'Xem trên QR'}</strong></p><p>Số tài khoản: {booking.payment.maskedAccountNumber}</p>
-        {now >= Date.parse(booking.paymentDeadline) && <p role="status">Đã qua hạn chuyển khoản. Đang cập nhật trạng thái từ máy chủ.</p>}</>}
+        {now >= Date.parse(booking.paymentDeadline) && <p role="status">Đã qua thời hạn giữ chỗ. Đang cập nhật trạng thái từ máy chủ.</p>}</>}
       {['AWAITING_OWNER_CONFIRMATION', 'NEEDS_REVIEW'].includes(booking.status) && <div className="payment-notice">
         <p>Sân vẫn được giữ trong lúc chủ sân đối chiếu giao dịch.</p>
         {booking.series && <p>Tất cả các buổi trong kỳ vẫn được giữ; bạn không cần chuyển thêm tiền cho từng buổi.</p>}
@@ -144,10 +154,19 @@ export function MyBookings() {
       setCursor(result.nextCursor); setError(''); setLoading(false);
     }, reason => { if (accessDenied(reason)) { setItems([]); setCursor(null); } setError(failure(reason)); setLoading(false); });
   return <Shell><section className="booking-panel"><h1>Đơn của tôi</h1>{error && <p role="alert">{error}</p>}
-    {loading && <p role="status">Đang tải đơn…</p>}{!loading && !items.length && !error && <p>Chưa có đơn đặt sân.</p>}<ul className="booking-list">{items.map(item => <li key={item.bookingId}><a href={`/bookings/${item.bookingId}`}>{item.series?.seriesNo ?? item.bookingNo}</a>
-      <p>{item.venueName} · {item.courtName} · {item.series ? `${item.series.startsOn} → ${item.series.endsOn} · ${item.series.occurrenceCount} buổi cố định` : `${item.date} ${item.localStart}–${item.localEnd}`}</p>
-      {item.series && <p>{weekdayLabel(item.series.dayOfWeek)} hằng tuần · {item.localStart}–{item.localEnd}</p>}
-      <p>{item.series ? 'Tổng cả kỳ: ' : ''}{money(item.amountExact ?? item.payment?.expectedAmountExact ?? item.amount)} · <BookingStatus status={item.status} /></p></li>)}</ul>
+    {loading && <p role="status">Đang tải đơn…</p>}{!loading && !items.length && !error && <div className="booking-list-empty"><p>Chưa có đơn đặt sân.</p><a href="/venues">Tìm sân</a></div>}
+    <ul className="booking-list customer-booking-list">{items.map(item => <li key={item.bookingId}><article className="customer-booking-card">
+      <div className="customer-booking-card-head"><div><span className="customer-booking-kind">{item.series ? 'Đặt cố định' : 'Đặt vãng lai'}</span>
+        <h2>{item.series ? `${weekdayLabel(item.series.dayOfWeek)} hằng tuần · ${item.localStart}–${item.localEnd}`
+          : `${shortDate(item.date)} · ${item.localStart}–${item.localEnd}`}</h2></div>
+        <BookingStatus status={item.status} /></div>
+      <p className="customer-booking-venue"><strong>{item.venueName}</strong> · {item.courtName}</p>
+      {item.series && <p className="customer-booking-period">{shortDate(item.series.startsOn)}–{shortDate(item.series.endsOn)} · {item.series.occurrenceCount} buổi</p>}
+      <div className="customer-booking-card-foot"><div><small>{item.series ? 'Tổng cả kỳ' : 'Tổng tiền'}</small>
+        <strong>{money(item.amountExact ?? item.payment?.expectedAmountExact ?? item.amount)}</strong></div>
+        <a className="customer-booking-action" href={`/bookings/${item.bookingId}`}>{bookingListAction(item)} <span aria-hidden="true">→</span></a></div>
+      <small className="customer-booking-number">Mã đơn {item.series?.seriesNo ?? item.bookingNo}</small>
+    </article></li>)}</ul>
     <button type="button" onClick={() => { if (pageCursor) { setPageCursor(null); setLoading(true); } else refresh(); }}>Làm mới danh sách</button>
     {cursor && <button type="button" onClick={() => { setPageCursor(cursor); setLoading(true); }}>Xem thêm đơn</button>}</section></Shell>;
 }

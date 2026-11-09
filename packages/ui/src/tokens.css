@@ -11,5 +11,8 @@
   --sb-color-danger: #b42318;
   --sb-radius-control: 9px;
   --sb-radius-panel: 16px;
+  --sb-radius-card: 12px;
+  --sb-shadow-card: 0 2px 10px #173d2d0a;
+  --sb-color-canvas-soft: #f8faf7;
   --sb-control-height: 44px;
 }

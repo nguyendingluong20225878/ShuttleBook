@@ -80,7 +80,7 @@ button.team-avatar-button,.team-results button.team-avatar-button,.team-detail b
 
 /* Recruitment discovery: compact, scannable cards; booking facts come from the confirmed booking. */
 .team-explore .team-layout{display:block}
-.team-explore .team-filter{margin-bottom:20px;padding:14px 18px}
+.team-explore .team-filter{margin-bottom:20px;padding:14px 18px;border-radius:var(--sb-radius-card);box-shadow:none}
 .team-explore .team-filter form{display:grid;grid-template-columns:minmax(0,1fr) minmax(145px,175px) minmax(160px,190px) auto auto;align-items:end;gap:10px}
 .team-explore .team-filter form>label{min-width:0}
 .team-explore .team-filter .team-search-label{grid-column:1/-1}
@@ -96,23 +96,28 @@ button.team-avatar-button,.team-results button.team-avatar-button,.team-detail b
 .team-explore .team-results-head small{color:#526d61}
 .team-results-links{display:flex;flex-wrap:wrap;gap:14px}
 .team-explore .team-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
-.team-explore .team-listing-card{display:grid;grid-template-columns:145px minmax(0,1fr);min-height:240px;padding:0;overflow:hidden}
+.team-explore .team-listing-card{display:grid;grid-template-columns:145px minmax(0,1fr);min-height:222px;padding:0;overflow:hidden;border-radius:var(--sb-radius-card);box-shadow:var(--sb-shadow-card)}
+.team-explore .team-listing-card--text{display:block;min-height:0}
 .team-explore .team-listing-card>*{margin:0}
-.team-listing-visual{position:relative;min-height:100%;background:linear-gradient(150deg,#d8ebe3,#a9d6c0)}
-.team-listing-placeholder{position:absolute;inset:0;display:grid;place-items:center;font-size:4rem;opacity:.58}
+.team-listing-visual{position:relative;min-height:100%;background:#edf2ed}
 .team-listing-visual .team-post-image{position:absolute;inset:0;width:100%;height:100%;max-height:none;object-fit:cover}
-.team-listing-content{display:flex;flex-direction:column;min-width:0;padding:16px}
-.team-listing-content h2{margin:9px 0 4px;font-size:1.1rem;line-height:1.25;overflow-wrap:anywhere}
+.team-listing-content{display:flex;flex-direction:column;min-width:0;padding:16px 18px}
+.team-listing-card--text .team-listing-content{padding:18px 20px}
+.team-listing-content h2{margin:9px 0 6px;font-size:1.1rem;line-height:1.25;overflow-wrap:anywhere}
 .team-listing-content h2 a{color:#173e32;text-decoration:none}
 .team-listing-content h2 a:hover{text-decoration:underline}
 .team-listing-content p{margin:3px 0;font-size:.88rem;line-height:1.4;overflow-wrap:anywhere}
-.team-listing-content .team-card-when{font-weight:750;color:var(--sb-color-primary-hover);font-variant-numeric:tabular-nums}
+.team-listing-content .team-card-when{font-weight:750;color:#193f34;font-variant-numeric:tabular-nums}
+.team-listing-content .team-card-court{color:#476055}
 .team-listing-content .team-address{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .team-listing-content .team-caption{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap;color:#345349}
 .team-listing-meta{display:flex;flex-wrap:wrap;gap:5px}
-.team-listing-meta .team-pill{margin:0;font-size:.8125rem}
+.team-listing-meta .team-pill{margin:0;font-size:.8125rem;border-radius:6px}
 .team-listing-foot{display:flex;align-items:end;justify-content:space-between;gap:8px;margin-top:auto;padding-top:12px}
 .team-listing-foot .team-card-author{min-width:0;gap:6px}
+.team-results button.team-author-open{display:flex;align-items:center;min-width:0;min-height:44px;gap:7px;padding:0;border:0;background:transparent;color:#173e32;text-align:left;font:inherit;cursor:pointer}
+.team-results button.team-author-open:hover strong{text-decoration:underline}
+.team-results button.team-author-open:focus-visible{outline:3px solid var(--sb-color-focus);outline-offset:3px}
 .team-listing-foot .team-avatar{width:30px;height:30px;font-size:.8rem}
 .team-listing-foot .team-card-author span:last-child{min-width:0}
 .team-listing-foot .team-card-author strong{font-size:.875rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -120,11 +125,20 @@ button.team-avatar-button,.team-results button.team-avatar-button,.team-detail b
 .team-listing-foot .team-link{flex:none;display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;margin:0;padding:6px 10px;border-radius:9px;background:var(--sb-color-primary);color:#fff;font-size:.875rem;text-decoration:none}
 .team-listing-foot .team-link:hover{background:var(--sb-color-primary-hover)}
 .team-explore a:focus-visible,.team-explore button:focus-visible,.team-explore input:focus-visible,.team-explore select:focus-visible,.team-explore summary:focus-visible{outline:3px solid var(--sb-color-focus);outline-offset:2px}
+.team-explore .team-empty{border:1px solid #d6e5dc;background:#fff;box-shadow:var(--sb-shadow-card)}
+.team-explore .team-empty p{margin:0 0 12px}
+.team-active-filters{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:0 0 16px}
+.team-active-filters span{max-width:100%;padding:8px 11px;border:1px solid #d1e1d8;border-radius:8px;background:#fff;color:#254c3c;font-size:.86rem;overflow-wrap:anywhere}
+.team-active-filters strong{margin-right:4px}
+.team-results .team-active-filters button{min-height:44px;padding:8px 10px;border:0;background:transparent;color:var(--sb-color-primary-hover);font:inherit;font-size:.86rem;font-weight:750;text-decoration:underline}
+.team-empty-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.team-empty-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:8px 14px;border-radius:9px;background:var(--sb-color-primary);color:#fff;font-weight:700;text-decoration:none}
+.team-empty-actions a:hover{background:var(--sb-color-primary-hover);color:#fff}
 .team-compose-booking{display:grid;gap:4px;margin:12px 0;padding:12px 14px;border:1px solid #b6d7c5;border-radius:12px;background:#eff8f2}
 .team-compose-booking span{color:#355c49}
 @media(max-width:1080px){.team-explore .team-grid{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:760px){.team-explore .team-filter form{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.team-explore .team-filter .team-search-label,.team-explore .team-filter .team-advanced{grid-column:1/-1}.team-explore .team-filter .team-advanced{grid-row:auto}}
-@media(max-width:480px){.team-explore .team-filter form{grid-template-columns:1fr 1fr}.team-explore .team-filter form>label:nth-child(2),.team-explore .team-filter form>label:nth-child(3){grid-column:auto}.team-explore .team-filter button[type=submit]{grid-column:1/-1}.team-explore .team-filter .team-advanced-fields{grid-template-columns:1fr}.team-explore .team-filter .team-location{grid-column:auto}.team-explore .team-listing-card{grid-template-columns:104px minmax(0,1fr);min-height:210px}.team-listing-content{padding:12px}.team-listing-content h2{font-size:1rem}.team-listing-foot{align-items:start;flex-direction:column}.team-explore .team-results-head{align-items:start;gap:8px}.team-results-links{gap:10px;font-size:.83rem}}
+@media(max-width:480px){.team-explore .team-filter form{grid-template-columns:1fr 1fr}.team-explore .team-filter form>label:nth-child(2),.team-explore .team-filter form>label:nth-child(3){grid-column:auto}.team-explore .team-filter button[type=submit]{grid-column:1/-1}.team-explore .team-filter .team-advanced-fields{grid-template-columns:1fr}.team-explore .team-filter .team-location{grid-column:auto}.team-explore .team-listing-card{grid-template-columns:104px minmax(0,1fr);min-height:210px}.team-explore .team-listing-card--text{display:block;min-height:0}.team-listing-content{padding:12px}.team-listing-card--text .team-listing-content{padding:14px}.team-listing-content h2{font-size:1rem}.team-listing-foot{align-items:start;flex-direction:column}.team-explore .team-results-head{align-items:start;gap:8px}.team-results-links{gap:10px;font-size:.83rem}}
 @media(max-width:360px){.team-explore .team-listing-card{grid-template-columns:1fr}.team-listing-visual{height:145px}.team-listing-foot{flex-direction:row;align-items:end}}
 .team-contribution{font-weight:700;color:#20533b;overflow-wrap:anywhere}
 .team-public-phone{display:inline-flex;align-items:center;min-height:44px;align-self:start;color:#11633e;font-weight:700;text-decoration:underline;overflow-wrap:anywhere}

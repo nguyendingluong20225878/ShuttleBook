@@ -267,7 +267,7 @@ export function VenueSearchPage() {
         <button type="button" onClick={() => selectCity('HCM')}><span>TP.HCM</span><small>Xem sân tại TP.HCM</small><b aria-hidden="true">→</b></button>
       </div>
     </section> : <>
-      <CustomerFeatureHero label="TÌM SÂN · SHUTTLEBOOK" title="Tìm sân, chọn giờ chơi." />
+      <CustomerFeatureHero label="TÌM SÂN" title="Tìm sân, chọn giờ chơi." />
       <section className="search-panel" aria-label="Tìm cơ sở">
         <form onSubmit={searchText}><label htmlFor="venue-query">Tên sân hoặc địa chỉ</label>
           <div className="input-row"><input id="venue-query" value={query} onChange={event => setQuery(event.target.value)}
@@ -296,7 +296,7 @@ export function VenueSearchPage() {
       </section>
       {mode === 'list' && <section className="price-filter" aria-label="Lọc theo lịch và ngân sách">
         <details ref={priceDetails}><summary><span>Ngày, giờ và ngân sách</span>
-          {priceApplied && <small>Đang lọc · {playDateLabel(priceApplied.date)} · {priceApplied.startsAt}–{endTime(priceApplied)} · tối đa {money.format(priceApplied.maxPriceVnd)}đ</small>}
+          {priceApplied && <small>Đang áp dụng</small>}
         </summary>
           <form onSubmit={applyPrice} className="price-filter-form">
             <label>Ngày chơi<input type="date" min={todayVietnam()} value={priceDraft.date}
@@ -318,6 +318,13 @@ export function VenueSearchPage() {
         <h2>{mode === 'nearby' ? 'Sân gần khu vực đã chọn' : priceApplied ? 'Sân phù hợp lịch và ngân sách' : 'Danh sách cơ sở'}</h2>
         {!loading && !error && <p className="results-summary">{items.length} cơ sở đã tải{mode === 'list' ? ` tại ${cityName(city)}` : ''}.</p>}
       </div>{loading && <span className="loading-label" role="status">Đang tải…</span>}</div>
+        {mode === 'list' && priceApplied && <div className="active-price-filter" aria-label="Bộ lọc ngày, giờ và ngân sách đang áp dụng">
+          <span>Ngày {playDateLabel(priceApplied.date)}</span>
+          <span>{priceApplied.startsAt}–{endTime(priceApplied)}</span>
+          <span>Tối đa {money.format(priceApplied.maxPriceVnd)}đ</span>
+          <button type="button" onClick={editPrice}>Sửa lọc</button>
+          <button type="button" onClick={clearPrice} aria-label="Xóa bộ lọc ngày, giờ và ngân sách">Xóa lọc</button>
+        </div>}
         {error && <div className="discovery-feedback" role="alert"><p>{error}</p><button type="button" onClick={() => setRetry(value => value + 1)}>Thử lại</button></div>}
         {!loading && !error && items.length === 0 && <div className="empty-state"><h3>Chưa tìm thấy cơ sở phù hợp</h3>
           <p>{priceApplied ? 'Thử giờ khác, tăng ngân sách hoặc xóa bộ lọc. Giá và sân trống có thể thay đổi.' :

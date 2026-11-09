@@ -165,6 +165,16 @@ export function PartnerScheduleEditor({ venue, court, request, tab, active, canE
   function updatePrice(index: number, field: keyof Price, value: string | number) {
     setPrices(previous => previous.map((row, n) => n === index ? { ...row, [field]: value } : row)); mark('weekly');
   }
+  function jumpTo(id: string) {
+    const target = document.getElementById(id);
+    if (!target) return;
+    const details = target.closest('details');
+    if (details) details.open = true;
+    requestAnimationFrame(() => {
+      target.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+      target.focus({ preventScroll: true });
+    });
+  }
   return <>
     {loading && <p role="status">Đang tải cấu hình sân…</p>}
     {error && <p className="feedback error" role="alert">{error}</p>}
@@ -173,10 +183,16 @@ export function PartnerScheduleEditor({ venue, court, request, tab, active, canE
       <button type="button" disabled={busy} onClick={() => void refresh()}>Tải lại hồ sơ</button></div>}
     {!loading && <div className="schedule-editor-heading"><p>{court.name} · {statusLabel(court.status)}{dirtyParts.length > 0 && ' · Có thay đổi chưa lưu'}</p>
       <button type="button" disabled={busy} onClick={() => void reload()}>{config ? 'Tải lại cấu hình' : 'Thử tải lại cấu hình'}</button></div>}
+    {!loading && config && tab === 'pricing' && !draft && <nav className="schedule-jump" aria-label="Chuyển nhanh trong Giờ và giá">
+      <button type="button" onClick={() => jumpTo('operator-weekly')}>Lịch và giá tuần</button>
+      <button type="button" onClick={() => jumpTo('operator-pricing')}>Giá đặc biệt</button>
+      <button type="button" onClick={() => jumpTo('operator-preview')}>Xem thử giá</button>
+      <button type="button" onClick={() => jumpTo('operator-policy')}>Quy định đặt sân</button>
+    </nav>}
     {!loading && config && <fieldset disabled={blocked}>
       {tab === 'pricing' ? <>
         {!editable && <p className="feedback">Hồ sơ đang chờ duyệt hoặc sân ngừng hoạt động. Cấu hình chỉ để xem.</p>}
-        <form id="operator-weekly" onSubmit={event => submit(event, () => save('weekly', `${configRoot}/schedule`, { hours, prices }))}>
+        <form id="operator-weekly" className="schedule-jump-target" tabIndex={-1} onSubmit={event => submit(event, () => save('weekly', `${configRoot}/schedule`, { hours, prices }))}>
           <h4>Giờ mở cửa và giá hàng tuần</h4><p>Giá theo ca 30 phút, phủ toàn bộ giờ mở. Tắt ngày để không nhận lịch mới vào ngày đó.</p>
           {!config.hours.length && <p className="muted">Mẫu khởi đầu chưa được lưu. Kiểm tra giờ và giá trước khi lưu.</p>}
           {dayOrder.map(day => {
@@ -216,7 +232,7 @@ export function PartnerScheduleEditor({ venue, court, request, tab, active, canE
           : 'Lưu lịch và giá, sau đó gửi cơ sở cho Admin duyệt tại Cơ sở & sân. QR nhận tiền dùng chung theo cơ sở.'}</p></div>
           : <>
             <details className="schedule-details"><summary>Giá đặc biệt theo khoảng ngày</summary>
-              <form id="operator-pricing" onSubmit={event => submit(event, async () => {
+              <form id="operator-pricing" className="schedule-jump-target" tabIndex={-1} onSubmit={event => submit(event, async () => {
                 if (!specialPrice) throw new Error('Thiết lập khoảng ngày và giá trước khi lưu.');
                 await save('rules', `${root}/special-price`, { specialPrice });
               }, 'Đã lưu giá đặc biệt cho sân này.')}>
@@ -243,7 +259,7 @@ export function PartnerScheduleEditor({ venue, court, request, tab, active, canE
                 </div>
               </form>
             </details>
-            <form id="operator-preview" onSubmit={event => submit(event, async () => {
+            <form id="operator-preview" className="schedule-jump-target" tabIndex={-1} onSubmit={event => submit(event, async () => {
               setPreview(null); const params = new URLSearchParams(previewInput);
               setPreview(await requestRef.current<Preview>(`${root}/price-preview?${params}`));
             }, 'Đã tính giá.')}>
@@ -256,7 +272,7 @@ export function PartnerScheduleEditor({ venue, court, request, tab, active, canE
                 <ul>{preview.slots.map((slot, n) => <li key={n}>{previewTime(slot.startsAt)}–{previewTime(slot.endsAt)}: {money(slot.pricePerSlot)} · {slot.priority ? 'Giá đặc biệt' : 'Giá tuần'}</li>)}</ul></details></>}
             </form>
             <details className="schedule-details"><summary>Quy định đặt sân</summary>
-              <form id="operator-policy" onSubmit={event => submit(event, () => save('policy', `${root}/booking-policy`, policy))}>
+              <form id="operator-policy" className="schedule-jump-target" tabIndex={-1} onSubmit={event => submit(event, () => save('policy', `${root}/booking-policy`, policy))}>
                 <h4>Quy định đặt sân</h4><p>Khách đủ thời lượng tối thiểu có thể thêm từng ca 30 phút. Giữ chỗ áp dụng trước khi khách báo chuyển khoản.</p>
                 <label>Block hiển thị <select value={policy.bookingBlockMinutes} onChange={event => {
                   const block = Number(event.target.value); setPolicy({ ...policy, bookingBlockMinutes: block,

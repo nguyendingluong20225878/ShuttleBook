@@ -2,6 +2,12 @@
 .booking-workspace-intro h3 { font-size:1.4rem; margin:8px 0; }
 .partner-bookings .booking-filters { padding:20px; background:var(--surface,#fff); border:1px solid var(--border,#d6e3e0); border-radius:16px; }
 .partner-bookings .booking-filters label { min-width:0; }
+.partner-bookings .booking-counts button[aria-pressed='true'] { border-color:var(--primary); background:#e9f6f1; box-shadow:inset 0 0 0 1px var(--primary); }
+.partner-bookings .booking-counts button:focus-visible,.partner-bookings .booking-filter-summary button:focus-visible { outline:3px solid var(--primary); outline-offset:3px; }
+.booking-filter-summary { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:12px 0 18px; }
+.booking-filter-summary span { max-width:100%; padding:8px 11px; border:1px solid var(--border); border-radius:8px; background:#fff; color:var(--primary-dark); font-size:.86rem; overflow-wrap:anywhere; }
+.booking-filter-summary strong { margin-right:4px; }
+.partner-bookings .booking-filter-summary button { min-height:44px; padding:8px 10px; border:0; background:transparent; color:var(--primary-dark); font-size:.86rem; font-weight:700; text-decoration:underline; }
 .partner-bookings .booking-list > li { gap:20px; }
 .partner-bookings .booking-list > li.selected { border-color:#0f766e; background:#eff8f5; }
 .partner-bookings .booking-list-price strong { font-size:1.2rem; font-variant-numeric:tabular-nums; }

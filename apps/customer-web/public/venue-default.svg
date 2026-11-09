@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" role="img" aria-labelledby="title desc">
+  <title id="title">Hình minh họa sân cầu lông</title>
+  <desc id="desc">Sơ đồ sân cầu lông màu xanh, không đại diện cho một cơ sở cụ thể.</desc>
+  <rect width="960" height="540" fill="#e7eee8"/>
+  <rect x="84" y="38" width="792" height="464" rx="24" fill="#c5d8cc"/>
+  <rect x="110" y="58" width="740" height="424" rx="12" fill="#247760"/>
+  <g fill="none" stroke="#f6f7e9" stroke-width="5" stroke-linejoin="round">
+    <rect x="145" y="92" width="670" height="356"/>
+    <path d="M188 92v356M772 92v356M145 184h670M145 356h670M480 92v356"/>
+  </g>
+  <path d="M145 270h670" stroke="#153d35" stroke-width="11"/>
+  <path d="M145 270h670" stroke="#f4f5e8" stroke-width="3"/>
+  <g fill="#f6f7e9" opacity=".78">
+    <circle cx="480" cy="184" r="5"/>
+    <circle cx="480" cy="356" r="5"/>
+  </g>
+  <rect x="350" y="369" width="260" height="31" rx="15" fill="#e7eee8"/>
+  <text x="480" y="390" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="15" font-weight="700" letter-spacing="2" fill="#35574b">HÌNH MINH HỌA</text>
+</svg>
