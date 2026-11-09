@@ -149,16 +149,18 @@ function AcceptedGameDialog({ post, onClose }: { post: Post; onClose: () => void
 function PostCard({ post }: { post: Post }) {
   const [profileOpen, setProfileOpen] = useState(false);
   const name = post.contactName || 'Người tổ chức';
-  return <article className="team-card team-listing-card">
-    <div className="team-listing-visual"><div className="team-listing-placeholder" aria-hidden="true">🏸</div><TeamImage post={post} /></div>
+  return <article className={`team-card team-listing-card${post.imageUrl ? '' : ' team-listing-card--text'}`}>
+    {post.imageUrl && <div className="team-listing-visual"><TeamImage post={post} /></div>}
     <div className="team-listing-content"><div className="team-listing-meta"><span className="team-pill">Còn {post.slotsOpen} suất</span><span className="team-pill team-pill--soft">{levelName[post.level]}</span></div>
       <h2><a href={`/teams/${post.id}`}>{post.venueName}</a></h2>
-      <p className="team-card-when">{when(post)} · {post.courtName}</p>
+      <p className="team-card-when">{when(post)}</p>
+      <p className="team-card-court">{post.courtName}</p>
       <p className="team-address">{post.address}</p>
       {contributionText(post) && <p className="team-contribution">{contributionText(post)}</p>}
       {post.caption && <p className="team-caption">{post.caption}</p>}
       {post.contactPhone && <a className="team-public-phone" href={`tel:${post.contactPhone}`} aria-label={`Gọi người đăng ${post.contactPhone}`}>☎ {post.contactPhone}</a>}
-      <div className="team-listing-foot"><div className="team-card-author"><ProfileAvatar name={name} onClick={() => setProfileOpen(true)} /><span><strong>{name}</strong><small><time dateTime={post.createdAt}>Đăng {postedAtLabel(post.createdAt)}</time>{post.distanceMeters != null && ` · ${(post.distanceMeters / 1000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} km đến sân`}</small></span></div>
+      <div className="team-listing-foot"><button type="button" className="team-card-author team-author-open" onClick={() => setProfileOpen(true)} aria-label={`Xem hồ sơ ${name}`}>
+        <span className="team-avatar" aria-hidden="true">{name.trim().charAt(0).toUpperCase() || 'N'}</span><span><strong>{name}</strong><small><time dateTime={post.createdAt}>Đăng {postedAtLabel(post.createdAt)}</time>{post.distanceMeters != null && ` · ${(post.distanceMeters / 1000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} km đến sân`}</small></span></button>
         <a className="team-link" href={`/teams/${post.id}`} aria-label={`Xem bài tìm người tại ${post.venueName}`}>Xem bài <span aria-hidden="true">→</span></a></div>
     </div>
     {profileOpen && <PersonProfileDialog person={{ name, phone: post.contactPhone }} onClose={() => setProfileOpen(false)} />}
@@ -183,7 +185,8 @@ export function TeamExplore() {
   const key = import.meta.env.VITE_MAPTILER_API_KEY as string | undefined;
   const appliedCity = city(new URLSearchParams(location.search).get('city')) ?? initialCity;
   const appliedDate = new URLSearchParams(location.search).get('date') ?? '';
-  const appliedLevel = new URLSearchParams(location.search).get('level') ?? 'ANY';
+  const requestedLevel = new URLSearchParams(location.search).get('level') ?? 'ANY';
+  const appliedLevel: Level = requestedLevel in levelName ? requestedLevel as Level : 'ANY';
   const appliedTerm = new URLSearchParams(location.search).get('q') ?? '';
   const appliedSort = new URLSearchParams(location.search).get('sort') === 'SOONEST' ? 'SOONEST' : 'NEWEST';
   useEffect(() => {
@@ -255,10 +258,10 @@ export function TeamExplore() {
     navigate(`/teams?city=${appliedCity}`);
   }
   return <CustomerShell className="team-explore">
-    <CustomerFeatureHero label="TÌM NGƯỜI · SHUTTLEBOOK" title="Tìm người chơi cùng." />
+    <CustomerFeatureHero label="TÌM NGƯỜI" title="Tìm người chơi cùng." />
     <div className="team-layout"><section className="team-filter" aria-label="Tìm và lọc lịch chơi"><form onSubmit={apply}>
       <label className="team-search-label">Tìm lịch chơi<input type="search" value={term} maxLength={80} onChange={e => setTerm(e.target.value)} placeholder="Tìm sân, địa điểm, người đăng hoặc nội dung" /></label>
-      <label>Thành phố<select value={selectedCity ?? ''} onChange={e => { setCity(city(e.target.value)); setOrigin(null); setPlace(''); }} required>
+      <label>Thành phố<select id="team-city-select" value={selectedCity ?? ''} onChange={e => { setCity(city(e.target.value)); setOrigin(null); setPlace(''); }} required>
         <option value="">Chọn thành phố</option><option value="HN">Hà Nội</option><option value="HCM">TP.HCM</option></select></label>
       <label>Sắp xếp<select value={sort} onChange={e => setSort(e.target.value)}><option value="NEWEST">Bài mới nhất</option><option value="SOONEST">Giờ chơi gần nhất</option></select></label>
       <details className="team-advanced"><summary>Ngày, trình độ và khoảng cách</summary><div className="team-advanced-fields">
@@ -274,14 +277,26 @@ export function TeamExplore() {
           {origin && <p role="status">Từ {origin.label} <button type="button" onClick={() => setOrigin(null)}>Bỏ vị trí</button></p>}
         </div></div></details>
       <button type="submit">{hasDraftChanges ? 'Áp dụng' : 'Tìm kiếm'}</button>
-      {hasFilter && <button type="button" className="team-clear" onClick={clearExploreFilters}>Xóa lọc</button>}
+      {hasFilter && !hasAppliedFilter && <button type="button" className="team-clear" onClick={clearExploreFilters}>Xóa lọc</button>}
     </form></section><div className="team-results"><div className="team-results-head"><div><h2>Lịch đang tìm người</h2>{items.length > 0 && <small>Đã tải {items.length} bài{cursor ? ' · còn bài khác' : ''}</small>}</div><div className="team-results-links"><a href="/me/teams">Đăng tìm người</a><a href="/me/team-requests">Yêu cầu của tôi</a></div></div>
-      {!appliedCity && <p className="team-empty">Chọn Hà Nội hoặc TP.HCM để xem lịch chơi.</p>}
+      {appliedCity && hasAppliedFilter && <div className="team-active-filters" role="group" aria-label="Bộ lọc tìm người đang áp dụng">
+        {appliedTerm && <span><strong>Từ khóa</strong> {appliedTerm}</span>}
+        {appliedDate && <span><strong>Ngày</strong> {appliedDate.split('-').reverse().join('/')}</span>}
+        {appliedLevel !== 'ANY' && <span><strong>Trình độ</strong> {levelName[appliedLevel]}</span>}
+        {origin && <span><strong>Gần</strong> {origin.label} · {Number(radius) / 1000} km</span>}
+        <button type="button" onClick={clearExploreFilters}>Xóa lọc</button>
+      </div>}
+      {!appliedCity && <div className="team-empty"><p>Chọn Hà Nội hoặc TP.HCM để xem lịch chơi.</p>
+        <button type="button" onClick={() => document.getElementById('team-city-select')?.focus()}>Chọn thành phố</button></div>}
       {error && <p role="alert" className="team-error">{error} <button type="button" onClick={() => setRetry(n => n + 1)}>Thử lại</button></p>}
       {loading && <p role="status">Đang tìm lịch chơi…</p>}
       {!loading && appliedCity && !error && !items.length && <div className="team-empty">
         <p>{hasAppliedFilter ? 'Chưa có lịch phù hợp với bộ lọc này.' : 'Hiện chưa có lịch tìm người tại thành phố này.'}</p>
-        {hasAppliedFilter && <button type="button" onClick={clearExploreFilters}>Xóa bộ lọc</button>}
+        <div className="team-empty-actions">
+          {hasAppliedFilter && <button type="button" onClick={clearExploreFilters}>Xóa bộ lọc</button>}
+          <button type="button" onClick={() => document.getElementById('team-city-select')?.focus()}>Đổi thành phố</button>
+          <a href="/me/teams">Đăng tìm người</a>
+        </div>
       </div>}
       <div className="team-grid">{items.map(post => <PostCard key={post.id} post={post} />)}</div>
       {cursor && <button type="button" disabled={loading} onClick={() => void more()}>Xem thêm lịch chơi</button>}

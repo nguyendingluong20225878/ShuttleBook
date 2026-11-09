@@ -7,6 +7,7 @@ import './booking-layout.css';
 type Venue = { id: string; name: string };
 type Filter = { status: string; dateFrom: string; dateTo: string };
 const statuses = ['AWAITING_TRANSFER', 'AWAITING_OWNER_CONFIRMATION', 'NEEDS_REVIEW', 'CONFIRMED', 'EXPIRED', 'PAYMENT_REJECTED'];
+const shortFilterDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) ? value.split('-').reverse().join('/') : value;
 export function PartnerBookings({ businessId, venues, request, bookingId, openBooking, selectBusiness, onActionBusy }: {
   businessId: string; venues: Venue[]; request: PartnerRequest; bookingId: string | null;
   openBooking: (id: string | null) => void; selectBusiness: (id: string) => boolean;
@@ -151,6 +152,15 @@ export function PartnerBookings({ businessId, venues, request, bookingId, openBo
     }
     setFilter({ ...draft });
   }
+  const hasActiveFilter = Boolean(filter.status || filter.dateFrom || filter.dateTo);
+  function clearFilters() {
+    const empty = { status: '', dateFrom: '', dateTo: '' };
+    setDraft(empty); setFilter(empty); setListError('');
+  }
+  function quickStatus(status: string) {
+    const next = { ...filter, status: filter.status === status ? '' : status };
+    setDraft(next); setFilter(next);
+  }
   if (bookingId) return <section className="partner-bookings" aria-label="Quản lý đơn đặt sân">
     <section id="partner-booking-detail" className="panel booking-detail" aria-label="Chi tiết đơn đặt sân">
       <div className="panel-heading"><h3 ref={detailHeading} tabIndex={-1}>Chi tiết đơn đặt sân</h3><button type="button" onClick={() => openBooking(null)}>Quay lại danh sách đơn</button></div>
@@ -189,9 +199,9 @@ export function PartnerBookings({ businessId, venues, request, bookingId, openBo
       <p className="muted">Giờ chơi theo múi giờ của cơ sở.</p></div>
     {venues.length === 0 ? <div className="panel empty-state"><h3>Chưa có cơ sở</h3><p>Thêm và hoàn tất hồ sơ cơ sở trước khi nhận đơn.</p></div> : <>
       <div className="booking-counts">
-        <button type="button" onClick={() => { const next = { ...filter, status: 'AWAITING_OWNER_CONFIRMATION' }; setDraft(next); setFilter(next); }}>
+        <button type="button" aria-pressed={filter.status === 'AWAITING_OWNER_CONFIRMATION'} onClick={() => quickStatus('AWAITING_OWNER_CONFIRMATION')}>
           <span>Chờ xác nhận</span><strong>{list?.counts.awaitingOwnerConfirmation ?? '—'}</strong></button>
-        <button type="button" onClick={() => { const next = { ...filter, status: 'NEEDS_REVIEW' }; setDraft(next); setFilter(next); }}>
+        <button type="button" aria-pressed={filter.status === 'NEEDS_REVIEW'} onClick={() => quickStatus('NEEDS_REVIEW')}>
           <span>Cần bổ sung</span><strong>{list?.counts.needsReview ?? '—'}</strong></button>
       </div>
       <form className="booking-filters" onSubmit={apply}>
@@ -201,9 +211,18 @@ export function PartnerBookings({ businessId, venues, request, bookingId, openBo
         <label>Đến ngày <input type="date" value={draft.dateTo} onChange={e => setDraft({ ...draft, dateTo: e.target.value })} /></label>
         <button type="submit">Lọc đơn</button><button type="button" disabled={loading || moreLoading} onClick={() => setReload(value => value + 1)}>Tải lại đơn</button>
       </form>
+      {hasActiveFilter && <div className="booking-filter-summary" role="group" aria-label="Bộ lọc đơn đang áp dụng">
+        {filter.status && <span><strong>Trạng thái</strong> {bookingStatusLabel(filter.status)}</span>}
+        {filter.dateFrom && <span><strong>Từ ngày</strong> {shortFilterDate(filter.dateFrom)}</span>}
+        {filter.dateTo && <span><strong>Đến ngày</strong> {shortFilterDate(filter.dateTo)}</span>}
+        <button type="button" onClick={clearFilters}>Xóa lọc</button>
+      </div>}
       {loading && <p role="status">Đang tải đơn đặt sân…</p>}
       {listError && <p className="feedback error" role="alert">{listError}</p>}
-      {!loading && list?.items.length === 0 && <div className="panel empty-state"><h3>Chưa có đơn phù hợp</h3><p>Kiểm tra cơ sở, trạng thái và khoảng ngày đã chọn.</p></div>}
+      {!loading && !listError && list?.items.length === 0 && <div className="panel empty-state">
+        <h3>{hasActiveFilter ? 'Chưa có đơn khớp bộ lọc' : 'Cơ sở này chưa có đơn đặt sân'}</h3>
+        {hasActiveFilter && <button type="button" onClick={clearFilters}>Xóa lọc để xem tất cả đơn</button>}
+      </div>}
       <ul className="booking-list">{list?.items.map(item => <li key={item.bookingId}>
         <div><strong>{item.bookingNo}</strong><p>{item.courtName} · {item.series ? seriesPeriod(item.series) : `${item.date} · ${item.localStart.slice(0, 5)}–${item.localEnd.slice(0, 5)}`}</p>
           {item.series && <span className="status-badge">Cố định · tổng cả kỳ</span>}
@@ -261,7 +280,7 @@ function BookingInformation({ booking, request }: { booking: BookingDetail; requ
     {booking.series && <SeriesSchedule series={booking.series} />}
     {booking.isOverdue && <p className="feedback">Đơn đang chờ đối chiếu quá hạn. Sân vẫn được giữ; hãy kiểm tra giao dịch và phản hồi khách.</p>}
     {['AWAITING_OWNER_CONFIRMATION', 'NEEDS_REVIEW'].includes(booking.status) && <p className="feedback">Đối chiếu giao dịch với tài khoản và tổng tiền đã chốt trong đơn trước khi quyết định.</p>}
-    {booking.status === 'CONFIRMED' && <p className="feedback success">Đã xác nhận thanh toán lúc {localDateTime(payment.confirmedAt, booking.timezone)}. Đơn đã hoàn tất luồng đặt sân.</p>}
+    {booking.status === 'CONFIRMED' && <p className="feedback success">Đã xác nhận thanh toán lúc {localDateTime(payment.confirmedAt, booking.timezone)}.</p>}
     <h4>Lịch sử đối chiếu</h4>
     {history.length === 0 ? <p className="muted">Khách chưa báo chuyển khoản.</p> : <ol className="booking-history">{history.map(item => <li key={item.id}>
       <strong>{item.title}</strong><time dateTime={item.at}>{localDateTime(item.at, booking.timezone)}</time><p>{item.detail}</p>
